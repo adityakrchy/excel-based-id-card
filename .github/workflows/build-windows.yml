@@ -2,9 +2,9 @@ name: Build Windows Application
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -53,14 +53,31 @@ jobs:
         uses: Miniong/setup-inno-extract@v1
         continue-on-error: true
 
-      - name: Build Inno Setup Installer (if ISCC available)
+      - name: Install Inno Setup
         shell: pwsh
         run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (Test-Path $iscc) {
-            & $iscc packaging\installer.iss
-          } else {
-            Write-Host "Inno Setup compiler not found on runner path, skipping installer binary."
+          winget install --id JRSoftware.InnoSetup --exact `
+            --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Build Inno Setup Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+
+          if (-not (Test-Path $iscc)) {
+            $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          }
+
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup compiler (ISCC.exe) was not found."
+          }
+
+          New-Item -ItemType Directory -Force -Path "dist\installer" | Out-Null
+
+          & $iscc "packaging\installer.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
           }
 
       - name: Upload Windows Standalone ZIP Artifact
