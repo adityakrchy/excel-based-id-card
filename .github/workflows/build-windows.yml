@@ -49,10 +49,6 @@ jobs:
         run: |
           Compress-Archive -Path "dist\ExcelIDCardGenerator\*" -DestinationPath "dist\ExcelIDCardGenerator-Windows-x64.zip"
 
-      - name: Compile Inno Setup installer
-        uses: Miniong/setup-inno-extract@v1
-        continue-on-error: true
-
       - name: Install Inno Setup
         shell: pwsh
         run: |
