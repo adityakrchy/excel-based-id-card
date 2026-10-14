@@ -1,0 +1,339 @@
+{
+  "id": "builtin-modern-corporate",
+  "name": "Modern Corporate ID Card",
+  "version": "1.0.0",
+  "description": "Sleek dark theme badge with cyan accents, circular photo mask, and structured metadata cards.",
+  "width_px": 638,
+  "height_px": 1012,
+  "dpi": 300,
+  "background_color": "#0F172A",
+  "background_image_path": null,
+  "elements": [
+    {
+      "id": "elem-accent-bar",
+      "name": "Top Accent Bar",
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 638,
+      "height": 10,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#06B6D4"
+      }
+    },
+    {
+      "id": "elem-company-title",
+      "name": "Company Header",
+      "type": "static_text",
+      "x": 30,
+      "y": 40,
+      "width": 578,
+      "height": 35,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "static_content": "ENTERPRISE IDENTIFICATION",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 22,
+        "font_bold": true,
+        "font_color": "#F8FAFC",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-photo",
+      "name": "Profile Photograph",
+      "type": "photo",
+      "x": 219,
+      "y": 110,
+      "width": 200,
+      "height": 200,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "photo",
+      "style": {
+        "fit_mode": "cover",
+        "mask_shape": "circle",
+        "border_width": 4,
+        "border_color": "#06B6D4",
+        "background_color": "#1E293B"
+      }
+    },
+    {
+      "id": "elem-name",
+      "name": "Full Name",
+      "type": "dynamic_text",
+      "x": 30,
+      "y": 335,
+      "width": 578,
+      "height": 45,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Name",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 30,
+        "font_bold": true,
+        "font_color": "#FFFFFF",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-designation",
+      "name": "Designation",
+      "type": "dynamic_text",
+      "x": 30,
+      "y": 385,
+      "width": 578,
+      "height": 35,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Designation",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 20,
+        "font_bold": true,
+        "font_color": "#38BDF8",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-office-pill",
+      "name": "Office Background Pill",
+      "type": "round_rect",
+      "x": 119,
+      "y": 435,
+      "width": 400,
+      "height": 40,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#1E293B",
+        "border_color": "#334155",
+        "border_width": 1,
+        "border_radius": 20
+      }
+    },
+    {
+      "id": "elem-office-text",
+      "name": "Office Name",
+      "type": "dynamic_text",
+      "x": 119,
+      "y": 442,
+      "width": 400,
+      "height": 30,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Office Name",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 16,
+        "font_bold": true,
+        "font_color": "#94A3B8",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-card-constituency",
+      "name": "Constituency Card",
+      "type": "round_rect",
+      "x": 50,
+      "y": 505,
+      "width": 538,
+      "height": 85,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#1E293B",
+        "border_color": "#334155",
+        "border_width": 1,
+        "border_radius": 10
+      }
+    },
+    {
+      "id": "elem-lbl-constituency",
+      "name": "Constituency Label",
+      "type": "static_text",
+      "x": 75,
+      "y": 515,
+      "width": 490,
+      "height": 20,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "static_content": "CONSTITUENCY / REGION",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 13,
+        "font_bold": true,
+        "font_color": "#64748B",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-val-constituency",
+      "name": "Constituency Value",
+      "type": "dynamic_text",
+      "x": 75,
+      "y": 540,
+      "width": 490,
+      "height": 35,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Constituency",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 20,
+        "font_bold": true,
+        "font_color": "#F8FAFC",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-card-pin",
+      "name": "PIN Card",
+      "type": "round_rect",
+      "x": 50,
+      "y": 610,
+      "width": 538,
+      "height": 85,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#1E293B",
+        "border_color": "#334155",
+        "border_width": 1,
+        "border_radius": 10
+      }
+    },
+    {
+      "id": "elem-lbl-pin",
+      "name": "PIN Label",
+      "type": "static_text",
+      "x": 75,
+      "y": 620,
+      "width": 490,
+      "height": 20,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "static_content": "PIN IDENTIFIER",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 13,
+        "font_bold": true,
+        "font_color": "#64748B",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-val-pin",
+      "name": "PIN Value",
+      "type": "pin_field",
+      "x": 75,
+      "y": 645,
+      "width": 490,
+      "height": 35,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "PIN Number",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 22,
+        "font_bold": true,
+        "font_color": "#38BDF8",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-val-source",
+      "name": "Source File Info",
+      "type": "dynamic_text",
+      "x": 50,
+      "y": 720,
+      "width": 538,
+      "height": 25,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Source PDF",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 13,
+        "font_color": "#64748B",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-bottom-bar",
+      "name": "Bottom Highlight Bar",
+      "type": "round_rect",
+      "x": 50,
+      "y": 840,
+      "width": 538,
+      "height": 65,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#0284C7",
+        "border_color": "#38BDF8",
+        "border_width": 2,
+        "border_radius": 8
+      }
+    },
+    {
+      "id": "elem-bottom-pin-display",
+      "name": "Security Badge PIN",
+      "type": "pin_field",
+      "x": 50,
+      "y": 850,
+      "width": 538,
+      "height": 45,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "PIN Number",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 24,
+        "font_bold": true,
+        "font_color": "#FFFFFF",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-footer-disclaimer",
+      "name": "Footer Disclaimer",
+      "type": "static_text",
+      "x": 30,
+      "y": 935,
+      "width": 578,
+      "height": 25,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "static_content": "PROPERTY OF ENTERPRISE • RETURN IF FOUND",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 11,
+        "font_bold": true,
+        "font_color": "#64748B",
+        "text_align": "center"
+      }
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "excel-id-card-generator"
+version = "1.0.0"
+description = "Professional Excel-Based ID Card Generator Desktop Application"
+readme = "README.md"
+authors = [
+    { name = "ID Card Generator Team" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.6.0",
+    "Pillow>=10.2.0",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.2",
+    "xlrd>=2.0.1",
+    "pydantic>=2.6.0",
+    "platformdirs>=4.2.0",
+    "reportlab>=4.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-qt>=4.4.0",
+    "pyinstaller>=6.4.0",
+]
+
+[project.scripts]
+excel-id-card = "id_card_generator.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+qt_api = "pyside6"

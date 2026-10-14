@@ -1,0 +1,305 @@
+{
+  "id": "builtin-classic-portrait",
+  "name": "Classic Portrait ID Card",
+  "version": "1.0.0",
+  "description": "Standard vertical portrait badge with navy banner, centered photo, and bottom PIN badge.",
+  "width_px": 638,
+  "height_px": 1012,
+  "dpi": 300,
+  "background_color": "#F8FAFC",
+  "background_image_path": null,
+  "elements": [
+    {
+      "id": "elem-top-banner",
+      "name": "Top Header Banner",
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 638,
+      "height": 130,
+      "z_index": 1,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#1E3A8A",
+        "border_color": "transparent",
+        "border_width": 0,
+        "border_radius": 0
+      }
+    },
+    {
+      "id": "elem-org-title",
+      "name": "Organization Title",
+      "type": "static_text",
+      "x": 20,
+      "y": 25,
+      "width": 598,
+      "height": 40,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "static_content": "IDENTITY CARD",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 28,
+        "font_bold": true,
+        "font_color": "#FFFFFF",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-org-subtitle",
+      "name": "Sub-header",
+      "type": "static_text",
+      "x": 20,
+      "y": 75,
+      "width": 598,
+      "height": 25,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "static_content": "OFFICIAL IDENTIFICATION",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 15,
+        "font_bold": false,
+        "font_color": "#93C5FD",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-photo",
+      "name": "Profile Photograph",
+      "type": "photo",
+      "x": 219,
+      "y": 160,
+      "width": 200,
+      "height": 200,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "photo",
+      "style": {
+        "fit_mode": "cover",
+        "mask_shape": "rounded",
+        "border_radius": 16,
+        "border_width": 4,
+        "border_color": "#1E3A8A",
+        "background_color": "#E2E8F0"
+      }
+    },
+    {
+      "id": "elem-name",
+      "name": "Full Name",
+      "type": "dynamic_text",
+      "x": 30,
+      "y": 380,
+      "width": 578,
+      "height": 45,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Name",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 30,
+        "font_bold": true,
+        "font_color": "#0F172A",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-designation",
+      "name": "Designation",
+      "type": "dynamic_text",
+      "x": 30,
+      "y": 430,
+      "width": 578,
+      "height": 35,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Designation",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 22,
+        "font_bold": true,
+        "font_color": "#2563EB",
+        "text_align": "center"
+      }
+    },
+    {
+      "id": "elem-divider",
+      "name": "Divider Line",
+      "type": "rect",
+      "x": 60,
+      "y": 485,
+      "width": 518,
+      "height": 2,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#CBD5E1"
+      }
+    },
+    {
+      "id": "elem-office-label",
+      "name": "Office Label",
+      "type": "static_text",
+      "x": 60,
+      "y": 510,
+      "width": 518,
+      "height": 20,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "static_content": "DEPARTMENT / OFFICE",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 13,
+        "font_bold": true,
+        "font_color": "#64748B",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-office-value",
+      "name": "Office Name",
+      "type": "dynamic_text",
+      "x": 60,
+      "y": 535,
+      "width": 518,
+      "height": 35,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Office Name",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 20,
+        "font_bold": true,
+        "font_color": "#1E293B",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-constituency-label",
+      "name": "Constituency Label",
+      "type": "static_text",
+      "x": 60,
+      "y": 590,
+      "width": 518,
+      "height": 20,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "static_content": "CONSTITUENCY",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 13,
+        "font_bold": true,
+        "font_color": "#64748B",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-constituency-value",
+      "name": "Constituency",
+      "type": "dynamic_text",
+      "x": 60,
+      "y": 615,
+      "width": 518,
+      "height": 35,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Constituency",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 20,
+        "font_bold": true,
+        "font_color": "#1E293B",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-source-pdf",
+      "name": "Source Reference",
+      "type": "dynamic_text",
+      "x": 60,
+      "y": 670,
+      "width": 518,
+      "height": 25,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "Source PDF",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 13,
+        "font_color": "#94A3B8",
+        "text_align": "left"
+      }
+    },
+    {
+      "id": "elem-pin-badge-bg",
+      "name": "PIN Badge Container",
+      "type": "round_rect",
+      "x": 139,
+      "y": 840,
+      "width": 360,
+      "height": 70,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "style": {
+        "background_color": "#1E3A8A",
+        "border_color": "#3B82F6",
+        "border_width": 2,
+        "border_radius": 12
+      }
+    },
+    {
+      "id": "elem-pin-badge-text",
+      "name": "PIN Number",
+      "type": "pin_field",
+      "x": 139,
+      "y": 845,
+      "width": 360,
+      "height": 60,
+      "z_index": 3,
+      "visible": true,
+      "locked": false,
+      "binding": "PIN Number",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 28,
+        "font_bold": true,
+        "font_color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle"
+      }
+    },
+    {
+      "id": "elem-footer-text",
+      "name": "Footer Notice",
+      "type": "static_text",
+      "x": 40,
+      "y": 940,
+      "width": 558,
+      "height": 25,
+      "z_index": 2,
+      "visible": true,
+      "locked": false,
+      "static_content": "VALID OFFICIAL IDENTITY CARD",
+      "style": {
+        "font_family": "Arial",
+        "font_size": 12,
+        "font_bold": true,
+        "font_color": "#64748B",
+        "text_align": "center"
+      }
+    }
+  ]
+}
