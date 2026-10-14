@@ -11,7 +11,11 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 block_cipher = None
 
 # Determine repository root
-root_dir = Path(__file__).resolve().parent.parent
+# PyInstaller executes spec files without __file__ in globals, but injects SPECPATH
+try:
+    root_dir = Path(SPECPATH).resolve().parent
+except NameError:
+    root_dir = Path.cwd().resolve()
 src_dir = root_dir / "src"
 
 # Data files to bundle
