@@ -26,11 +26,9 @@ class ExcelImporter:
             return ["Default"]
 
         try:
-            if suffix == ".xls":
-                excel_file = pd.ExcelFile(file_path, engine="xlrd")
-            else:
-                excel_file = pd.ExcelFile(file_path, engine="openpyxl")
-            return excel_file.sheet_names
+            engine = "xlrd" if suffix == ".xls" else "openpyxl"
+            with pd.ExcelFile(file_path, engine=engine) as excel_file:
+                return list(excel_file.sheet_names)
         except Exception as e:
             logger.error("Failed to inspect sheets in %s: %s", file_path, e)
             raise DataSourceError(f"Could not read spreadsheet sheets: {e}") from e
@@ -62,12 +60,11 @@ class ExcelImporter:
             # dtype=object preserves original representations (like leading zeros)
             if suffix == ".csv":
                 df = pd.read_csv(file_path, header=header_row, dtype=object)
-            elif suffix == ".xls":
+            elif suffix in (".xls", ".xlsx"):
+                engine = "xlrd" if suffix == ".xls" else "openpyxl"
                 sheet = sheet_name or 0
-                df = pd.read_excel(file_path, sheet_name=sheet, header=header_row, engine="xlrd", dtype=object)
-            elif suffix == ".xlsx":
-                sheet = sheet_name or 0
-                df = pd.read_excel(file_path, sheet_name=sheet, header=header_row, engine="openpyxl", dtype=object)
+                with pd.ExcelFile(file_path, engine=engine) as excel_file:
+                    df = pd.read_excel(excel_file, sheet_name=sheet, header=header_row, dtype=object)
             else:
                 raise DataSourceError(f"Unsupported file format: {suffix}")
         except SheetNotFoundError:
