@@ -112,23 +112,14 @@ class MainWindow(QMainWindow):
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_h_layout = QHBoxLayout(central_widget)
-        main_h_layout.setContentsMargins(0, 0, 0, 0)
-        main_h_layout.setSpacing(0)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # 1. Left Sidebar
+        # Retain nav_buttons dictionary in memory for compatibility,
+        # but remove the left sidebar completely from the visual layout.
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(220)
-        side_layout = QVBoxLayout(self.sidebar)
-        side_layout.setContentsMargins(12, 16, 12, 16)
-        side_layout.setSpacing(6)
-
-        # App Brand Title
-        lbl_app = QLabel(f"<b>{APP_NAME}</b>")
-        lbl_app.setStyleSheet("font-size: 15px; color: #38BDF8; padding: 4px 8px 12px 8px;")
-        side_layout.addWidget(lbl_app)
-
         self.nav_buttons: Dict[WorkflowStep, QPushButton] = {}
         nav_items = [
             (WorkflowStep.DASHBOARD, "Dashboard"),
@@ -146,30 +137,14 @@ class MainWindow(QMainWindow):
             btn = QPushButton(text)
             btn.setCheckable(True)
             btn.clicked.connect(lambda ch=False, s=step: self.switch_page(s))
-            side_layout.addWidget(btn)
             self.nav_buttons[step] = btn
 
-        side_layout.addStretch()
-
-        # Version stamp
-        lbl_ver = QLabel(f"v{APP_VERSION} Standalone")
-        lbl_ver.setStyleSheet("color: #64748B; font-size: 11px; padding-left: 8px;")
-        side_layout.addWidget(lbl_ver)
-
-        main_h_layout.addWidget(self.sidebar)
-
-        # 2. Right Workspace (Workflow Nav on top + Stacked Pages)
-        right_workspace = QWidget()
-        right_layout = QVBoxLayout(right_workspace)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
-
-        # Persistent Workflow Stepper
+        # 1. Top Persistent Workflow Stepper (includes Dashboard & Settings)
         self.workflow_nav = WorkflowNav()
         self.workflow_nav.step_clicked.connect(lambda s: self.switch_page(WorkflowStep(s)))
-        right_layout.addWidget(self.workflow_nav)
+        main_layout.addWidget(self.workflow_nav)
 
-        # Stacked Pages
+        # 2. Main Stacked Workspace (fills entire width)
         self.stack = QStackedWidget()
         self.page_dashboard = DashboardPage()
         self.page_data_source = DataSourcePage()
@@ -203,8 +178,7 @@ class MainWindow(QMainWindow):
             WorkflowStep.SETTINGS: 8,
         }
 
-        right_layout.addWidget(self.stack)
-        main_h_layout.addWidget(right_workspace)
+        main_layout.addWidget(self.stack)
 
         # Status Bar
         self.status_bar = QStatusBar()
@@ -263,8 +237,20 @@ class MainWindow(QMainWindow):
             nav_menu.addAction(act)
 
     def _setup_signals(self) -> None:
-        # Dashboard signals
+        # Dashboard signals (including embedded settings & workflow launcher)
         self.page_dashboard.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_dashboard.theme_changed.connect(self.apply_theme)
+        self.page_dashboard.policy_changed.connect(self._on_policy_changed)
+        self.page_dashboard.dpi_changed.connect(lambda dpi: setattr(self.settings, "dpi", dpi))
+
+        # Sequential step-by-step navigation signals
+        self.page_data_source.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_photos.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_templates.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_editor.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_generation.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_review.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_export.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
 
         # Data source signals
         self.page_data_source.data_loaded.connect(self._on_data_loaded)
@@ -287,7 +273,7 @@ class MainWindow(QMainWindow):
         self.page_review.review_updated.connect(self._on_review_updated)
         self.page_review.goto_export_requested.connect(lambda: self.switch_page(WorkflowStep.EXPORT))
 
-        # Settings page signals
+        # Settings page signals (kept for legacy support)
         self.page_settings.theme_changed.connect(self.apply_theme)
         self.page_settings.policy_changed.connect(self._on_policy_changed)
 

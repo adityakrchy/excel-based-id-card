@@ -1,24 +1,34 @@
-"""Project dashboard page displaying overview metrics, alerts, and quick actions."""
+"""Project dashboard page displaying overview metrics, alerts, workflow launcher, and embedded settings."""
 
 from typing import Callable, Optional
+from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
-from id_card_generator.core.constants import WorkflowStep
+
+from id_card_generator.core.constants import APP_NAME, APP_VERSION, MissingPhotoPolicy, WorkflowStep
+from id_card_generator.core.logging_config import export_diagnostic_logs, get_current_log_path
 
 
 class DashboardPage(QWidget):
-    """Dashboard summarizing current project status, validation alerts, and quick workflows."""
+    """Dashboard summarizing current project status, validation alerts, step-by-step launcher, and settings."""
 
     navigate_requested = Signal(str)  # WorkflowStep
+    theme_changed = Signal(str)  # "black", "white", "system"
+    policy_changed = Signal(object)  # MissingPhotoPolicy
+    dpi_changed = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -32,16 +42,47 @@ class DashboardPage(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(20)
 
-        # Header Title
+        # 1. Header Title
         title_box = QVBoxLayout()
-        lbl_heading = QLabel("<h2>Project Overview & Workflow Status</h2>")
-        lbl_sub = QLabel("Welcome to the Excel-Based ID Card Generator. Monitor your dataset, templates, and batch progress below.")
+        lbl_heading = QLabel(f"<h2>{APP_NAME}</h2>")
+        lbl_sub = QLabel("Batch design and generate high-resolution ID cards step-by-step from Excel spreadsheets.")
         lbl_sub.setStyleSheet("color: #64748B; font-size: 13px;")
         title_box.addWidget(lbl_heading)
         title_box.addWidget(lbl_sub)
         layout.addLayout(title_box)
 
-        # KPI Metric Cards Grid
+        # 2. Workflow Launcher Hero Card
+        hero_card = QFrame()
+        hero_card.setObjectName("card_panel")
+        hero_layout = QVBoxLayout(hero_card)
+        hero_layout.setContentsMargins(20, 18, 20, 18)
+        hero_layout.setSpacing(10)
+
+        lbl_hero_title = QLabel("<b>🚀 Step-by-Step ID Card Generation</b>")
+        lbl_hero_title.setStyleSheet("font-size: 16px; color: #38BDF8;")
+        lbl_hero_desc = QLabel(
+            "Execute the generation pipeline sequentially: import spreadsheet records, link photographs with "
+            "streaming background queues, design or select an ID template, bind columns, batch generate, and review."
+        )
+        lbl_hero_desc.setStyleSheet("color: #94A3B8; font-size: 12px;")
+        lbl_hero_desc.setWordWrap(True)
+
+        hero_btn_row = QHBoxLayout()
+        self.btn_start_workflow = QPushButton("Start Generation Workflow ➔ (1. Data Source)")
+        self.btn_start_workflow.setObjectName("btn_primary")
+        self.btn_start_workflow.setFixedHeight(42)
+        self.btn_start_workflow.setCursor(Qt.PointingHandCursor)
+        self.btn_start_workflow.setStyleSheet("font-size: 14px; font-weight: bold; padding: 0 24px;")
+        self.btn_start_workflow.clicked.connect(lambda: self.navigate_requested.emit(WorkflowStep.DATA_SOURCE.value))
+        hero_btn_row.addWidget(self.btn_start_workflow)
+        hero_btn_row.addStretch()
+
+        hero_layout.addWidget(lbl_hero_title)
+        hero_layout.addWidget(lbl_hero_desc)
+        hero_layout.addLayout(hero_btn_row)
+        layout.addWidget(hero_card)
+
+        # 3. KPI Metric Cards Grid
         grid = QGridLayout()
         grid.setSpacing(16)
 
@@ -56,49 +97,113 @@ class DashboardPage(QWidget):
         grid.addWidget(self.card_review, 1, 1)
         layout.addLayout(grid)
 
-        # Validation Alerts Box
+        # 4. Validation & Integrity Alerts Box
         self.alert_frame = QFrame()
         self.alert_frame.setObjectName("card_panel")
         alert_layout = QVBoxLayout(self.alert_frame)
         self.lbl_alert_title = QLabel("<b>Validation & Integrity Status</b>")
-        self.lbl_alert_body = QLabel("✓ System ready. Please import your Excel file to begin.")
+        self.lbl_alert_body = QLabel("✓ System ready. Click 'Start Generation Workflow' to begin.")
         self.lbl_alert_body.setStyleSheet("color: #10B981; font-weight: 500;")
         alert_layout.addWidget(self.lbl_alert_title)
         alert_layout.addWidget(self.lbl_alert_body)
         layout.addWidget(self.alert_frame)
 
-        # Quick Actions Row
-        actions_frame = QFrame()
-        actions_frame.setObjectName("card_panel")
-        actions_layout = QVBoxLayout(actions_frame)
-        lbl_actions_title = QLabel("<b>Guided Next Actions</b>")
-        actions_layout.addWidget(lbl_actions_title)
+        # 5. Application & Generation Settings (Embedded directly in Dashboard)
+        settings_title = QLabel("<h3>⚙ Application & Project Settings</h3>")
+        layout.addWidget(settings_title)
 
-        btn_row = QHBoxLayout()
-        self.btn_goto_data = QPushButton("1. Import Data Source")
-        self.btn_goto_data.setObjectName("btn_primary")
-        self.btn_goto_data.clicked.connect(lambda: self.navigate_requested.emit(WorkflowStep.DATA_SOURCE.value))
+        # Appearance & Theme Card
+        theme_card = QFrame()
+        theme_card.setObjectName("card_panel")
+        theme_layout = QVBoxLayout(theme_card)
+        theme_layout.setContentsMargins(16, 14, 16, 14)
+        theme_layout.addWidget(QLabel("<b>Appearance & Theme:</b>"))
 
-        self.btn_goto_photos = QPushButton("2. Select Photo Folder")
-        self.btn_goto_photos.clicked.connect(lambda: self.navigate_requested.emit(WorkflowStep.PHOTOS.value))
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(QLabel("Interface Theme:"))
+        self.cmb_theme = QComboBox()
+        self.cmb_theme.addItem("Black (Fluent Dark)", "black")
+        self.cmb_theme.addItem("White (Fluent Light)", "white")
+        self.cmb_theme.addItem("System (Follow Windows)", "system")
+        from id_card_generator.ui.theme_manager import ThemeManager
+        current_pref = ThemeManager.instance().get_preference()
+        idx = self.cmb_theme.findData(current_pref)
+        if idx >= 0:
+            self.cmb_theme.setCurrentIndex(idx)
+        self.cmb_theme.currentIndexChanged.connect(self._on_theme_changed)
+        theme_row.addWidget(self.cmb_theme)
+        theme_row.addStretch()
+        theme_layout.addLayout(theme_row)
+        layout.addWidget(theme_card)
 
-        self.btn_goto_template = QPushButton("3. Choose Template")
-        self.btn_goto_template.clicked.connect(lambda: self.navigate_requested.emit(WorkflowStep.TEMPLATES.value))
+        # Processing & Missing Photo Policy Card
+        proc_card = QFrame()
+        proc_card.setObjectName("card_panel")
+        proc_layout = QVBoxLayout(proc_card)
+        proc_layout.setContentsMargins(16, 14, 16, 14)
+        proc_layout.setSpacing(10)
+        proc_layout.addWidget(QLabel("<b>Generation & Rendering Rules:</b>"))
 
-        self.btn_goto_editor = QPushButton("4. Visual Canvas Editor")
-        self.btn_goto_editor.clicked.connect(lambda: self.navigate_requested.emit(WorkflowStep.CANVAS_EDITOR.value))
+        policy_row = QHBoxLayout()
+        policy_row.addWidget(QLabel("Missing Photograph Policy:"))
+        self.cmb_policy = QComboBox()
+        self.cmb_policy.addItem("Generate with Silhouette Placeholder", MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER)
+        self.cmb_policy.addItem("Skip Record During Batch Generation", MissingPhotoPolicy.SKIP_RECORD)
+        self.cmb_policy.addItem("Fail Record and Halt Card Creation", MissingPhotoPolicy.FAIL_RECORD)
+        self.cmb_policy.currentIndexChanged.connect(self._on_policy_changed)
+        policy_row.addWidget(self.cmb_policy)
+        policy_row.addStretch()
+        proc_layout.addLayout(policy_row)
 
-        self.btn_goto_generate = QPushButton("5. Batch Generate")
-        self.btn_goto_generate.clicked.connect(lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value))
+        dpi_row = QHBoxLayout()
+        dpi_row.addWidget(QLabel("Default Print DPI:"))
+        self.spin_dpi = QSpinBox()
+        self.spin_dpi.setRange(72, 1200)
+        self.spin_dpi.setValue(300)
+        self.spin_dpi.valueChanged.connect(self.dpi_changed.emit)
+        dpi_row.addWidget(self.spin_dpi)
+        dpi_row.addStretch()
+        proc_layout.addLayout(dpi_row)
 
-        btn_row.addWidget(self.btn_goto_data)
-        btn_row.addWidget(self.btn_goto_photos)
-        btn_row.addWidget(self.btn_goto_template)
-        btn_row.addWidget(self.btn_goto_editor)
-        btn_row.addWidget(self.btn_goto_generate)
-        actions_layout.addLayout(btn_row)
+        layout.addWidget(proc_card)
 
-        layout.addWidget(actions_frame)
+        # Diagnostics & Logs Card
+        diag_card = QFrame()
+        diag_card.setObjectName("card_panel")
+        diag_layout = QVBoxLayout(diag_card)
+        diag_layout.setContentsMargins(16, 14, 16, 14)
+        diag_layout.setSpacing(8)
+        diag_layout.addWidget(QLabel("<b>Diagnostics & Troubleshooting:</b>"))
+
+        lbl_log_path = QLabel(f"Active Log File: {get_current_log_path()}")
+        lbl_log_path.setStyleSheet("color: #94A3B8; font-family: monospace; font-size: 11px;")
+        lbl_log_path.setWordWrap(True)
+        diag_layout.addWidget(lbl_log_path)
+
+        diag_btn_row = QHBoxLayout()
+        self.btn_export_logs = QPushButton("Export Diagnostic Logs...")
+        self.btn_export_logs.clicked.connect(self._export_logs)
+        diag_btn_row.addWidget(self.btn_export_logs)
+        diag_btn_row.addStretch()
+        diag_layout.addLayout(diag_btn_row)
+
+        layout.addWidget(diag_card)
+
+        # About Info
+        about_card = QFrame()
+        about_card.setObjectName("card_panel")
+        about_layout = QVBoxLayout(about_card)
+        about_layout.setContentsMargins(16, 14, 16, 14)
+        about_layout.addWidget(QLabel(f"<b>{APP_NAME} v{APP_VERSION}</b>"))
+        lbl_about = QLabel(
+            "Designed for batch ID card generation from Excel data and high-speed photo matching.\n"
+            "Authoritative Pillow rendering engine • Qt PySide6 native interface.\n"
+            "All data processing remains 100% local."
+        )
+        lbl_about.setStyleSheet("color: #64748B; font-size: 12px;")
+        about_layout.addWidget(lbl_about)
+        layout.addWidget(about_card)
+
         layout.addStretch()
 
         scroll.setWidget(container)
@@ -162,3 +267,33 @@ class DashboardPage(QWidget):
         else:
             self.lbl_alert_body.setText("✓ All records and photographs validated successfully.")
             self.lbl_alert_body.setStyleSheet("color: #10B981; font-weight: 600;")
+
+    def _on_theme_changed(self) -> None:
+        theme = self.cmb_theme.currentData()
+        self.theme_changed.emit(theme)
+
+    def _on_policy_changed(self) -> None:
+        policy = self.cmb_policy.currentData()
+        self.policy_changed.emit(policy)
+
+    def _export_logs(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Diagnostic Log Package",
+            "cardforge_diagnostic_logs.txt",
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if path:
+            try:
+                dest = export_diagnostic_logs(Path(path))
+                QMessageBox.information(
+                    self,
+                    "Logs Exported",
+                    f"Diagnostic logs successfully written to:\n{dest}",
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Export Failed",
+                    f"Could not export diagnostic logs:\n{e}",
+                )

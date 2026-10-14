@@ -97,6 +97,34 @@ class ElementInspector(QWidget):
 
         self.form_layout.addWidget(geom_group)
 
+        # Layer Arrangement Group (Bring to top, send to bottom, step forward/backward)
+        arrange_group = QGroupBox("Layer Order & Stacking")
+        arrange_layout = QHBoxLayout(arrange_group)
+        arrange_layout.setContentsMargins(4, 6, 4, 6)
+        arrange_layout.setSpacing(4)
+
+        self.btn_prop_to_front = QPushButton("To Front ⏫")
+        self.btn_prop_to_front.setToolTip("Bring element on top of every other element")
+        self.btn_prop_to_front.clicked.connect(self._bring_to_front)
+        arrange_layout.addWidget(self.btn_prop_to_front)
+
+        self.btn_prop_forward = QPushButton("Forward ▲")
+        self.btn_prop_forward.setToolTip("Bring element one step forward")
+        self.btn_prop_forward.clicked.connect(self._bring_forward)
+        arrange_layout.addWidget(self.btn_prop_forward)
+
+        self.btn_prop_backward = QPushButton("Backward ▼")
+        self.btn_prop_backward.setToolTip("Send element one step backward")
+        self.btn_prop_backward.clicked.connect(self._send_backward)
+        arrange_layout.addWidget(self.btn_prop_backward)
+
+        self.btn_prop_to_back = QPushButton("To Back ⏬")
+        self.btn_prop_to_back.setToolTip("Send element back to bottom of all elements")
+        self.btn_prop_to_back.clicked.connect(self._send_to_back)
+        arrange_layout.addWidget(self.btn_prop_to_back)
+
+        self.form_layout.addWidget(arrange_group)
+
         # 2. Data Binding Group
         binding_group = QGroupBox("Data Binding")
         binding_layout = QFormLayout(binding_group)
@@ -262,116 +290,174 @@ class ElementInspector(QWidget):
             self.cmb_binding.addItem(col, col)
         self.cmb_binding.blockSignals(False)
 
+    def _apply_change(self, update_fn, description: str = "Change Property") -> None:
+        if self._updating or not self._current_item:
+            return
+        item = self._current_item
+        old_state = item.element.model_dump(mode="json")
+        update_fn()
+        new_state = item.element.model_dump(mode="json")
+        if old_state != new_state:
+            scene = item.scene()
+            if scene and hasattr(scene, "undo_stack"):
+                from id_card_generator.editor.undo_manager import ChangeElementStateCommand
+                scene.undo_stack.push(ChangeElementStateCommand(scene, item.element.id, old_state, new_state, description))
+            item.update()
+            if scene:
+                scene.update()
+                scene.template_modified.emit()
+            self.property_changed.emit(item)
+
+    def _bring_to_front(self) -> None:
+        """Bring selected element on top of every other canvas element."""
+        if self._current_item and self._current_item.scene():
+            scene = self._current_item.scene()
+            if hasattr(scene, "bring_to_front"):
+                scene.bring_to_front(self._current_item)
+                self.property_changed.emit(self._current_item)
+
+    def _bring_forward(self) -> None:
+        """Bring selected element one step forward (on top of adjacent element)."""
+        if self._current_item and self._current_item.scene():
+            scene = self._current_item.scene()
+            if hasattr(scene, "bring_forward"):
+                scene.bring_forward(self._current_item)
+                self.property_changed.emit(self._current_item)
+
+    def _send_backward(self) -> None:
+        """Send selected element one step backward (behind adjacent element)."""
+        if self._current_item and self._current_item.scene():
+            scene = self._current_item.scene()
+            if hasattr(scene, "send_backward"):
+                scene.send_backward(self._current_item)
+                self.property_changed.emit(self._current_item)
+
+    def _send_to_back(self) -> None:
+        """Send selected element back to bottom of all canvas elements."""
+        if self._current_item and self._current_item.scene():
+            scene = self._current_item.scene()
+            if hasattr(scene, "send_to_back"):
+                scene.send_to_back(self._current_item)
+                self.property_changed.emit(self._current_item)
+
     def _on_name_changed(self, text: str):
         if not self._updating and self._current_item:
-            self._current_item.element.name = text
+            def _update():
+                self._current_item.element.name = text
+            self._apply_change(_update, "Rename Element")
 
     def _on_pos_changed(self):
         if not self._updating and self._current_item:
-            self._current_item.setPos(self.spin_x.value(), self.spin_y.value())
-            self._current_item.update_model_position()
+            def _update():
+                self._current_item.setPos(self.spin_x.value(), self.spin_y.value())
+                self._current_item.update_model_position()
+            self._apply_change(_update, "Move Element")
 
     def _on_size_changed(self):
         if not self._updating and self._current_item:
-            self._current_item.set_rect(QRectF(0, 0, self.spin_w.value(), self.spin_h.value()))
+            def _update():
+                self._current_item.set_rect(QRectF(0, 0, self.spin_w.value(), self.spin_h.value()))
+            self._apply_change(_update, "Resize Element")
 
     def _on_lock_toggled(self, checked: bool):
         if not self._updating and self._current_item:
-            self._current_item.element.locked = checked
+            def _update():
+                self._current_item.element.locked = checked
+            self._apply_change(_update, "Toggle Lock")
 
     def _on_binding_changed(self):
         if not self._updating and self._current_item:
             val = self.cmb_binding.currentData()
-            self._current_item.element.binding = val if val else None
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.binding = val if val else None
+            self._apply_change(_update, "Change Binding")
 
     def _on_static_changed(self, text: str):
         if not self._updating and self._current_item:
-            self._current_item.element.static_content = text
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.static_content = text
+            self._apply_change(_update, "Change Static Text")
 
     def _on_font_changed(self, font):
         if not self._updating and self._current_item:
-            self._current_item.element.style.font_family = font.family()
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.font_family = font.family()
+            self._apply_change(_update, "Change Font Family")
 
     def _on_font_size_changed(self, val: int):
         if not self._updating and self._current_item:
-            self._current_item.element.style.font_size = val
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.font_size = val
+            self._apply_change(_update, "Change Font Size")
 
     def _on_bold_toggled(self, checked: bool):
         if not self._updating and self._current_item:
-            self._current_item.element.style.font_bold = checked
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.font_bold = checked
+            self._apply_change(_update, "Toggle Bold")
 
     def _on_italic_toggled(self, checked: bool):
         if not self._updating and self._current_item:
-            self._current_item.element.style.font_italic = checked
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.font_italic = checked
+            self._apply_change(_update, "Toggle Italic")
 
     def _on_align_changed(self, text: str):
         if not self._updating and self._current_item:
-            self._current_item.element.style.text_align = text
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.text_align = text
+            self._apply_change(_update, "Change Alignment")
 
     def _pick_font_color(self):
         if self._current_item:
             c = QColorDialog.getColor(QColor(self._current_item.element.style.font_color), self)
             if c.isValid():
                 hex_c = c.name().upper()
-                self._current_item.element.style.font_color = hex_c
-                self.btn_font_color.setStyleSheet(f"background-color: {hex_c}; color: #FFFFFF;")
-                self._current_item.update()
-                self.property_changed.emit(self._current_item)
+                def _update():
+                    self._current_item.element.style.font_color = hex_c
+                    self.btn_font_color.setStyleSheet(f"background-color: {hex_c}; color: #FFFFFF;")
+                self._apply_change(_update, "Change Font Color")
 
     def _pick_bg_color(self):
         if self._current_item:
             c = QColorDialog.getColor(QColor("#FFFFFF"), self)
             if c.isValid():
                 hex_c = c.name().upper()
-                self._current_item.element.style.background_color = hex_c
-                self.btn_bg_color.setStyleSheet(f"background-color: {hex_c};")
-                self._current_item.update()
-                self.property_changed.emit(self._current_item)
+                def _update():
+                    self._current_item.element.style.background_color = hex_c
+                    self.btn_bg_color.setStyleSheet(f"background-color: {hex_c};")
+                self._apply_change(_update, "Change Fill Color")
 
     def _pick_border_color(self):
         if self._current_item:
             c = QColorDialog.getColor(QColor("#000000"), self)
             if c.isValid():
                 hex_c = c.name().upper()
-                self._current_item.element.style.border_color = hex_c
-                self.btn_border_color.setStyleSheet(f"background-color: {hex_c};")
-                self._current_item.update()
-                self.property_changed.emit(self._current_item)
+                def _update():
+                    self._current_item.element.style.border_color = hex_c
+                    self.btn_border_color.setStyleSheet(f"background-color: {hex_c};")
+                self._apply_change(_update, "Change Border Color")
 
     def _on_border_width_changed(self, val: int):
         if not self._updating and self._current_item:
-            self._current_item.element.style.border_width = val
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.border_width = val
+            self._apply_change(_update, "Change Border Width")
 
     def _on_border_radius_changed(self, val: int):
         if not self._updating and self._current_item:
-            self._current_item.element.style.border_radius = val
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.border_radius = val
+            self._apply_change(_update, "Change Border Radius")
 
     def _on_mask_changed(self, text: str):
         if not self._updating and self._current_item:
-            self._current_item.element.style.mask_shape = text
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.mask_shape = text
+            self._apply_change(_update, "Change Mask Shape")
 
     def _on_fit_changed(self, text: str):
         if not self._updating and self._current_item:
-            self._current_item.element.style.fit_mode = ImageFitMode(text)
-            self._current_item.update()
-            self.property_changed.emit(self._current_item)
+            def _update():
+                self._current_item.element.style.fit_mode = ImageFitMode(text)
+            self._apply_change(_update, "Change Fit Mode")

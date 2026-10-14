@@ -23,10 +23,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from id_card_generator.core.constants import WorkflowStep
 from id_card_generator.core.exceptions import DataSourceError
 from id_card_generator.core.models import SourceRecord
 from id_card_generator.data.data_validator import DataValidator, ValidationReport
 from id_card_generator.data.excel_importer import ExcelImporter
+from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class DataSourcePage(QWidget):
     """Import spreadsheet, configure sheet/headers, validate rows, and preview data."""
 
     data_loaded = Signal(object, object, object)  # (columns, records, validation_report)
+    navigate_requested = Signal(str)  # WorkflowStep value
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,6 +129,17 @@ class DataSourcePage(QWidget):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
         layout.addWidget(splitter)
+
+        # 4. Bottom Step Navigation Bar
+        self.nav_bar = StepNavBar(
+            prev_label="Dashboard & Settings",
+            next_label="Photo Library",
+            step_badge="Step 1 of 7: Data Source",
+            parent=self,
+        )
+        self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.DASHBOARD.value))
+        self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.PHOTOS.value))
+        layout.addWidget(self.nav_bar)
 
     def _browse_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(

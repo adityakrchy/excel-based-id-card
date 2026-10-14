@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from id_card_generator.core.constants import ReviewStatus
+from id_card_generator.core.constants import ReviewStatus, WorkflowStep
 from id_card_generator.core.models import (
     PhotoMatchResult,
     RenderResult,
@@ -30,6 +30,7 @@ from id_card_generator.core.models import (
 from id_card_generator.generation.batch_generator import BatchGenerator
 from id_card_generator.rendering.pillow_renderer import PillowRenderer
 from id_card_generator.review.review_manager import ReviewManager
+from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class ReviewPage(QWidget):
 
     review_updated = Signal(object)  # ReviewManager
     goto_export_requested = Signal()
+    navigate_requested = Signal(str)  # WorkflowStep value
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -171,6 +173,17 @@ class ReviewPage(QWidget):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
         layout.addWidget(splitter)
+
+        # Bottom Step Navigation Bar
+        self.nav_bar = StepNavBar(
+            prev_label="Batch Generate",
+            next_label="Export Approved Cards",
+            step_badge="Step 6 of 7: Review Cards",
+            parent=self,
+        )
+        self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value))
+        self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.EXPORT.value))
+        layout.addWidget(self.nav_bar)
 
     def load_review_session(
         self,

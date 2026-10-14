@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from id_card_generator.core.constants import OutputFormat
+from id_card_generator.core.constants import OutputFormat, WorkflowStep
 from id_card_generator.core.models import (
     PhotoMatchResult,
     RenderSettings,
@@ -25,6 +25,7 @@ from id_card_generator.core.models import (
 )
 from id_card_generator.generation.batch_generator import GenerationSummary
 from id_card_generator.generation.generation_worker import GenerationWorker
+from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class GenerationPage(QWidget):
 
     generation_completed = Signal(object)  # GenerationSummary
     goto_review_requested = Signal()
+    navigate_requested = Signal(str)  # WorkflowStep value
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,6 +124,17 @@ class GenerationPage(QWidget):
 
         layout.addWidget(prog_frame)
         layout.addStretch()
+
+        # Bottom Step Navigation Bar
+        self.nav_bar = StepNavBar(
+            prev_label="Canvas Editor",
+            next_label="Review Generated Cards",
+            step_badge="Step 5 of 7: Batch Generate",
+            parent=self,
+        )
+        self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.CANVAS_EDITOR.value))
+        self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.REVIEW.value))
+        layout.addWidget(self.nav_bar)
 
     def set_generation_context(
         self,

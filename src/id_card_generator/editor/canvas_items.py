@@ -16,7 +16,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsObject,
+    QGraphicsSceneContextMenuEvent,
     QGraphicsSceneMouseEvent,
+    QMenu,
 )
 
 from id_card_generator.core.constants import ImageFitMode
@@ -58,8 +60,8 @@ class CanvasItem(QGraphicsObject):
         self._cached_pixmap: Optional[QPixmap] = None
 
     def boundingRect(self) -> QRectF:
-        pad = self.HANDLE_SIZE + 2.0
-        return self._rect.adjusted(-pad, -pad, pad, pad)
+        pad = self.HANDLE_SIZE + 4.0
+        return self._rect.adjusted(-pad, -pad - 22.0, pad, pad)
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()
@@ -182,6 +184,16 @@ class CanvasItem(QGraphicsObject):
         self.update_model_position()
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
+        if self._drag_start_rect is not None and (
+            self._rect.width() != self._drag_start_rect.width()
+            or self._rect.height() != self._drag_start_rect.height()
+            or self._rect.topLeft() != self._drag_start_rect.topLeft()
+        ):
+            scene = self.scene()
+            if scene and hasattr(scene, "undo_stack"):
+                from id_card_generator.editor.undo_manager import ResizeElementCommand
+                scene.undo_stack.push(ResizeElementCommand(self, self._drag_start_rect, QRectF(self._rect)))
+
         self._active_handle = None
         self._drag_start_pos = None
         self._drag_start_rect = None
@@ -351,15 +363,79 @@ class CanvasItem(QGraphicsObject):
         painter.drawText(rect, flags, text)
 
     def _paint_selection(self, painter: QPainter):
-        """Draw outline and 8 resize handles."""
-        # Selection outline
-        pen = QPen(QColor("#3B82F6"), 1.5, Qt.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawRect(self._rect)
+        """Draw professional Transform Box (TBox) with outer contrast halo, crisp accent border, 8 resize handles, and element tag."""
+        painter.save()
+        rect = self._rect
 
-        # Handles
-        painter.setPen(QPen(QColor("#1D4ED8"), 1))
-        painter.setBrush(QBrush(QColor("#FFFFFF")))
+        # 1. Outer dark halo for high contrast on light backgrounds
+        outer_pen = QPen(QColor(0, 0, 0, 70), 2.5, Qt.SolidLine)
+        painter.setPen(outer_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(rect)
+
+        # 2. Crisp bright primary selection border (Photoshop/Figma blue)
+        inner_pen = QPen(QColor("#0078D4"), 1.8, Qt.SolidLine)
+        painter.setPen(inner_pen)
+        painter.drawRect(rect)
+
+        # 3. 8 Transform Handles (pure white with blue border)
+        handle_pen = QPen(QColor("#005A9E"), 1.5)
+        handle_brush = QBrush(QColor("#FFFFFF"))
+        painter.setPen(handle_pen)
+        painter.setBrush(handle_brush)
         for handle_rect in self._get_handle_rects().values():
-            painter.drawRect(handle_rect)
+            painter.drawRoundedRect(handle_rect, 1.5, 1.5)
+
+        # 4. Top-left Pill Badge (TBox element name & dimensions)
+        badge_text = f"{self.element.name} ({int(self.element.width)}×{int(self.element.height)})"
+        badge_font = QFont("Segoe UI", 8)
+        badge_font.setBold(True)
+        painter.setFont(badge_font)
+        fm = painter.fontMetrics()
+        tw = fm.horizontalAdvance(badge_text) + 12
+        th = fm.height() + 2
+        badge_rect = QRectF(rect.left(), rect.top() - th - 3, tw, th)
+
+        # Background pill
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#0078D4")))
+        painter.drawRoundedRect(badge_rect, 3, 3)
+
+        # Text
+        painter.setPen(QColor("#FFFFFF"))
+        painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
+
+        painter.restore()
+
+    def contextMenuEvent(self, event: QGraphicsSceneContextMenuEvent):
+        """Right-click context menu for layer reordering and item actions."""
+        scene = self.scene()
+        if not scene:
+            super().contextMenuEvent(event)
+            return
+
+        menu = QMenu()
+        menu.setStyleSheet("font-size: 13px; padding: 4px;")
+
+        act_top = menu.addAction("Bring to Front (To Top)")
+        act_up = menu.addAction("Bring Forward (▲)")
+        act_down = menu.addAction("Send Backward (▼)")
+        act_bottom = menu.addAction("Send to Back (To Bottom)")
+        menu.addSeparator()
+        act_dup = menu.addAction("Duplicate")
+        act_del = menu.addAction("Delete")
+
+        chosen = menu.exec(event.screenPos())
+        if chosen == act_top and hasattr(scene, "bring_to_front"):
+            scene.bring_to_front(self)
+        elif chosen == act_up and hasattr(scene, "bring_forward"):
+            scene.bring_forward(self)
+        elif chosen == act_down and hasattr(scene, "send_backward"):
+            scene.send_backward(self)
+        elif chosen == act_bottom and hasattr(scene, "send_to_back"):
+            scene.send_to_back(self)
+        elif chosen == act_dup and hasattr(scene, "duplicate_selected"):
+            scene.duplicate_selected()
+        elif chosen == act_del and hasattr(scene, "delete_selected"):
+            scene.delete_selected()
+        event.accept()

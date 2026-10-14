@@ -49,10 +49,16 @@ class PhotoMatcher:
         self.prefix = prefix or ""
         self.suffix = suffix or ""
 
-    def rescan(self) -> None:
-        """Rescan current photo directory and rebuild exact and lower-case lookup indexes."""
-        if self.photo_dir and self.photo_dir.exists():
-            self.index = PhotoScanner.scan_directory(self.photo_dir)
+    def set_indexes(
+        self,
+        index: Dict[str, List[Path]],
+        lower_index: Optional[Dict[str, List[Path]]] = None,
+    ) -> None:
+        """Directly update the exact and case-insensitive indexes from background streaming worker."""
+        self.index = index
+        if lower_index is not None:
+            self.lower_index = lower_index
+        else:
             self.lower_index = {}
             for stem, paths in self.index.items():
                 lower_stem = stem.lower()
@@ -61,6 +67,12 @@ class PhotoMatcher:
                 for p in paths:
                     if p not in self.lower_index[lower_stem]:
                         self.lower_index[lower_stem].append(p)
+
+    def rescan(self) -> None:
+        """Rescan current photo directory and rebuild exact and lower-case lookup indexes."""
+        if self.photo_dir and self.photo_dir.exists():
+            idx = PhotoScanner.scan_directory(self.photo_dir)
+            self.set_indexes(idx)
         else:
             self.index = {}
             self.lower_index = {}
@@ -69,9 +81,24 @@ class PhotoMatcher:
         """Manually associate a specific photo with a record ID or lookup key."""
         self.overrides[str(key_or_id).strip()] = photo_path
 
-    def remove_override(self, key_or_id: str) -> None:
-        """Remove a manual photo override."""
-        self.overrides.pop(str(key_or_id).strip(), None)
+    def remove_override(self, *keys_or_ids: str) -> None:
+        """Remove a manual photo override across any matching key, record_id, or pin."""
+        targets = set()
+        for k in keys_or_ids:
+            if k is not None:
+                s = str(k).strip()
+                if s:
+                    targets.add(s)
+                    targets.add(s.lower())
+                    _, norm = DataNormalizer.normalize_pin(s)
+                    if norm:
+                        targets.add(norm)
+                        targets.add(norm.lower())
+
+        for k in list(self.overrides.keys()):
+            k_str = str(k).strip()
+            if k_str in targets or k_str.lower() in targets:
+                self.overrides.pop(k, None)
 
     def clear_overrides(self) -> None:
         """Clear all manual overrides."""

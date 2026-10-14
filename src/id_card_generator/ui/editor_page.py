@@ -4,9 +4,10 @@ import logging
 from typing import Dict, List, Optional
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QColorDialog,
@@ -17,17 +18,19 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
     QSplitter,
     QStackedWidget,
     QTabWidget,
+    QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from id_card_generator.core.constants import ImageFitMode
+from id_card_generator.core.constants import ImageFitMode, WorkflowStep
 from id_card_generator.core.models import (
     CanvasElement,
     PhotoMatchResult,
@@ -41,6 +44,7 @@ from id_card_generator.editor.canvas_view import CanvasView
 from id_card_generator.editor.element_inspector import ElementInspector
 from id_card_generator.editor.field_mapping_panel import FieldMappingPanel
 from id_card_generator.editor.layers_panel import LayersPanel
+from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +53,7 @@ class EditorPage(QWidget):
     """Professional, Photoshop-inspired canvas editor workspace."""
 
     template_updated = Signal(object)  # TemplateDefinition
+    navigate_requested = Signal(str)  # WorkflowStep value
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -103,13 +108,11 @@ class EditorPage(QWidget):
 
         # Common action buttons on far right of options bar
         self.btn_undo = QPushButton("↶ Undo")
-        self.btn_undo.setToolTip("Undo last action (Ctrl+Z)")
-        self.btn_undo.clicked.connect(self.scene.undo)
+        self.btn_undo.setToolTip("Undo last action (Ctrl+Z / Cmd+Z)")
         self.opt_layout.addWidget(self.btn_undo)
 
         self.btn_redo = QPushButton("↷ Redo")
-        self.btn_redo.setToolTip("Redo last action (Ctrl+Y)")
-        self.btn_redo.clicked.connect(self.scene.redo)
+        self.btn_redo.setToolTip("Redo last action (Ctrl+Y / Cmd+Y)")
         self.opt_layout.addWidget(self.btn_redo)
 
         self.btn_dup = QPushButton("⧉ Duplicate")
@@ -177,6 +180,17 @@ class EditorPage(QWidget):
         sb_layout.addWidget(self.lbl_sb_status)
 
         main_layout.addWidget(self.status_bar_frame)
+
+        # 4. Bottom Step Navigation Bar
+        self.nav_bar = StepNavBar(
+            prev_label="Choose Template",
+            next_label="Batch Generate",
+            step_badge="Step 4 of 7: Canvas Editor & Field Mapping",
+            parent=self,
+        )
+        self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.TEMPLATES.value))
+        self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value))
+        main_layout.addWidget(self.nav_bar)
 
     def _create_vertical_tool_strip(self) -> QFrame:
         """Create Photoshop-inspired vertical icon toolbar."""
@@ -368,11 +382,72 @@ class EditorPage(QWidget):
         self.mapping_panel.create_dynamic_requested.connect(self._create_dynamic_element_for_column)
         self.mapping_panel.sample_changed.connect(self._on_sample_index_changed)
 
+        # Undo / Redo buttons & stack observation
+        self.btn_undo.clicked.connect(self._trigger_undo)
+        self.btn_redo.clicked.connect(self._trigger_redo)
+        self.scene.undo_stack.canUndoChanged.connect(self.btn_undo.setEnabled)
+        self.scene.undo_stack.canRedoChanged.connect(self.btn_redo.setEnabled)
+        self.btn_undo.setEnabled(self.scene.undo_stack.canUndo())
+        self.btn_redo.setEnabled(self.scene.undo_stack.canRedo())
+
+        # Setup keyboard shortcuts for Windows (Ctrl+Z, Ctrl+Y) and Mac (Cmd+Z, Cmd+Y)
+        self._setup_shortcuts()
+
+    def _trigger_undo(self) -> None:
+        """Undo last action, letting active text input widgets handle internal undo first."""
+        fw = QApplication.focusWidget()
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit)):
+            fw.undo()
+            return
+        self.scene.undo()
+
+    def _trigger_redo(self) -> None:
+        """Redo last undone action, letting active text input widgets handle internal redo first."""
+        fw = QApplication.focusWidget()
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit)):
+            fw.redo()
+            return
+        self.scene.redo()
+
+    def _setup_shortcuts(self) -> None:
+        """Register platform-agnostic, Windows, and macOS shortcuts for Undo and Redo."""
+        # Undo: Ctrl+Z (Windows/Linux), Cmd+Z / Meta+Z (macOS), QKeySequence.Undo
+        undo_sequences = [
+            QKeySequence.Undo,
+            QKeySequence("Ctrl+Z"),
+            QKeySequence("Meta+Z"),
+        ]
+        self._undo_shortcuts = []
+        for seq in undo_sequences:
+            sc = QShortcut(seq, self)
+            sc.setContext(Qt.WindowShortcut)
+            sc.activated.connect(self._trigger_undo)
+            self._undo_shortcuts.append(sc)
+
+        # Redo: Ctrl+Y (Windows), Cmd+Y / Meta+Y (macOS), Ctrl+Shift+Z, Cmd+Shift+Z, QKeySequence.Redo
+        redo_sequences = [
+            QKeySequence.Redo,
+            QKeySequence("Ctrl+Y"),
+            QKeySequence("Meta+Y"),
+            QKeySequence("Ctrl+Shift+Z"),
+            QKeySequence("Meta+Shift+Z"),
+        ]
+        self._redo_shortcuts = []
+        for seq in redo_keys if (redo_keys := redo_sequences) else []:
+            sc = QShortcut(seq, self)
+            sc.setContext(Qt.WindowShortcut)
+            sc.activated.connect(self._trigger_redo)
+            self._redo_shortcuts.append(sc)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(80, lambda: self.view.fit_to_view(enlarge_factor=1.35))
+
     def load_template(self, template: TemplateDefinition) -> None:
         """Load template into canvas editor and update metadata readouts."""
         self.scene.load_template(template)
         self.layers_panel.refresh_layers()
-        self.view.fit_to_view()
+        QTimer.singleShot(60, lambda: self.view.fit_to_view(enlarge_factor=1.35))
         self._update_status_dimensions()
         self._update_sample_preview()
 
@@ -459,6 +534,10 @@ class EditorPage(QWidget):
 
     def _on_template_modified(self) -> None:
         self.layers_panel.refresh_layers()
+        sel = self.scene.get_selected_item()
+        self.inspector.set_selected_item(sel)
+        self._update_context_options(sel)
+        self._update_sample_preview()
         if self.scene.template:
             self.template_updated.emit(self.scene.template)
 
@@ -494,9 +573,17 @@ class EditorPage(QWidget):
         if not selected:
             return
         item = selected[0]
+        old_state = item.element.model_dump(mode="json")
         item.element.binding = column_name
         if item.element.type == "static_text":
             item.element.type = "dynamic_text"
+        new_state = item.element.model_dump(mode="json")
+        from id_card_generator.editor.undo_manager import ChangeElementStateCommand
+        self.scene.undo_stack.push(
+            ChangeElementStateCommand(
+                self.scene, item.element.id, old_state, new_state, f"Bind to {column_name}"
+            )
+        )
         self.inspector.set_selected_item(item)
         self.layers_panel.refresh_layers()
         self._update_sample_preview()
@@ -516,118 +603,71 @@ class EditorPage(QWidget):
         self.layers_panel.refresh_layers()
         self._update_sample_preview()
 
+    def _apply_context_change(self, update_item_fn, description: str = "Change Style") -> None:
+        if self._updating_context_bar:
+            return
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasItem)]
+        if not selected:
+            return
+
+        old_states = [(it.element.id, it.element.model_dump(mode="json")) for it in selected]
+        for it in selected:
+            update_item_fn(it)
+            it.update()
+        new_states = [(it.element.id, it.element.model_dump(mode="json")) for it in selected]
+
+        from id_card_generator.editor.undo_manager import BatchStateChangeCommand
+        changes = [(eid, old_s, new_s) for (eid, old_s), (_, new_s) in zip(old_states, new_states)]
+        self.scene.undo_stack.push(BatchStateChangeCommand(self.scene, changes, description))
+        self.scene.update()
+        self.scene.template_modified.emit()
+
     # Contextual Options Handlers
     def _on_ctx_font_changed(self, font: QFont) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.font_family = font.family()
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "font_family", font.family()), "Change Font Family")
 
     def _on_ctx_font_size_changed(self, sz: int) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.font_size = sz
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "font_size", sz), "Change Font Size")
 
     def _on_ctx_bold_toggled(self, checked: bool) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.font_bold = checked
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "font_bold", checked), "Toggle Bold")
 
     def _on_ctx_italic_toggled(self, checked: bool) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.font_italic = checked
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "font_italic", checked), "Toggle Italic")
 
     def _on_ctx_color_clicked(self) -> None:
         col = QColorDialog.getColor(QColor("#1A1A1A"), self, "Select Text Color")
         if col.isValid():
             hex_col = col.name().upper()
-            for it in self.scene.selectedItems():
-                if isinstance(it, CanvasItem):
-                    it.element.style.font_color = hex_col
-                    it.update()
+            self._apply_context_change(lambda it: setattr(it.element.style, "font_color", hex_col), "Change Text Color")
             self.ctx_btn_color.setStyleSheet(f"background-color: {hex_col}; color: #FFFFFF;")
-            self.scene.update()
 
     def _on_ctx_align_changed(self, align: str) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.text_align = align
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "text_align", align), "Change Alignment")
 
     def _on_ctx_fill_clicked(self) -> None:
         col = QColorDialog.getColor(QColor("#E2E8F0"), self, "Select Shape Fill Color")
         if col.isValid():
             hex_col = col.name().upper()
-            for it in self.scene.selectedItems():
-                if isinstance(it, CanvasItem):
-                    it.element.style.background_color = hex_col
-                    it.update()
-            self.scene.update()
+            self._apply_context_change(lambda it: setattr(it.element.style, "background_color", hex_col), "Change Fill Color")
 
     def _on_ctx_stroke_clicked(self) -> None:
         col = QColorDialog.getColor(QColor("#0078D4"), self, "Select Shape Stroke Color")
         if col.isValid():
             hex_col = col.name().upper()
-            for it in self.scene.selectedItems():
-                if isinstance(it, CanvasItem):
-                    it.element.style.border_color = hex_col
-                    it.update()
-            self.scene.update()
+            self._apply_context_change(lambda it: setattr(it.element.style, "border_color", hex_col), "Change Stroke Color")
 
     def _on_ctx_stroke_w_changed(self, val: int) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.border_width = val
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "border_width", val), "Change Stroke Width")
 
     def _on_ctx_radius_changed(self, val: int) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.border_radius = val
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "border_radius", val), "Change Border Radius")
 
     def _on_ctx_fit_changed(self, fit_str: str) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.fit_mode = ImageFitMode(fit_str)
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "fit_mode", ImageFitMode(fit_str)), "Change Image Fit")
 
     def _on_ctx_mask_changed(self, mask_str: str) -> None:
-        if self._updating_context_bar:
-            return
-        for it in self.scene.selectedItems():
-            if isinstance(it, CanvasItem):
-                it.element.style.mask_shape = mask_str
-                it.update()
-        self.scene.update()
+        self._apply_context_change(lambda it: setattr(it.element.style, "mask_shape", mask_str), "Change Mask Shape")
 
     # Element Creation Methods
     def _add_static_text(self) -> None:

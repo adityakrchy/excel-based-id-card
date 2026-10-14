@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from id_card_generator.core.constants import OutputFormat
+from id_card_generator.core.constants import OutputFormat, WorkflowStep
 from id_card_generator.core.models import (
     ExportConfiguration,
     ExportResult,
@@ -31,6 +31,7 @@ from id_card_generator.core.models import (
     SourceRecord,
 )
 from id_card_generator.export.export_manager import ExportManager
+from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class ExportPage(QWidget):
     """Configures final export options, runs export, and displays audit summaries."""
 
     export_completed = Signal(object)  # ExportResult
+    navigate_requested = Signal(str)  # WorkflowStep value
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -139,6 +141,17 @@ class ExportPage(QWidget):
 
         layout.addWidget(action_card)
         layout.addStretch()
+
+        # Bottom Step Navigation Bar
+        self.nav_bar = StepNavBar(
+            prev_label="Review Cards",
+            next_label="Complete & Return to Dashboard",
+            step_badge="Step 7 of 7: Export Cards",
+            parent=self,
+        )
+        self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.REVIEW.value))
+        self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.DASHBOARD.value))
+        layout.addWidget(self.nav_bar)
 
     def set_export_context(
         self,

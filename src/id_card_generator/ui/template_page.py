@@ -19,8 +19,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from id_card_generator.core.constants import WorkflowStep
 from id_card_generator.core.models import TemplateDefinition
 from id_card_generator.templates.template_manager import TemplateManager
+from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ class TemplatePage(QWidget):
 
     template_selected = Signal(object)  # TemplateDefinition
     open_editor_requested = Signal()
+    navigate_requested = Signal(str)  # WorkflowStep value
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -128,6 +131,17 @@ class TemplatePage(QWidget):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
         layout.addWidget(splitter)
+
+        # Bottom Step Navigation Bar
+        self.nav_bar = StepNavBar(
+            prev_label="Photo Library",
+            next_label="Canvas Editor & Field Mapping",
+            step_badge="Step 3 of 7: Template",
+            parent=self,
+        )
+        self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.PHOTOS.value))
+        self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.CANVAS_EDITOR.value))
+        layout.addWidget(self.nav_bar)
 
     def _load_templates(self) -> None:
         self.manager.reload()

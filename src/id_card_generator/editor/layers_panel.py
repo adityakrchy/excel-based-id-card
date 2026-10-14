@@ -45,6 +45,12 @@ class LayersPanel(QWidget):
         header_layout.addWidget(QLabel("<b>Layers</b>"))
         header_layout.addStretch()
 
+        self.btn_to_top = QPushButton("⏫")
+        self.btn_to_top.setToolTip("Bring to Front (Top of all elements)")
+        self.btn_to_top.setFixedWidth(28)
+        self.btn_to_top.clicked.connect(self._bring_to_front)
+        header_layout.addWidget(self.btn_to_top)
+
         self.btn_up = QPushButton("▲")
         self.btn_up.setToolTip("Bring Forward (Move Layer Up)")
         self.btn_up.setFixedWidth(28)
@@ -56,6 +62,12 @@ class LayersPanel(QWidget):
         self.btn_down.setFixedWidth(28)
         self.btn_down.clicked.connect(self._move_layer_down)
         header_layout.addWidget(self.btn_down)
+
+        self.btn_to_bottom = QPushButton("⏬")
+        self.btn_to_bottom.setToolTip("Send to Back (Bottom of all elements)")
+        self.btn_to_bottom.setFixedWidth(28)
+        self.btn_to_bottom.clicked.connect(self._send_to_back)
+        header_layout.addWidget(self.btn_to_bottom)
 
         self.btn_dup = QPushButton("⧉")
         self.btn_dup.setToolTip("Duplicate Layer")
@@ -82,8 +94,36 @@ class LayersPanel(QWidget):
         self.tree.header().setSectionResizeMode(2, QHeaderView.Fixed)
         self.tree.header().resizeSection(2, 40)
         self.tree.itemSelectionChanged.connect(self._on_tree_selection_changed)
+        self.tree.itemClicked.connect(self._on_tree_item_clicked)
         self.tree.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.tree)
+
+        # Bottom layer ordering toolbar for clear, labeled access
+        order_bar = QHBoxLayout()
+        order_bar.setContentsMargins(0, 2, 0, 2)
+        order_bar.setSpacing(4)
+
+        btn_bar_front = QPushButton("To Front ⏫")
+        btn_bar_front.setToolTip("Bring layer on top of every other element")
+        btn_bar_front.clicked.connect(self._bring_to_front)
+        order_bar.addWidget(btn_bar_front)
+
+        btn_bar_forward = QPushButton("Forward ▲")
+        btn_bar_forward.setToolTip("Bring layer one step forward")
+        btn_bar_forward.clicked.connect(self._move_layer_up)
+        order_bar.addWidget(btn_bar_forward)
+
+        btn_bar_backward = QPushButton("Backward ▼")
+        btn_bar_backward.setToolTip("Send layer one step backward")
+        btn_bar_backward.clicked.connect(self._move_layer_down)
+        order_bar.addWidget(btn_bar_backward)
+
+        btn_bar_back = QPushButton("To Back ⏬")
+        btn_bar_back.setToolTip("Send layer back to bottom of all elements")
+        btn_bar_back.clicked.connect(self._send_to_back)
+        order_bar.addWidget(btn_bar_back)
+
+        layout.addLayout(order_bar)
 
     def _connect_signals(self) -> None:
         self.scene.selectionChanged.connect(self._on_scene_selection_changed)
@@ -118,34 +158,62 @@ class LayersPanel(QWidget):
 
         self._updating = False
 
+    def _on_tree_item_clicked(self, tree_item: QTreeWidgetItem, column: int) -> None:
+        """Explicitly focus and select item on canvas with TBox when clicked in layers tab."""
+        if column in (1, 2):
+            return  # Handled by check state in _on_item_changed
+        canvas_item: Optional[CanvasItem] = tree_item.data(0, Qt.UserRole)
+        if canvas_item:
+            self._select_and_focus_item(canvas_item)
+
+    def _select_and_focus_item(self, canvas_item: CanvasItem) -> None:
+        """Select item on canvas, trigger transform box (TBox) rendering and inspector sync."""
+        if self._updating:
+            return
+        self._updating = True
+        try:
+            self.scene.clearSelection()
+            canvas_item.setSelected(True)
+            canvas_item.update()
+            self.scene.update()
+            self.scene.element_selected.emit(canvas_item)
+            self.item_selected.emit(canvas_item)
+
+            # Ensure the selected item and its TBox are visible in view
+            views = self.scene.views()
+            if views:
+                views[0].ensureVisible(canvas_item, 40, 40)
+        finally:
+            self._updating = False
+
     def _on_tree_selection_changed(self) -> None:
         if self._updating:
             return
         selected = self.tree.selectedItems()
         if not selected:
+            self.scene.clearSelection()
+            self.scene.element_selected.emit(None)
+            self.item_selected.emit(None)
             return
 
-        self._updating = True
-        self.scene.clearSelection()
-        for t_item in selected:
-            canvas_item: Optional[CanvasItem] = t_item.data(0, Qt.UserRole)
-            if canvas_item:
-                canvas_item.setSelected(True)
-                self.item_selected.emit(canvas_item)
-        self._updating = False
+        canvas_item: Optional[CanvasItem] = selected[0].data(0, Qt.UserRole)
+        if canvas_item:
+            self._select_and_focus_item(canvas_item)
 
     def _on_scene_selection_changed(self) -> None:
         if self._updating:
             return
         self._updating = True
-        self.tree.clearSelection()
-        selected_canvas_items = self.scene.selectedItems()
+        try:
+            self.tree.clearSelection()
+            selected_canvas_items = self.scene.selectedItems()
 
-        for idx in range(self.tree.topLevelItemCount()):
-            t_item = self.tree.topLevelItem(idx)
-            if t_item.data(0, Qt.UserRole) in selected_canvas_items:
-                t_item.setSelected(True)
-        self._updating = False
+            for idx in range(self.tree.topLevelItemCount()):
+                t_item = self.tree.topLevelItem(idx)
+                if t_item.data(0, Qt.UserRole) in selected_canvas_items:
+                    t_item.setSelected(True)
+        finally:
+            self._updating = False
 
     def _on_item_changed(self, tree_item: QTreeWidgetItem, column: int) -> None:
         if self._updating:
@@ -163,25 +231,41 @@ class LayersPanel(QWidget):
             is_locked = tree_item.checkState(2) == Qt.Checked
             canvas_item.set_locked(is_locked)
 
-    def _move_layer_up(self) -> None:
+    def _get_selected_canvas_item(self) -> Optional[CanvasItem]:
         selected = self.tree.selectedItems()
-        if not selected:
-            return
-        item: CanvasItem = selected[0].data(0, Qt.UserRole)
+        if selected:
+            return selected[0].data(0, Qt.UserRole)
+        return self.scene.get_selected_item()
+
+    def _bring_to_front(self) -> None:
+        """Bring layer to top of every other element on canvas."""
+        item = self._get_selected_canvas_item()
         if item:
-            item.setZValue(item.zValue() + 1)
-            item.element.z_index = int(item.zValue())
+            self.scene.bring_to_front(item)
+            self.refresh_layers()
+            self.order_changed.emit()
+
+    def _move_layer_up(self) -> None:
+        """Bring layer one step forward (above adjacent element)."""
+        item = self._get_selected_canvas_item()
+        if item:
+            self.scene.bring_forward(item)
             self.refresh_layers()
             self.order_changed.emit()
 
     def _move_layer_down(self) -> None:
-        selected = self.tree.selectedItems()
-        if not selected:
-            return
-        item: CanvasItem = selected[0].data(0, Qt.UserRole)
+        """Send layer one step backward (behind adjacent element)."""
+        item = self._get_selected_canvas_item()
         if item:
-            item.setZValue(max(0, item.zValue() - 1))
-            item.element.z_index = int(item.zValue())
+            self.scene.send_backward(item)
+            self.refresh_layers()
+            self.order_changed.emit()
+
+    def _send_to_back(self) -> None:
+        """Send layer back to bottom of all canvas elements."""
+        item = self._get_selected_canvas_item()
+        if item:
+            self.scene.send_to_back(item)
             self.refresh_layers()
             self.order_changed.emit()
 

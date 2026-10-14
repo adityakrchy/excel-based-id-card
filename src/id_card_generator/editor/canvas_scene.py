@@ -45,21 +45,24 @@ class CanvasScene(QGraphicsScene):
 
     def undo(self) -> None:
         """Undo last canvas action."""
-        self.undo_stack.undo()
-        self.update()
-        self.template_modified.emit()
+        if self.undo_stack.canUndo():
+            self.undo_stack.undo()
+            self.update()
+            self.template_modified.emit()
 
     def redo(self) -> None:
         """Redo last undone canvas action."""
-        self.undo_stack.redo()
-        self.update()
-        self.template_modified.emit()
+        if self.undo_stack.canRedo():
+            self.undo_stack.redo()
+            self.update()
+            self.template_modified.emit()
 
     def load_template(self, template: TemplateDefinition) -> None:
         """Load a template definition into the scene."""
         self.clear()
         self._items_by_id.clear()
         self.template = template
+        self.undo_stack.clear()
 
         w = template.width_px
         h = template.height_px
@@ -78,6 +81,7 @@ class CanvasScene(QGraphicsScene):
 
     def _create_and_add_item(self, elem: CanvasElement) -> CanvasItem:
         item = CanvasItem(elem)
+        item.setZValue(elem.z_index)
         item.set_sample_data(self._sample_record, self._sample_photo_path)
         item.geometry_changed.connect(self._on_item_geometry_changed)
         self.addItem(item)
@@ -99,29 +103,106 @@ class CanvasScene(QGraphicsScene):
                 return it
         return None
 
-    def add_element(self, element: CanvasElement) -> CanvasItem:
-        """Add a new element to current template and scene."""
-        if self.template:
-            self.template.elements.append(element)
-        item = self._create_and_add_item(element)
-        self.clearSelection()
-        item.setSelected(True)
+    def add_element(self, element: CanvasElement, push_undo: bool = True) -> CanvasItem:
+        """Add a new element to current template and scene with undo support, always on top."""
+        # Calculate maximum existing z-index so new layer is placed on top of all canvas elements
+        existing_z = [it.element.z_index for it in self._items_by_id.values() if it.element.id != element.id]
+        max_z = max(existing_z) if existing_z else 0
+        if element.z_index <= max_z:
+            element.z_index = max_z + 1
+
+        if push_undo:
+            from id_card_generator.editor.undo_manager import AddElementCommand
+            cmd = AddElementCommand(self, element)
+            self.undo_stack.push(cmd)
+            return self._items_by_id.get(element.id)
+        else:
+            if self.template and element not in self.template.elements:
+                self.template.elements.append(element)
+            item = self._create_and_add_item(element)
+            self.clearSelection()
+            item.setSelected(True)
+            item.update()
+            self.update()
+            self.element_selected.emit(item)
+            self.template_modified.emit()
+            return item
+
+    def _get_sorted_canvas_items(self) -> List[CanvasItem]:
+        """Return all canvas items sorted ascending by z-value (bottom to top)."""
+        items = [it for it in self.items() if isinstance(it, CanvasItem)]
+        return sorted(items, key=lambda x: (x.zValue(), x.element.z_index))
+
+    def _apply_layer_order(self, new_ordered_items: List[CanvasItem], description: str) -> None:
+        """Assign normalized z-indices (1..N) and record undo command."""
+        old_z_map = {it.element.id: int(it.zValue()) for it in self._items_by_id.values()}
+        new_z_map = {}
+        for idx, it in enumerate(new_ordered_items, start=1):
+            it.setZValue(idx)
+            it.element.z_index = idx
+            new_z_map[it.element.id] = idx
+
+        from id_card_generator.editor.undo_manager import ReorderLayersCommand
+        self.undo_stack.push(ReorderLayersCommand(self, old_z_map, new_z_map, description))
+        self.update()
         self.template_modified.emit()
-        return item
+
+    def bring_to_front(self, item: Optional[CanvasItem] = None) -> None:
+        """Move layer on top of every other element on the canvas."""
+        item = item or self.get_selected_item()
+        if not item:
+            return
+        items = self._get_sorted_canvas_items()
+        if item in items:
+            items.remove(item)
+            items.append(item)
+            self._apply_layer_order(items, "Bring to Front")
+
+    def bring_forward(self, item: Optional[CanvasItem] = None) -> None:
+        """Move layer one step forward (on top of the element immediately above it)."""
+        item = item or self.get_selected_item()
+        if not item:
+            return
+        items = self._get_sorted_canvas_items()
+        if item in items:
+            idx = items.index(item)
+            if idx < len(items) - 1:
+                items[idx], items[idx + 1] = items[idx + 1], items[idx]
+                self._apply_layer_order(items, "Bring Forward")
+
+    def send_backward(self, item: Optional[CanvasItem] = None) -> None:
+        """Move layer one step backward (behind the element immediately below it)."""
+        item = item or self.get_selected_item()
+        if not item:
+            return
+        items = self._get_sorted_canvas_items()
+        if item in items:
+            idx = items.index(item)
+            if idx > 0:
+                items[idx], items[idx - 1] = items[idx - 1], items[idx]
+                self._apply_layer_order(items, "Send Backward")
+
+    def send_to_back(self, item: Optional[CanvasItem] = None) -> None:
+        """Move layer back to the bottom behind every other element on the canvas."""
+        item = item or self.get_selected_item()
+        if not item:
+            return
+        items = self._get_sorted_canvas_items()
+        if item in items:
+            items.remove(item)
+            items.insert(0, item)
+            self._apply_layer_order(items, "Send to Back")
 
     def delete_selected(self) -> None:
-        """Delete selected elements from scene and template."""
+        """Delete selected elements from scene and template with undo support."""
         selected = [it for it in self.selectedItems() if isinstance(it, CanvasItem)]
-        for item in selected:
-            if self.template and item.element in self.template.elements:
-                self.template.elements.remove(item.element)
-            if item.element.id in self._items_by_id:
-                del self._items_by_id[item.element.id]
-            self.removeItem(item)
-        self.template_modified.emit()
+        if not selected:
+            return
+        from id_card_generator.editor.undo_manager import DeleteElementsCommand
+        self.undo_stack.push(DeleteElementsCommand(self, selected))
 
     def duplicate_selected(self) -> None:
-        """Duplicate selected elements."""
+        """Duplicate selected elements with undo support."""
         selected = self.get_selected_item()
         if not selected or not self.template:
             return
@@ -134,7 +215,7 @@ class CanvasScene(QGraphicsScene):
         data["y"] += 20.0
 
         new_elem = CanvasElement.model_validate(data)
-        self.add_element(new_elem)
+        self.add_element(new_elem, push_undo=True)
 
     def drawBackground(self, painter: QPainter, rect: QRectF):
         """Draw card background, image, and optional grid."""
@@ -182,8 +263,50 @@ class CanvasScene(QGraphicsScene):
 
         painter.restore()
 
+    def mousePressEvent(self, event):
+        self._mouse_press_positions = {
+            it: QPointF(it.pos()) for it in self.selectedItems() if isinstance(it, CanvasItem)
+        }
+        super().mousePressEvent(event)
+        for it in self.selectedItems():
+            if isinstance(it, CanvasItem) and it not in self._mouse_press_positions:
+                self._mouse_press_positions[it] = QPointF(it.pos())
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if hasattr(self, "_mouse_press_positions") and self._mouse_press_positions:
+            moved = []
+            for it, old_pos in self._mouse_press_positions.items():
+                if it.scene() == self and (it.pos().x() != old_pos.x() or it.pos().y() != old_pos.y()):
+                    moved.append((it, old_pos, QPointF(it.pos())))
+            self._mouse_press_positions = {}
+            if moved:
+                from id_card_generator.editor.undo_manager import (
+                    MoveElementCommand,
+                    MoveMultipleElementsCommand,
+                )
+                if len(moved) == 1:
+                    it, old_p, new_p = moved[0]
+                    self.undo_stack.push(MoveElementCommand(it, old_p, new_p))
+                else:
+                    self.undo_stack.push(MoveMultipleElementsCommand(moved))
+
     def keyPressEvent(self, event: QKeyEvent):
-        """Keyboard navigation: nudge with arrows, delete with Del/Backspace."""
+        """Keyboard navigation: nudge with arrows, delete with Del/Backspace, undo/redo shortcuts."""
+        is_ctrl_or_cmd = bool(event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier))
+        if is_ctrl_or_cmd:
+            if event.key() == Qt.Key_Z:
+                if event.modifiers() & Qt.ShiftModifier:
+                    self.redo()
+                else:
+                    self.undo()
+                event.accept()
+                return
+            elif event.key() == Qt.Key_Y:
+                self.redo()
+                event.accept()
+                return
+
         item = self.get_selected_item()
         if not item or item.element.locked:
             super().keyPressEvent(event)
@@ -191,24 +314,21 @@ class CanvasScene(QGraphicsScene):
 
         step = 10.0 if (event.modifiers() & Qt.ShiftModifier) else 1.0
 
-        if event.key() == Qt.Key_Left:
-            item.setPos(item.pos().x() - step, item.pos().y())
+        if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            old_pos = QPointF(item.pos())
+            if event.key() == Qt.Key_Left:
+                new_pos = QPointF(old_pos.x() - step, old_pos.y())
+            elif event.key() == Qt.Key_Right:
+                new_pos = QPointF(old_pos.x() + step, old_pos.y())
+            elif event.key() == Qt.Key_Up:
+                new_pos = QPointF(old_pos.x(), old_pos.y() - step)
+            else:
+                new_pos = QPointF(old_pos.x(), old_pos.y() + step)
+
+            item.setPos(new_pos)
             item.update_model_position()
-            self.template_modified.emit()
-            event.accept()
-        elif event.key() == Qt.Key_Right:
-            item.setPos(item.pos().x() + step, item.pos().y())
-            item.update_model_position()
-            self.template_modified.emit()
-            event.accept()
-        elif event.key() == Qt.Key_Up:
-            item.setPos(item.pos().x(), item.pos().y() - step)
-            item.update_model_position()
-            self.template_modified.emit()
-            event.accept()
-        elif event.key() == Qt.Key_Down:
-            item.setPos(item.pos().x(), item.pos().y() + step)
-            item.update_model_position()
+            from id_card_generator.editor.undo_manager import MoveElementCommand
+            self.undo_stack.push(MoveElementCommand(item, old_pos, new_pos, "Nudge Element"))
             self.template_modified.emit()
             event.accept()
         elif event.key() in (Qt.Key_Delete, Qt.Key_Backspace):

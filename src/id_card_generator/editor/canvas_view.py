@@ -1,4 +1,4 @@
-"""Custom QGraphicsView with zoom, pan, and smooth navigation."""
+"""Custom QGraphicsView with zoom, pan, enlarged auto-fit, and smooth navigation."""
 
 import logging
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class CanvasView(QGraphicsView):
-    """Interactive viewport for the ID card graphics scene."""
+    """Interactive viewport for the ID card graphics scene with enlarged presentation."""
 
     zoom_changed = Signal(float)
 
@@ -38,13 +38,35 @@ class CanvasView(QGraphicsView):
     def reset_zoom(self) -> None:
         self.set_zoom(1.0)
 
-    def fit_to_view(self) -> None:
-        """Scale canvas to fit completely within the viewport."""
+    def fit_to_view(self, enlarge_factor: float = 1.30) -> None:
+        """Scale canvas to fill viewport prominently with comfortable enlargement."""
         if not self.scene():
             return
-        self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
-        # Update current zoom factor estimate
-        self._zoom_factor = self.transform().m11()
+        
+        scene_rect = self.scene().sceneRect()
+        if scene_rect.width() <= 0 or scene_rect.height() <= 0:
+            return
+
+        self.resetTransform()
+        vp = self.viewport()
+        vp_w = vp.width()
+        vp_h = vp.height()
+
+        if vp_w > 50 and vp_h > 50:
+            # Calculate scale that fits viewport with modest padding
+            scale_x = (vp_w - 30) / scene_rect.width()
+            scale_y = (vp_h - 30) / scene_rect.height()
+            base_fit = min(scale_x, scale_y)
+            # Apply comfortable enlargement factor so card is large and legible
+            target_scale = max(0.4, base_fit * enlarge_factor)
+            self.scale(target_scale, target_scale)
+            self._zoom_factor = target_scale
+        else:
+            self.fitInView(scene_rect, Qt.KeepAspectRatio)
+            self.scale(enlarge_factor, enlarge_factor)
+            self._zoom_factor = self.transform().m11()
+
+        self.centerOn(scene_rect.center())
         self.zoom_changed.emit(self._zoom_factor)
 
     def set_zoom(self, factor: float) -> None:
@@ -65,3 +87,23 @@ class CanvasView(QGraphicsView):
             event.accept()
         else:
             super().wheelEvent(event)
+
+    def keyPressEvent(self, event):
+        """Forward undo and redo shortcuts to canvas scene."""
+        is_ctrl_or_cmd = bool(event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier))
+        if is_ctrl_or_cmd:
+            if event.key() == Qt.Key_Z:
+                if event.modifiers() & Qt.ShiftModifier:
+                    if self.scene() and hasattr(self.scene(), "redo"):
+                        self.scene().redo()
+                else:
+                    if self.scene() and hasattr(self.scene(), "undo"):
+                        self.scene().undo()
+                event.accept()
+                return
+            elif event.key() == Qt.Key_Y:
+                if self.scene() and hasattr(self.scene(), "redo"):
+                    self.scene().redo()
+                event.accept()
+                return
+        super().keyPressEvent(event)

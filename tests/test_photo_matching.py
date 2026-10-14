@@ -107,3 +107,31 @@ def test_stable_record_id_override_across_reordering(sample_photos_dir: Path):
     res_b = matcher.match_record(rec_b)
     assert res_b.status == MatchStatus.MISSING
 
+
+def test_clear_photo_override_multi_keys(sample_photos_dir: Path):
+    """Verify that removing an override across record_id, key_val, and pin completely clears it."""
+    matcher = PhotoMatcher()
+    matcher.set_directory(sample_photos_dir)
+
+    rec = SourceRecord(row_index=1, raw_pin="888888", pin="888888", data={"Name": "Missing Guy"})
+    # Initially missing
+    assert matcher.match_record(rec).status == MatchStatus.MISSING
+
+    # Override on record_id, pin, and key_val
+    override_file = sample_photos_dir / "100001.jpg"
+    matcher.set_override(rec.record_id, str(override_file))
+    matcher.set_override(rec.pin, str(override_file))
+    matcher.set_override("888888", str(override_file))
+
+    res = matcher.match_record(rec)
+    assert res.status == MatchStatus.OVERRIDDEN
+
+    # Now clear override using all associated identifiers
+    matcher.remove_override(rec.record_id, "888888", rec.pin)
+
+    # Must cleanly revert back to MISSING (or original non-overridden match)
+    res_cleared = matcher.match_record(rec)
+    assert res_cleared.status == MatchStatus.MISSING
+    assert res_cleared.is_overridden is False
+    assert res_cleared.photo_path is None
+
