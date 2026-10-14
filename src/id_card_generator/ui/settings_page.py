@@ -48,7 +48,14 @@ class SettingsPage(QWidget):
         theme_row = QHBoxLayout()
         theme_row.addWidget(QLabel("Application Theme:"))
         self.cmb_theme = QComboBox()
-        self.cmb_theme.addItems(["Dark Theme", "Light Theme"])
+        self.cmb_theme.addItem("Black (Fluent Dark)", "black")
+        self.cmb_theme.addItem("White (Fluent Light)", "white")
+        self.cmb_theme.addItem("System (Follow Windows)", "system")
+        from id_card_generator.ui.theme_manager import ThemeManager
+        current_pref = ThemeManager.instance().get_preference()
+        idx = self.cmb_theme.findData(current_pref)
+        if idx >= 0:
+            self.cmb_theme.setCurrentIndex(idx)
         self.cmb_theme.currentIndexChanged.connect(self._on_theme_changed)
         theme_row.addWidget(self.cmb_theme)
         theme_row.addStretch()
@@ -116,7 +123,9 @@ class SettingsPage(QWidget):
         layout.addStretch()
 
     def _on_theme_changed(self, idx: int) -> None:
-        theme = "dark" if idx == 0 else "light"
+        theme = self.cmb_theme.currentData() or "black"
+        from id_card_generator.ui.theme_manager import ThemeManager
+        ThemeManager.instance().set_theme(theme)
         self.theme_changed.emit(theme)
 
     def _on_policy_changed(self) -> None:

@@ -201,7 +201,10 @@ class CanvasItem(QGraphicsObject):
         border_width = elem.style.border_width
         radius = elem.style.border_radius
 
-        pen = QPen(QColor(border_color) if border_color != "transparent" else Qt.NoPen, border_width)
+        if border_color != "transparent" and border_width > 0:
+            pen = QPen(QColor(border_color), border_width)
+        else:
+            pen = QPen(Qt.NoPen)
         brush = QBrush(QColor(bg_color)) if bg_color != "transparent" else QBrush(Qt.NoBrush)
         painter.setPen(pen)
         painter.setBrush(brush)
@@ -272,6 +275,11 @@ class CanvasItem(QGraphicsObject):
             initials = "?"
             if self._sample_record:
                 name = self._sample_record.get_value("Name", "")
+                if not name:
+                    for k, v in self._sample_record.data.items():
+                        if "name" in k.lower() and v:
+                            name = str(v).strip()
+                            break
                 if name:
                     initials = "".join(p[0] for p in name.split())[:2].upper()
             painter.drawText(rect, Qt.AlignCenter, initials)

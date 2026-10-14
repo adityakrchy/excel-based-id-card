@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -35,6 +36,7 @@ from id_card_generator.core.models import (
 from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.generation.batch_generator import GenerationSummary
 from id_card_generator.resources.resource_loader import get_resource_path
+from id_card_generator.tasks.task_manager import TaskManager
 from id_card_generator.ui.dashboard_page import DashboardPage
 from id_card_generator.ui.data_source_page import DataSourcePage
 from id_card_generator.ui.dialogs.relink_dialog import RelinkDialog
@@ -45,6 +47,7 @@ from id_card_generator.ui.photo_library_page import PhotoLibraryPage
 from id_card_generator.ui.review_page import ReviewPage
 from id_card_generator.ui.settings_page import SettingsPage
 from id_card_generator.ui.template_page import TemplatePage
+from id_card_generator.ui.theme_manager import ThemeManager
 from id_card_generator.ui.workflow_nav import WorkflowNav
 
 logger = logging.getLogger(__name__)
@@ -71,9 +74,42 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_menus()
         self._setup_signals()
-        self.apply_theme("dark")
+        self.apply_theme(ThemeManager.instance().get_preference())
 
     def _setup_ui(self) -> None:
+        # Main Top Application Toolbar
+        self.top_toolbar = self.addToolBar("Main Controls")
+        self.top_toolbar.setMovable(False)
+
+        btn_tb_new = QPushButton("New Project")
+        btn_tb_new.clicked.connect(self._new_project)
+        self.top_toolbar.addWidget(btn_tb_new)
+
+        btn_tb_open = QPushButton("Open...")
+        btn_tb_open.clicked.connect(self._open_project)
+        self.top_toolbar.addWidget(btn_tb_open)
+
+        btn_tb_save = QPushButton("Save")
+        btn_tb_save.clicked.connect(self._save_project)
+        self.top_toolbar.addWidget(btn_tb_save)
+
+        self.top_toolbar.addSeparator()
+
+        lbl_theme = QLabel(" Theme: ")
+        lbl_theme.setStyleSheet("font-weight: 500;")
+        self.top_toolbar.addWidget(lbl_theme)
+
+        self.cmb_toolbar_theme = QComboBox()
+        self.cmb_toolbar_theme.addItem("Black (Fluent Dark)", "black")
+        self.cmb_toolbar_theme.addItem("White (Fluent Light)", "white")
+        self.cmb_toolbar_theme.addItem("System (Auto)", "system")
+        curr_pref = ThemeManager.instance().get_preference()
+        idx = self.cmb_toolbar_theme.findData(curr_pref)
+        if idx >= 0:
+            self.cmb_toolbar_theme.setCurrentIndex(idx)
+        self.cmb_toolbar_theme.currentIndexChanged.connect(self._on_toolbar_theme_changed)
+        self.top_toolbar.addWidget(self.cmb_toolbar_theme)
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_h_layout = QHBoxLayout(central_widget)
@@ -255,6 +291,20 @@ class MainWindow(QMainWindow):
         self.page_settings.theme_changed.connect(self.apply_theme)
         self.page_settings.policy_changed.connect(self._on_policy_changed)
 
+        # Background task progress indicators
+        task_signals = TaskManager.instance().signals
+        task_signals.task_progress.connect(
+            lambda tid, cur, tot, msg: self.status_bar.showMessage(
+                f"{msg} ({cur}/{tot})" if tot > 0 else msg
+            )
+        )
+        task_signals.task_completed.connect(
+            lambda tid, res: self.status_bar.showMessage("Background task completed successfully.")
+        )
+        task_signals.task_failed.connect(
+            lambda tid, err: self.status_bar.showMessage(f"Task error: {err}")
+        )
+
     def switch_page(self, step: WorkflowStep) -> None:
         """Switch workspace page and synchronize navigation indicators."""
         idx = self.step_to_index.get(step, 0)
@@ -308,6 +358,7 @@ class MainWindow(QMainWindow):
         self.columns = columns
         self.records = records
         self.workflow_nav.mark_step_completed(WorkflowStep.DATA_SOURCE, True)
+        self.page_photos.set_columns(columns)
         self.page_photos.set_records(records)
         self._refresh_dashboard_metrics()
         self.status_bar.showMessage(f"Data source loaded: {len(records)} records ({report.valid_records} valid).")
@@ -376,12 +427,26 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"Project: {proj_str} • {rec_str} • Template: {tmpl_str}")
 
     def apply_theme(self, theme_name: str) -> None:
-        """Apply CSS stylesheet (dark or light)."""
-        sheet_path = get_resource_path("styles", f"{theme_name}_theme.qss")
-        if sheet_path.exists():
-            self.setStyleSheet(sheet_path.read_text(encoding="utf-8"))
-        else:
-            logger.warning("Theme file not found: %s", sheet_path)
+        """Apply Windows 11 Fluent theme via centralized ThemeManager."""
+        theme_str = str(theme_name).lower().strip()
+        if theme_str == "dark":
+            theme_str = "black"
+        elif theme_str == "light":
+            theme_str = "white"
+
+        ThemeManager.instance().set_theme(theme_str)
+
+        # Synchronize toolbar dropdown without re-triggering signal
+        if hasattr(self, "cmb_toolbar_theme"):
+            self.cmb_toolbar_theme.blockSignals(True)
+            idx = self.cmb_toolbar_theme.findData(theme_str)
+            if idx >= 0:
+                self.cmb_toolbar_theme.setCurrentIndex(idx)
+            self.cmb_toolbar_theme.blockSignals(False)
+
+    def _on_toolbar_theme_changed(self) -> None:
+        theme_val = self.cmb_toolbar_theme.currentData() or "black"
+        self.apply_theme(theme_val)
 
     # --- Project Save / Load / Relink ---
     def _new_project(self) -> None:

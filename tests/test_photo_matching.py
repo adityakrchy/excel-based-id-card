@@ -61,3 +61,49 @@ def test_photo_override(sample_photos_dir: Path):
     assert res.status == MatchStatus.OVERRIDDEN
     assert res.photo_path == str(override_file)
     assert res.is_overridden is True
+
+
+def test_generic_column_matching(sample_photos_dir: Path):
+    matcher = PhotoMatcher()
+    matcher.set_directory(sample_photos_dir)
+    matcher.set_key_column("EmpCode")
+
+    # Record using arbitrary EmpCode column instead of PIN
+    rec = SourceRecord(
+        row_index=1,
+        raw_pin="",
+        pin="",
+        data={"EmpCode": "100001", "Name": "Aditya"}
+    )
+    res = matcher.match_record(rec)
+    assert res.status == MatchStatus.MATCHED
+    assert res.photo_path is not None
+    assert "100001.jpg" in res.photo_path
+
+
+def test_stable_record_id_override_across_reordering(sample_photos_dir: Path):
+    matcher = PhotoMatcher()
+    matcher.set_directory(sample_photos_dir)
+
+    rec_a = SourceRecord(row_index=1, raw_pin="999001", pin="999001", data={"Name": "Person A"})
+    rec_b = SourceRecord(row_index=2, raw_pin="999002", pin="999002", data={"Name": "Person B"})
+
+    override_file = sample_photos_dir / "100001.jpg"
+    # Associate override with stable record_id
+    matcher.set_override(rec_a.record_id, str(override_file))
+
+    # Reorder records (rec_a now row 2)
+    reordered_a = SourceRecord(
+        record_id=rec_a.record_id,
+        row_index=2,
+        raw_pin="999001",
+        pin="999001",
+        data={"Name": "Person A"}
+    )
+    res_a = matcher.match_record(reordered_a)
+    assert res_a.status == MatchStatus.OVERRIDDEN
+    assert res_a.photo_path == str(override_file)
+
+    res_b = matcher.match_record(rec_b)
+    assert res_b.status == MatchStatus.MISSING
+

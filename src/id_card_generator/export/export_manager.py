@@ -79,11 +79,12 @@ class ExportManager:
             try:
                 if src_img_path.suffix.lower() != dest_ext or config.format == OutputFormat.JPEG:
                     with Image.open(src_img_path) as im:
+                        img_dpi = im.info.get("dpi", (300, 300))
                         if config.format == OutputFormat.JPEG:
                             rgb_im = im.convert("RGB")
-                            rgb_im.save(dest_file, format="JPEG", quality=config.jpeg_quality, optimize=True)
+                            rgb_im.save(dest_file, format="JPEG", quality=config.jpeg_quality, optimize=True, dpi=img_dpi)
                         else:
-                            im.save(dest_file, format="PNG", optimize=True)
+                            im.save(dest_file, format="PNG", optimize=True, dpi=img_dpi)
                 else:
                     shutil.copy2(src_img_path, dest_file)
 
@@ -91,21 +92,21 @@ class ExportManager:
                 result.exported_files.append(str(dest_file))
                 contact_sheet_items.append((dest_file, rev.pin, rev.name))
 
-                # Collect manifest metadata
-                manifest_entries.append({
+                # Collect manifest metadata (include all arbitrary columns)
+                entry = {
                     "pin": rev.pin,
                     "name": rev.name,
-                    "office_name": src_rec.get_value("Office Name") if src_rec else "",
-                    "designation": src_rec.get_value("Designation") if src_rec else "",
-                    "constituency": src_rec.get_value("Constituency") if src_rec else "",
-                    "source_pdf": src_rec.get_value("Source PDF") if src_rec else "",
-                    "source_page": src_rec.get_value("Page") if src_rec else "",
                     "source_row": str(src_rec.row_index) if src_rec else "",
                     "photo_path": match_res.photo_path if match_res else "",
                     "output_filename": dest_filename,
                     "review_status": str(rev.status.value),
                     "export_status": "Success",
-                })
+                }
+                if src_rec:
+                    for k, v in src_rec.data.items():
+                        if k not in entry:
+                            entry[k] = str(v)
+                manifest_entries.append(entry)
 
             except Exception as e:
                 logger.error("Failed to export card for PIN %s: %s", rev.pin, e)

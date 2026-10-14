@@ -1,60 +1,76 @@
-# Excel ID Card Generator
+# Excel ID Card Generator — Windows 11 ID Card Designer & Batch Generator
 
-A standalone desktop application for generating personalized, print-ready ID cards in bulk from Excel spreadsheets and photo directories.
+A polished, Windows 11 Fluent-inspired desktop application for designing custom ID cards, binding arbitrary spreadsheet columns to dynamic visual elements, associating photographs via generic key lookups, batch generating cards in bulk, sequentially reviewing results, and exporting approved cards with audit manifests and printable contact sheets.
 
 Built with **Python 3.12**, **PySide6 (Qt for Python)**, and **Pillow**, targeting Windows 10 & 11 (x64) without requiring Python to be installed on target systems.
 
 ---
 
-## Key Features
+## Key Features & Enhancements
 
-- **Spreadsheet Importer (`.xlsx`, `.xls`, `.csv`)**:
-  - Multi-sheet workbook selection and custom header row configuration.
-  - Automatic column detection (`PIN Number`, `Name`, `Designation`, `Office Name`, `Constituency`, etc.).
-  - Searchable, virtualized table with empty-cell detection, duplicate PIN alerts, and raw vs. normalized value preservation (safeguards leading zeros such as `00123` and avoids `100001.0` float corruption).
+### 1. Windows 11 Fluent-Inspired Interface
+- **Modern Restrained UI**: Segoe UI typography, rounded controls (4px - 8px radius), subtle 1px surface borders, consistent spacing, and accessible focus outlines.
+- **Three Selectable Themes**:
+  - **Black**: Fluent dark theme with charcoal and near-black surfaces (`#121214`, `#18181B`), readable high-contrast text, subtle neutral borders, and clear `#60CDFF` selection indicators.
+  - **White**: Fluent light theme with crisp white surfaces (`#FFFFFF`, `#F3F4F6`), dark text, and subtle separation.
+  - **System**: Automatically detects Windows dark/light mode appearance via the Windows registry (`AppsUseLightTheme`) with graceful fallback.
+- **Instant Runtime Switching**: Theme dropdown located directly in the main top application toolbar and in Settings, applying changes immediately across all widgets and dialogs without restart.
 
-- **Photograph Scanner & PIN Matching Engine**:
-  - Scans image directories (`.jpg`, `.jpeg`, `.png`, `.bmp`, `.webp`, `.tiff`).
-  - Matches filename stems against person PIN Numbers with case-insensitive normalization.
-  - Ambiguity detection: Flags multiple images matching the same PIN instead of arbitrarily selecting one.
-  - Manual photo override support and unassigned photo auditing.
+### 2. Generic Photograph Association & Safety
+- **Arbitrary Key Column**: Decoupled from mandatory PIN Number; user can choose *any* spreadsheet column as the lookup key (e.g. `Employee Code`, `Candidate ID`, `Staff Number`, `Photo Reference`, `Roll No`).
+- **Flexible Matching Rules**: Filename stem matching, configurable prefix/suffix rules (e.g. `EMP_`, `_id`), case-insensitive extension handling (`.jpg`, `.JPG`, `.png`, etc.), and leading-zero retention.
+- **Ambiguity Detection**: Flags multiple images matching the same identifier as `AMBIGUOUS` instead of arbitrarily picking one.
+- **Stable Manual Overrides**: Custom photo assignments survive spreadsheet refreshes and record reordering by anchoring directly to stable record identifiers.
 
-- **Interactive Visual Canvas Editor**:
-  - Built with `QGraphicsView` & `QGraphicsScene`.
-  - Scalable zoom, pan, rulers, alignment guides, and snapping grid.
-  - 8-point resize handles, dragging, and keyboard nudges (1px or 10px with Shift).
-  - Alignment and distribution tools (Left, Right, Center Horizontally/Vertically, Distribute).
-  - Right-side properties inspector: Position, size, font family, size, colors, borders, corner radius, fit modes, and mask shapes.
-  - Live WYSIWYG test bar: Navigate records and preview cards rendered in real-time.
+### 3. Physical Dimensions & Custom DPI Engine
+- **Canonical Measurement Units**: Seamless conversions between millimeters (`mm`), centimeters (`cm`), and inches (`inch`) without cumulative rounding errors.
+- **High-DPI Support**: Configurable print resolution (default 300 DPI, supports up to 2400 DPI) with lossless scaling calculations (`pixels = inches × DPI`).
+- **Standard Presets**: Instant selection for CR80 Standard (`85.60 × 53.98 mm`), CR79 (`83.90 × 52.10 mm`), and Oversized Visitor Badges (`100.00 × 70.00 mm`), with landscape/portrait orientation toggles.
+- **Authoritative DPI Metadata**: Embedded directly into exported PNG and JPEG image headers.
 
-- **Authoritative Pillow Rendering Engine**:
-  - Pixel-perfect local image synthesis.
-  - Dynamic text layout with line wrapping, line spacing, alignment, and auto-shrink font fitting.
-  - Anti-aliased image masks: Rectangular, circular, or rounded rectangle with custom borders.
-  - Resizing using `Image.Resampling.LANCZOS` with fit modes: `cover`, `contain`, `stretch`, and `crop`.
-  - Automated placeholder generation for records with missing photos.
+### 4. Blank Canvas Creation
+- Create blank documents from scratch with customized width, height, measurement unit, DPI, orientation, background color, and optional background surface image.
+- Completely clean workspace without unwanted decorative elements or preconfigured dummy fields.
 
-- **Background Batch Processing**:
-  - `QThread` execution with thread-safe Qt progress signals.
-  - Non-blocking UI with live record progress and cancellation support.
-  - Deterministic Windows-sanitized output filenames (`{PIN_NUMBER}_{NAME}.png`).
+### 5. Photoshop-Inspired Professional Canvas Editor
+- **70/30 Resizable Workspace**: 70% central interactive canvas with 30% right-side tabbed dock (`Properties`, `Layers`, `Data Mapping`).
+- **Narrow Vertical Icon Tool Strip (Left)**:
+  - ↖ Select / Move Tool (`V`)
+  - T Text Tool (`T`)
+  - {T} Dynamic Field Tool (`D`)
+  - 📷 Photo / Image Tool (`P`)
+  - ▭ Rectangle Tool (`U`)
+  - ▢ Rounded Rectangle Tool (`R`)
+  - ― Line Tool (`L`)
+  - ⛶ Fit Card to View (`F`)
+  - 1:1 Zoom 100% (`1`)
+- **Contextual Horizontal Options Bar (Top)**:
+  - Dynamically updates controls based on active selection:
+    - *Text Elements*: Font family, font size, bold, italic, text color picker, and alignment.
+    - *Shape Elements*: Fill color, stroke color, border width, and corner radius.
+    - *Photo Elements*: Fit mode (`cover`, `contain`, `stretch`, `crop`) and mask shape (`rect`, `circle`, `rounded`).
+    - *Document Mode*: Width, height, unit, DPI, zoom percentage, and fit-to-view.
+- **Integrated Layers Hierarchy Panel**:
+  - Live tree view of all canvas elements ordered by z-index.
+  - Inline visibility toggles (eye), lock toggles (padlock), reordering (Bring Forward / Send Backward), duplication, and deletion.
+- **Direct Dynamic Field Mapping Panel**:
+  - Interactive spreadsheet column list with quick *"Bind to Selected Element"* and *"+ Add Field"* actions.
+  - Live sample record navigator (◀ Prev, Next ▶, record search) displaying resolved values and real-time photo match status.
+- **Canvas Interaction**:
+  - 8-point resizing handles, dragging, keyboard nudging (1px or 10px with Shift), alignment tools, snapping grid, safe-area guides, undo/redo (`Ctrl+Z` / `Ctrl+Y`).
 
-- **Sequential Review Interface**:
-  - Mandatory quality assurance gate prior to export.
-  - Large card preview, sequential record navigation (`First`, `Prev`, `Next`, `Last`).
-  - Status management: `Approve`, `Reject`, `Mark for Correction`, `Skip`, or `Regenerate`.
-  - Batch actions and approval invalidation upon regeneration.
+### 6. Centralized Background Task Manager
+- Shared worker framework (`QThreadPool` and `QRunnable`) ensuring zero GUI freezing or direct widget manipulation from worker threads.
+- Thread-safe Qt progress signals (`task_progress`, `task_completed`, `task_failed`, `task_cancelled`) feeding real-time status bar indicators.
 
-- **Export Manager & Audit Artifacts**:
-  - User-selected destination directory.
-  - Configurable formats: PNG (lossless) or JPEG with quality slider.
-  - Filter: Export approved cards only or all generated cards.
-  - Automated **CSV Audit Manifest** (`export_manifest.csv`) detailing PINs, names, source rows, photo paths, and review timestamps.
+### 7. Authoritative Pillow Rendering, Sequential Review & Audit Export
+- **Authoritative Image Synthesis**: Canvas preview and final exported cards use the exact same Pillow rendering pipeline.
+- **Sequential Review Interface**: Dedicated QA stage with large preview, sequential navigation, per-record approval (`Approve`, `Reject`, `Mark for Correction`, `Regenerate`).
+- **Audit Export**:
+  - Export approved cards only or all generated cards.
+  - Lossless PNG or high-quality JPEG with quality compression slider.
+  - Comprehensive **CSV Audit Manifest** (`export_manifest.csv`) detailing all spreadsheet fields, photo paths, and review outcomes.
   - Automated **Printable PDF Contact Sheet** (`contact_sheet.pdf`) via ReportLab.
-
-- **Project Persistence**:
-  - Save and load complete project states (`.json`).
-  - Automated relinking modal to resolve moved spreadsheets or photo folders without crashing.
 
 ---
 
@@ -62,64 +78,60 @@ Built with **Python 3.12**, **PySide6 (Qt for Python)**, and **Pillow**, targeti
 
 ```
 excel-id-card/
-├── main.py                          # Root application launcher
+├── main.py                          # Application entry point
 ├── pyproject.toml                   # Project configuration and metadata
-├── requirements.txt                 # Pinned dependencies
+├── requirements.txt                 # Dependencies
 ├── src/
 │   └── id_card_generator/
 │       ├── app.py                   # QApplication lifecycle & startup
-│       ├── core/                    # Models, constants, exceptions, logging, project manager
-│       ├── data/                    # Excel importer, normalizer, validator, photo scanner & matcher
-│       ├── templates/               # Built-in and custom template loader & validator
-│       ├── editor/                  # QGraphicsView/Scene, canvas items, inspector, undo manager
-│       ├── rendering/               # Pillow renderer, text layout, image processing, font manager
-│       ├── generation/              # Batch generator & background QThread worker
+│       ├── core/                    # Models, constants, geometry conversion, logging, project manager
+│       │   ├── geometry.py          # Canonical physical dimensions & DPI conversion
+│       │   └── models.py            # Pydantic schemas (TemplateDefinition, SourceRecord, etc.)
+│       ├── data/                    # Excel importer, normalizer, validator, photo scanner & generic matcher
+│       ├── templates/               # Built-in and user template manager & validator
+│       ├── editor/                  # QGraphicsView/Scene, canvas items, inspector, layers, field mapping
+│       │   ├── field_mapping_panel.py # Direct dynamic spreadsheet field mapping panel
+│       │   ├── layers_panel.py      # Layer hierarchy, ordering, visibility, and lock controls
+│       │   └── canvas_items.py      # Interactive canvas items with 8-point handles
+│       ├── tasks/                   # Centralized background task manager and runnable workers
+│       ├── rendering/               # Authoritative Pillow renderer, text layout, image processing
+│       ├── generation/              # Batch generator & staging area manager
 │       ├── review/                  # Sequential review manager & status tracker
 │       ├── export/                  # Export manager, CSV manifest writer, PDF contact sheet
-│       ├── ui/                      # PySide6 main window, workflow navigation, pages, and dialogs
-│       └── resources/               # QSS stylesheets (Dark & Light themes), icons, fonts
-├── tests/                           # Comprehensive Pytest & Pytest-Qt test suite
+│       ├── ui/                      # Windows 11 UI, main window, theme manager, pages, and dialogs
+│       │   ├── theme_manager.py     # Windows 11 Fluent ThemeManager (Black, White, System)
+│       │   └── dialogs/             # BlankCanvasDialog, RelinkDialog
+│       └── resources/               # Built-in templates, stylesheets, icons, fonts
+├── tests/                           # Complete 30-test automated suite (pytest & pytest-qt)
 ├── packaging/
-│   ├── id_card_generator.spec       # PyInstaller standalone configuration
+│   ├── id_card_generator.spec       # PyInstaller standalone executable specification
 │   └── installer.iss                # Inno Setup Windows installer script
-└── scripts/
-    ├── build_windows.ps1            # PowerShell automated build script
-    └── clean_build.ps1              # Cleanup script
+└── .github/workflows/
+    └── build-windows.yml            # CI/CD Windows automated build workflow
 ```
 
 ---
 
-## Getting Started
+## Running Locally
 
-### Prerequisites
-
-- Python 3.10, 3.11, or 3.12 (Python 3.12 recommended).
-- Git.
-
-### 1. Installation
-
-Clone repository and install dependencies:
+### 1. Setup Environment
 
 ```bash
-git clone https://github.com/your-org/excel-id-card.git
-cd excel-id-card
+# Clone the repository
+git clone https://github.com/adityakrchy/excel-based-id-card.git
+cd excel-based-id-card
 
-# Using standard virtual environment:
+# Create and activate virtual environment
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate       # macOS / Linux
+# .venv\Scripts\activate        # Windows PowerShell
+
+# Install dependencies
 pip install -r requirements.txt
 pip install -e .
-
-# Or using uv:
-uv venv --python 3.12
-source .venv/bin/activate
-uv pip install -r requirements.txt
-uv pip install -e .
 ```
 
-### 2. Running Locally
-
-Launch the application:
+### 2. Launch Application
 
 ```bash
 python main.py
@@ -127,71 +139,57 @@ python main.py
 
 ---
 
-## User Workflow Guide
+## Running the Automated Test Suite
 
-1. **Dashboard**: View project summary, review metrics, and validation alerts.
-2. **Data Source**: Click **Browse Spreadsheet...** to import `.xlsx`, `.xls`, or `.csv`. Select worksheet and header row. Inspect the preview table.
-3. **Photos**: Click **Select Photo Folder...** to choose image folder. Inspect matched thumbnails or assign manual overrides.
-4. **Templates**: Pick one of three built-in templates (*Classic Portrait*, *Modern Corporate*, or *Government/Office ID Card*) or import a custom JSON template.
-5. **Canvas Editor**: Drag elements, resize with 8-point handles, modify colors/fonts in the right inspector, and test with live records.
-6. **Generate Cards**: Review the pre-flight checklist and click **Generate All ID Cards**.
-7. **Review Cards**: Sequentially inspect generated cards, verify photos, and click **Approve Card** or **Approve All Valid Cards**.
-8. **Export Cards**: Choose output folder, toggle CSV Manifest and PDF Contact Sheet, and click **Export Cards Now**.
-
----
-
-## Automated Test Suite
-
-Run the full automated test suite:
+The repository includes a comprehensive 30-test suite verifying unit conversions, generic matching, canvas items, Pillow rendering, batch generation, review, export, and UI workflows:
 
 ```bash
-# Backend unit & integration tests
+# Run all tests
 pytest tests/
 
-# With Qt offscreen flag for headless CI environments:
+# Headless mode (for CI or servers)
 QT_QPA_PLATFORM=offscreen pytest tests/
 ```
 
-### Test Coverage Highlights
-- `test_excel_importer.py`: Sheet inspection, data typing, leading zero retention, CSV fallback.
-- `test_data_validation.py`: Missing PIN flags, duplicate detection, whitespace warnings.
-- `test_photo_matching.py`: Case-insensitive stem matching, format handling, ambiguous match detection, manual overrides.
-- `test_template_validation.py`: Schema validation, dimension limits, safety traversal checks.
-- `test_pillow_renderer.py`: High-DPI rendering, masks, auto-shrink text layout, RGB flattening for JPEG.
-- `test_batch_generation.py`: Deterministic naming, background processing, collision resolution.
-- `test_review_workflow.py`: Per-record approval, rejection, and invalidation upon regeneration.
-- `test_export_manager.py`: File copy/conversion, audit CSV generation, ReportLab contact sheet creation.
-- `test_project_persistence.py`: JSON save/load, missing asset detection, relinking workflow.
-- `test_ui_workflow.py`: PySide6 MainWindow navigation, workflow stepper synchronization, theme switching.
+### Verified Test Suites (30/30 Passing):
+- `tests/test_geometry.py`: Canonical mm/cm/inch conversions, custom DPI scaling, orientation adjustments.
+- `tests/test_photo_matching.py`: Arbitrary column selection, prefix/suffix matching, case-insensitive extensions, ambiguous matches, stable `record_id` manual overrides across reordering.
+- `tests/test_task_manager.py`: Centralized background task runner, thread pool dispatching, progress signals.
+- `tests/test_end_to_end_workflow.py`: Complete synthetic end-to-end pipeline (Excel import -> generic photo matching -> blank canvas design -> batch generation -> review approvals -> export with CSV manifest).
+- `tests/test_excel_importer.py`: Worksheet discovery, leading zero retention, CSV fallback.
+- `tests/test_data_validation.py`: Missing values, duplicate detection, data integrity.
+- `tests/test_pillow_renderer.py`: Authoritative rendering, masks, auto-shrink text, RGB flattening.
+- `tests/test_batch_generation.py`: Sanitized filename creation, background rendering.
+- `tests/test_review_workflow.py`: Sequential review, approval invalidation upon regeneration.
+- `tests/test_export_manager.py`: Filtered export, CSV manifest, ReportLab PDF contact sheet.
+- `tests/test_project_persistence.py`: JSON project serialization and reference relinking.
+- `tests/test_ui_workflow.py`: PySide6 MainWindow navigation, workflow stepper synchronization, theme switching.
 
 ---
 
-## Windows Packaging & Release
+## Windows Packaging
 
-### Standalone Executable (PyInstaller)
+### 1. Build Standalone Executable (PyInstaller)
 
-Run the automated build script on Windows PowerShell:
+To build a standalone executable on Windows:
 
 ```powershell
-.\scripts\build_windows.ps1
-```
-
-Or manually:
-
-```bash
 pyinstaller --clean packaging/id_card_generator.spec
 ```
 
-The resulting standalone folder will be located at:
-`dist/ExcelIDCardGenerator/ExcelIDCardGenerator.exe`
+The resulting standalone executable will be generated at:
+`dist\ExcelIDCardGenerator\ExcelIDCardGenerator.exe`
 
-### Inno Setup Installer
+### 2. Build Inno Setup Installer
 
-To create a Windows setup installer (`.exe`) with Start Menu and Desktop shortcuts:
-1. Install [Inno Setup 6](https://jrsoftware.org/isdl.php).
-2. Open `packaging/installer.iss` in Inno Setup Compiler.
-3. Click **Build > Compile**.
-4. The output installer will be created in `dist/installer/ExcelIDCardGenerator-Setup-1.0.0.exe`.
+To compile the setup installer:
+1. Open `packaging\installer.iss` in [Inno Setup 6](https://jrsoftware.org/isdl.php).
+2. Click **Build > Compile** (or run `ISCC.exe packaging\installer.iss`).
+3. The installer `ExcelIDCardGenerator-Setup-1.0.0.exe` will be generated in `dist\installer\`.
+
+### 3. Automated GitHub Actions CI/CD
+
+The workflow `.github/workflows/build-windows.yml` runs on `windows-latest` on every push to `main`, running the test suite, compiling the PyInstaller executable, compiling the Inno Setup installer, and uploading the artifacts for direct download.
 
 ---
 

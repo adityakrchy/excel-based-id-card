@@ -79,9 +79,16 @@ class BatchGenerator:
                 )
 
         # Generate unique sanitized filename
-        raw_name = record.get_value("Name", "Card")
+        raw_name = record.get_value("Name", "")
+        if not raw_name:
+            for k, v in record.data.items():
+                if "name" in k.lower() and v:
+                    raw_name = str(v)
+                    break
+        raw_name = raw_name or "Card"
+
         sanitized_name = DataNormalizer.sanitize_filename(raw_name)
-        sanitized_pin = DataNormalizer.sanitize_filename(record.pin)
+        sanitized_pin = DataNormalizer.sanitize_filename(record.pin or record.raw_pin or "ID")
         ext = ".jpg" if settings.output_format == OutputFormat.JPEG else ".png"
 
         filename = f"{sanitized_pin}_{sanitized_name}{ext}"
@@ -102,12 +109,13 @@ class BatchGenerator:
             )
             warnings.extend(render_warnings)
 
-            # Save image
+            # Save image with authoritative DPI metadata
             target_dir.mkdir(parents=True, exist_ok=True)
+            card_dpi = (template.dpi, template.dpi)
             if settings.output_format == OutputFormat.JPEG:
-                img.save(out_path, format="JPEG", quality=settings.jpeg_quality, optimize=True)
+                img.save(out_path, format="JPEG", quality=settings.jpeg_quality, optimize=True, dpi=card_dpi)
             else:
-                img.save(out_path, format="PNG", optimize=True)
+                img.save(out_path, format="PNG", optimize=True, dpi=card_dpi)
 
             return RenderResult(
                 record_id=record.record_id,

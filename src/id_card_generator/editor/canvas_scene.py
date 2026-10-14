@@ -10,6 +10,7 @@ from PySide6.QtGui import (
     QPainter,
     QPen,
     QPixmap,
+    QUndoStack,
 )
 from PySide6.QtWidgets import QGraphicsScene
 
@@ -29,6 +30,7 @@ class CanvasScene(QGraphicsScene):
         super().__init__(parent)
         self.template: Optional[TemplateDefinition] = None
         self._items_by_id: Dict[str, CanvasItem] = {}
+        self.undo_stack = QUndoStack(self)
 
         self.snap_to_grid = True
         self.grid_size = 10.0
@@ -40,6 +42,18 @@ class CanvasScene(QGraphicsScene):
         self._background_pixmap: Optional[QPixmap] = None
 
         self.selectionChanged.connect(self._on_selection_changed)
+
+    def undo(self) -> None:
+        """Undo last canvas action."""
+        self.undo_stack.undo()
+        self.update()
+        self.template_modified.emit()
+
+    def redo(self) -> None:
+        """Redo last undone canvas action."""
+        self.undo_stack.redo()
+        self.update()
+        self.template_modified.emit()
 
     def load_template(self, template: TemplateDefinition) -> None:
         """Load a template definition into the scene."""

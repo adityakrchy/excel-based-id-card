@@ -55,6 +55,11 @@ class TemplatePage(QWidget):
 
         top_bar.addStretch()
 
+        self.btn_blank = QPushButton("+ Create Blank Canvas...")
+        self.btn_blank.setObjectName("btn_primary")
+        self.btn_blank.clicked.connect(self._create_blank_canvas)
+        top_bar.addWidget(self.btn_blank)
+
         self.btn_import = QPushButton("Import Template JSON...")
         self.btn_import.clicked.connect(self._import_template)
         top_bar.addWidget(self.btn_import)
@@ -218,3 +223,20 @@ class TemplatePage(QWidget):
         if confirm == QMessageBox.Yes:
             self.manager.delete_user_template(self.active_template.id)
             self._load_templates()
+
+    def _create_blank_canvas(self) -> None:
+        from id_card_generator.ui.dialogs.blank_canvas_dialog import BlankCanvasDialog
+        dialog = BlankCanvasDialog(self)
+        if dialog.exec():
+            tmpl = dialog.template_definition
+            if tmpl:
+                self.manager.save_user_template(tmpl)
+                self._load_templates()
+                # Select the new template
+                for idx in range(self.list_widget.count()):
+                    item = self.list_widget.item(idx)
+                    if item.data(Qt.UserRole) == tmpl.id:
+                        self.list_widget.setCurrentItem(item)
+                        break
+                self.template_selected.emit(tmpl)
+                self.open_editor_requested.emit()

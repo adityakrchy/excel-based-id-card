@@ -24,12 +24,22 @@ def get_base_dir() -> Path:
 
 def get_resource_path(*relative_parts: str) -> Path:
     """Resolve an application resource path."""
-    return get_base_dir() / "resources" / Path(*relative_parts)
+    p = get_base_dir() / "resources" / Path(*relative_parts)
+    if not p.exists():
+        alt = get_base_dir() / "id_card_generator" / "resources" / Path(*relative_parts)
+        if alt.exists():
+            return alt
+    return p
 
 
 def get_builtin_templates_dir() -> Path:
     """Return the directory containing built-in template JSON definitions."""
-    return get_base_dir() / "templates" / "builtins"
+    p = get_base_dir() / "templates" / "builtins"
+    if not p.exists():
+        alt = get_base_dir() / "id_card_generator" / "templates" / "builtins"
+        if alt.exists():
+            return alt
+    return p
 
 
 def get_app_data_dir() -> Path:

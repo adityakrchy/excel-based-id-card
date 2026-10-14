@@ -1,4 +1,4 @@
-"""Photograph directory scanning, matching review, and manual override panel."""
+"""Photograph directory scanning, generic lookup matching, and manual override panel."""
 
 import logging
 from pathlib import Path
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class PhotoLibraryPage(QWidget):
-    """Manages photograph directory, displays matching table with thumbnails, and handles overrides."""
+    """Manages photograph directory, generic column matching, and manual associations."""
 
     matching_updated = Signal(object, object)  # (match_results_dict, match_summary)
 
@@ -37,6 +38,7 @@ class PhotoLibraryPage(QWidget):
         super().__init__(parent)
         self.matcher = PhotoMatcher()
         self.records: List[SourceRecord] = []
+        self.columns: List[str] = []
         self.match_results: Dict[str, PhotoMatchResult] = {}
         self.match_summary: Optional[MatchSummary] = None
 
@@ -44,8 +46,8 @@ class PhotoLibraryPage(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
 
         # 1. Directory Selection Card
         top_card = QFrame()
@@ -59,7 +61,7 @@ class PhotoLibraryPage(QWidget):
         self.lbl_photo_dir = QLabel("<i>No photo directory selected</i>")
         self.lbl_photo_dir.setStyleSheet("color: #94A3B8; font-weight: 500;")
 
-        self.btn_rescan = QPushButton("Rescan Directory")
+        self.btn_rescan = QPushButton("Rescan Folder")
         self.btn_rescan.setEnabled(False)
         self.btn_rescan.clicked.connect(self._rescan)
 
@@ -68,9 +70,40 @@ class PhotoLibraryPage(QWidget):
         top_layout.addWidget(self.btn_rescan)
         layout.addWidget(top_card)
 
-        # 2. Filter & Summary Bar
+        # 2. Matching Rules Card (Generic Column, Prefix, Suffix)
+        rules_card = QFrame()
+        rules_card.setObjectName("card_panel")
+        rules_layout = QHBoxLayout(rules_card)
+        rules_layout.setContentsMargins(10, 8, 10, 8)
+        rules_layout.setSpacing(12)
+
+        rules_layout.addWidget(QLabel("<b>Photo Lookup Key Column:</b>"))
+        self.cmb_key_col = QComboBox()
+        self.cmb_key_col.addItem("Auto-Detect (PIN / ID)")
+        self.cmb_key_col.currentIndexChanged.connect(self._on_rule_changed)
+        rules_layout.addWidget(self.cmb_key_col)
+
+        rules_layout.addSpacing(8)
+        rules_layout.addWidget(QLabel("Prefix:"))
+        self.txt_prefix = QLineEdit()
+        self.txt_prefix.setPlaceholderText("e.g. EMP_")
+        self.txt_prefix.setFixedWidth(80)
+        self.txt_prefix.textChanged.connect(self._on_rule_changed)
+        rules_layout.addWidget(self.txt_prefix)
+
+        rules_layout.addWidget(QLabel("Suffix:"))
+        self.txt_suffix = QLineEdit()
+        self.txt_suffix.setPlaceholderText("e.g. _id")
+        self.txt_suffix.setFixedWidth(80)
+        self.txt_suffix.textChanged.connect(self._on_rule_changed)
+        rules_layout.addWidget(self.txt_suffix)
+
+        rules_layout.addStretch()
+        layout.addWidget(rules_card)
+
+        # 3. Filter & Summary Metrics Bar
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Filter Records:"))
+        filter_row.addWidget(QLabel("Filter:"))
         self.cmb_filter = QComboBox()
         self.cmb_filter.addItems([
             "All Records",
@@ -83,30 +116,41 @@ class PhotoLibraryPage(QWidget):
         filter_row.addWidget(self.cmb_filter)
 
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("Search by PIN or Name...")
+        self.txt_search.setPlaceholderText("Search by identifier, name, or file...")
         self.txt_search.textChanged.connect(self._filter_table)
         filter_row.addWidget(self.txt_search, stretch=1)
 
         self.lbl_metrics = QLabel("0 matched")
-        self.lbl_metrics.setStyleSheet("font-weight: 600; color: #64748B;")
+        self.lbl_metrics.setStyleSheet("font-weight: 600; color: #60CDFF;")
         filter_row.addWidget(self.lbl_metrics)
         layout.addLayout(filter_row)
 
-        # 3. Matching Table
+        # 4. Association Table
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
-            "PIN Number",
-            "Name",
+            "Lookup Key Value",
+            "Record Name / Info",
             "Thumbnail",
             "Match Status",
-            "Resolved File Path",
-            "Override Action",
+            "Selected Image File",
+            "Override Status",
+            "Action",
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         self.table.setIconSize(self.table.iconSize() * 2)
         layout.addWidget(self.table)
+
+    def set_columns(self, columns: List[str]) -> None:
+        """Set available spreadsheet columns in lookup combo."""
+        self.columns = columns
+        self.cmb_key_col.blockSignals(True)
+        self.cmb_key_col.clear()
+        self.cmb_key_col.addItem("Auto-Detect (PIN / ID)", "")
+        for col in columns:
+            self.cmb_key_col.addItem(col, col)
+        self.cmb_key_col.blockSignals(False)
 
     def set_records(self, records: List[SourceRecord]) -> None:
         """Receive imported spreadsheet records."""
@@ -118,6 +162,15 @@ class PhotoLibraryPage(QWidget):
         self.lbl_photo_dir.setText(str(photo_dir))
         self.btn_rescan.setEnabled(True)
         self.matcher.set_directory(photo_dir)
+        self._rematch()
+
+    def _on_rule_changed(self) -> None:
+        key_col = self.cmb_key_col.currentData()
+        self.matcher.set_key_column(key_col if key_col else None)
+        self.matcher.set_affixes(
+            prefix=self.txt_prefix.text().strip(),
+            suffix=self.txt_suffix.text().strip(),
+        )
         self._rematch()
 
     def _browse_directory(self) -> None:
@@ -150,16 +203,23 @@ class PhotoLibraryPage(QWidget):
 
         for row_idx, rec in enumerate(self.records):
             match = self.match_results.get(rec.record_id)
+            key_val = self.matcher.get_lookup_key_value(rec)
 
-            # PIN Number
-            item_pin = QTableWidgetItem(rec.pin or rec.raw_pin)
-            self.table.setItem(row_idx, 0, item_pin)
+            # 0. Lookup Key
+            item_key = QTableWidgetItem(key_val or rec.pin)
+            self.table.setItem(row_idx, 0, item_key)
 
-            # Name
-            item_name = QTableWidgetItem(rec.get_value("Name", ""))
+            # 1. Name or other column
+            name = rec.get_value("Name", "")
+            if not name:
+                for k, v in rec.data.items():
+                    if "name" in k.lower() and v:
+                        name = str(v)
+                        break
+            item_name = QTableWidgetItem(name)
             self.table.setItem(row_idx, 1, item_name)
 
-            # Thumbnail
+            # 2. Thumbnail
             thumb_item = QTableWidgetItem()
             if match and match.photo_path and Path(match.photo_path).exists():
                 pix = QPixmap(match.photo_path)
@@ -167,49 +227,56 @@ class PhotoLibraryPage(QWidget):
                     thumb_item.setIcon(QIcon(pix.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation)))
             self.table.setItem(row_idx, 2, thumb_item)
 
-            # Match Status
+            # 3. Match Status
             status_text = match.status.value.upper() if match else "MISSING"
             item_status = QTableWidgetItem(status_text)
             if match and match.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN):
-                item_status.setForeground(QColor("#059669"))
+                item_status.setForeground(QColor("#22C55E"))
             elif match and match.status == MatchStatus.AMBIGUOUS:
-                item_status.setForeground(QColor("#D97706"))
-                item_status.setBackground(QColor(245, 158, 11, 40))
+                item_status.setForeground(QColor("#EAB308"))
             else:
-                item_status.setForeground(QColor("#DC2626"))
-                item_status.setBackground(QColor(239, 68, 68, 40))
+                item_status.setForeground(QColor("#EF4444"))
 
             item_status.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 3, item_status)
 
-            # Resolved Path
+            # 4. Resolved Path
             path_str = match.photo_path or match.details if match else "No match"
             item_path = QTableWidgetItem(path_str)
             self.table.setItem(row_idx, 4, item_path)
 
-            # Action button
-            action_btn = QPushButton("Override..." if not match or not match.is_overridden else "Clear Override")
+            # 5. Override Status
+            override_str = "Custom Override" if (match and match.is_overridden) else "Automatic"
+            item_override = QTableWidgetItem(override_str)
             if match and match.is_overridden:
-                action_btn.clicked.connect(lambda ch=False, p=rec.pin: self._clear_override(p))
+                item_override.setForeground(QColor("#A855F7"))
+            self.table.setItem(row_idx, 5, item_override)
+
+            # 6. Action button
+            action_btn = QPushButton("Assign Photo..." if not match or not match.is_overridden else "Clear Override")
+            if match and match.is_overridden:
+                action_btn.clicked.connect(lambda ch=False, rid=rec.record_id: self._clear_override(rid))
             else:
-                action_btn.clicked.connect(lambda ch=False, p=rec.pin: self._manual_override(p))
-            self.table.setCellWidget(row_idx, 5, action_btn)
+                action_btn.clicked.connect(lambda ch=False, rid=rec.record_id, kv=key_val: self._manual_override(rid, kv))
+            self.table.setCellWidget(row_idx, 6, action_btn)
 
         self._filter_table()
 
-    def _manual_override(self, pin: str) -> None:
+    def _manual_override(self, record_id: str, key_val: str) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            f"Select Photograph for PIN '{pin}'",
+            f"Select Photograph for Record '{key_val}'",
             str(self.matcher.photo_dir) if self.matcher.photo_dir else "",
             "Images (*.jpg *.jpeg *.png *.bmp *.webp *.tiff)",
         )
         if file_path:
-            self.matcher.set_override(pin, file_path)
+            self.matcher.set_override(record_id, file_path)
+            if key_val:
+                self.matcher.set_override(key_val, file_path)
             self._rematch()
 
-    def _clear_override(self, pin: str) -> None:
-        self.matcher.remove_override(pin)
+    def _clear_override(self, record_id: str) -> None:
+        self.matcher.remove_override(record_id)
         self._rematch()
 
     def _filter_table(self) -> None:
@@ -220,7 +287,6 @@ class PhotoLibraryPage(QWidget):
             status_item = self.table.item(r, 3)
             status_text = status_item.text() if status_item else ""
 
-            # Check status match
             status_ok = True
             if filter_idx == 1 and "MATCHED" not in status_text and "OVERRIDDEN" not in status_text:
                 status_ok = False
@@ -231,11 +297,11 @@ class PhotoLibraryPage(QWidget):
             elif filter_idx == 4 and "OVERRIDDEN" not in status_text:
                 status_ok = False
 
-            # Check query match
             query_ok = True
             if query:
-                pin_text = self.table.item(r, 0).text().lower() if self.table.item(r, 0) else ""
+                key_text = self.table.item(r, 0).text().lower() if self.table.item(r, 0) else ""
                 name_text = self.table.item(r, 1).text().lower() if self.table.item(r, 1) else ""
-                query_ok = (query in pin_text or query in name_text)
+                path_text = self.table.item(r, 4).text().lower() if self.table.item(r, 4) else ""
+                query_ok = (query in key_text or query in name_text or query in path_text)
 
             self.table.setRowHidden(r, not (status_ok and query_ok))

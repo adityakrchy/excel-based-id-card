@@ -42,6 +42,8 @@ class SourceRecord(BaseModel):
 class PhotoMatchResult(BaseModel):
     """Result of matching a photograph for a record."""
     pin: str
+    key_value: Optional[str] = None
+    record_id: Optional[str] = None
     status: MatchStatus = MatchStatus.MISSING
     photo_path: Optional[str] = None
     candidate_paths: List[str] = Field(default_factory=list)
@@ -96,10 +98,18 @@ class TemplateDefinition(BaseModel):
     width_px: int = CR80_WIDTH_PX
     height_px: int = CR80_HEIGHT_PX
     dpi: int = DEFAULT_DPI
+    unit: str = "mm"
+    width_physical: Optional[float] = None
+    height_physical: Optional[float] = None
+    orientation: str = "portrait"
     background_color: str = "#FFFFFF"
     background_image_path: Optional[str] = None
     elements: List[CanvasElement] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def is_landscape(self) -> bool:
+        return self.width_px >= self.height_px
 
     def get_element_by_id(self, elem_id: str) -> Optional[CanvasElement]:
         for el in self.elements:
@@ -169,9 +179,13 @@ class ProjectConfiguration(BaseModel):
     sheet_name: Optional[str] = None
     header_row: int = 0
     photo_dir_path: Optional[str] = None
+    photo_key_column: Optional[str] = None
+    photo_prefix: str = ""
+    photo_suffix: str = ""
+    theme: str = "system"
     template: Optional[TemplateDefinition] = None
     column_mappings: Dict[str, str] = Field(default_factory=dict)  # element_id -> column_name
-    photo_overrides: Dict[str, str] = Field(default_factory=dict)  # pin -> photo_path
+    photo_overrides: Dict[str, str] = Field(default_factory=dict)  # record_id or key -> photo_path
     missing_photo_policy: MissingPhotoPolicy = MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER
     review_states: Dict[str, ReviewStatus] = Field(default_factory=dict)  # record_id -> ReviewStatus
     last_export_dir: Optional[str] = None

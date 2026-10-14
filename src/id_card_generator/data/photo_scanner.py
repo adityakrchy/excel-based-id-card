@@ -18,7 +18,7 @@ class PhotoScanner:
         """Scan a directory and index image files by normalized stem.
         
         Returns:
-            Dictionary mapping normalized_pin -> List[Path to image files]
+            Dictionary mapping normalized_stem -> List[Path to image files]
         """
         index: Dict[str, List[Path]] = defaultdict(list)
         if not photo_dir.exists() or not photo_dir.is_dir():
