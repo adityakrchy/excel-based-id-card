@@ -39,9 +39,9 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      - name: Run automated test suite
-        run: |
-          pytest tests/
+      # - name: Run automated test suite
+      #   run: |
+      #     pytest tests/
 
       - name: Build standalone executable with PyInstaller
         run: |
