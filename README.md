@@ -1,3 +1,4 @@
+[![Build Windows Application](https://github.com/adityakrchy/excel-based-id-card/actions/workflows/build-windows.yml/badge.svg)](https://github.com/adityakrchy/excel-based-id-card/actions/workflows/build-windows.yml)
 # Excel ID Card Generator — Windows 11 ID Card Designer & Batch Generator
 
 A polished, Windows 11 Fluent-inspired desktop application for designing custom ID cards, binding arbitrary spreadsheet columns to dynamic visual elements, associating photographs via generic key lookups, batch generating cards in bulk, sequentially reviewing results, and exporting approved cards with audit manifests and printable contact sheets.
