@@ -1,7 +1,7 @@
 """Custom QGraphicsView with zoom, pan, enlarged auto-fit, and smooth navigation."""
 
 import logging
-from PySide6.QtCore import QPoint, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QPainter, QWheelEvent
 from PySide6.QtWidgets import QGraphicsView
 
@@ -12,9 +12,11 @@ class CanvasView(QGraphicsView):
     """Interactive viewport for the ID card graphics scene with enlarged presentation."""
 
     zoom_changed = Signal(float)
+    cursor_moved = Signal(QPointF)
 
     def __init__(self, scene=None, parent=None):
         super().__init__(scene, parent)
+        self.setMouseTracking(True)
         self.setRenderHints(
             QPainter.Antialiasing
             | QPainter.SmoothPixmapTransform
@@ -87,6 +89,11 @@ class CanvasView(QGraphicsView):
             event.accept()
         else:
             super().wheelEvent(event)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        scene_pos = self.mapToScene(event.pos())
+        self.cursor_moved.emit(scene_pos)
 
     def keyPressEvent(self, event):
         """Forward undo and redo shortcuts to canvas scene."""

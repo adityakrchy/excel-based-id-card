@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -70,8 +70,13 @@ class ExportPage(QWidget):
         self.lbl_dest_dir = QLabel("<i>No output directory selected</i>")
         self.lbl_dest_dir.setStyleSheet("color: #94A3B8; font-weight: 500;")
 
+        self.btn_open_dest = QPushButton("Open Output Folder")
+        self.btn_open_dest.setToolTip("Open output directory in file manager")
+        self.btn_open_dest.clicked.connect(self._open_in_explorer)
+
         dest_layout.addWidget(self.btn_browse_dest)
         dest_layout.addWidget(self.lbl_dest_dir, stretch=1)
+        dest_layout.addWidget(self.btn_open_dest)
         layout.addWidget(dest_card)
 
         # 2. Export Configuration Card
@@ -117,6 +122,11 @@ class ExportPage(QWidget):
         self.chk_contact_sheet.setChecked(True)
         opt_layout.addWidget(self.chk_contact_sheet)
 
+        # Automatic open checkbox
+        self.chk_auto_open = QCheckBox("Open output directory automatically when export completes")
+        self.chk_auto_open.setChecked(True)
+        opt_layout.addWidget(self.chk_auto_open)
+
         layout.addWidget(opt_card)
 
         # 3. Primary Export Action & Result Card
@@ -134,9 +144,10 @@ class ExportPage(QWidget):
         self.lbl_export_result.setWordWrap(True)
         act_layout.addWidget(self.lbl_export_result)
 
-        self.btn_open_folder = QPushButton("Open Destination in File Explorer")
-        self.btn_open_folder.setVisible(False)
+        self.btn_open_folder = QPushButton("Open Output Folder")
+        self.btn_open_folder.setVisible(True)
         self.btn_open_folder.clicked.connect(self._open_in_explorer)
+        self.btn_open_output_folder = self.btn_open_folder
         act_layout.addWidget(self.btn_open_folder)
 
         layout.addWidget(action_card)
@@ -167,8 +178,12 @@ class ExportPage(QWidget):
     def _browse_destination(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select Output Directory")
         if folder:
-            self.last_export_dir = Path(folder)
-            self.lbl_dest_dir.setText(str(folder))
+            self.set_destination_dir(folder)
+
+    def set_destination_dir(self, folder: Union[str, Path]) -> None:
+        """Set the destination directory and update UI labels."""
+        self.last_export_dir = Path(folder)
+        self.lbl_dest_dir.setText(str(folder))
 
     def _on_format_changed(self, idx: int) -> None:
         is_jpeg = idx == 1
@@ -183,6 +198,9 @@ class ExportPage(QWidget):
             QMessageBox.warning(self, "No Records", "No reviewed records available to export.")
             return
 
+        self.btn_execute_export.setEnabled(False)
+        self.btn_execute_export.setText("Exporting Cards...")
+
         is_jpeg = self.cmb_format.currentIndex() == 1
         config = ExportConfiguration(
             output_dir=str(self.last_export_dir),
@@ -191,6 +209,7 @@ class ExportPage(QWidget):
             approved_only=self.chk_approved_only.isChecked(),
             export_manifest=self.chk_manifest.isChecked(),
             export_contact_sheet=self.chk_contact_sheet.isChecked(),
+            open_output_dir_on_complete=self.chk_auto_open.isChecked(),
         )
 
         try:
@@ -203,9 +222,10 @@ class ExportPage(QWidget):
 
             msg = (
                 f"<b>Export Complete!</b><br>"
-                f"• {result.exported_count} cards successfully exported to {self.last_export_dir.name}<br>"
+                f"• {result.exported_count} cards successfully exported to <b>{self.last_export_dir.name}</b><br>"
                 f"• {result.skipped_count} skipped (unapproved / policy)<br>"
-                f"• {result.failed_count} failed"
+                f"• {result.failed_count} failed<br>"
+                f"• Path: {self.last_export_dir}"
             )
             if result.manifest_path:
                 msg += f"<br>• Audit Manifest: {Path(result.manifest_path).name}"
@@ -213,22 +233,64 @@ class ExportPage(QWidget):
                 msg += f"<br>• Printable Contact Sheet: {Path(result.contact_sheet_path).name}"
 
             self.lbl_export_result.setText(msg)
-            self.btn_open_folder.setVisible(True)
             self.export_completed.emit(result)
 
-            QMessageBox.information(self, "Export Successful", f"Successfully exported {result.exported_count} ID cards.")
+            # Automatic opening if enabled and files were exported
+            self._on_export_finished(result.exported_count, result.failed_count)
+
+            QMessageBox.information(
+                self,
+                "Export Successful",
+                f"Successfully exported {result.exported_count} ID cards."
+            )
 
         except Exception as e:
             logger.error("Export error: %s", e)
             QMessageBox.critical(self, "Export Error", f"Export failed: {e}")
+        finally:
+            self.btn_execute_export.setEnabled(True)
+            self.btn_execute_export.setText("Export Cards Now")
+
+    def _on_export_finished(self, exported_count: int, failed_count: int = 0) -> None:
+        """Trigger automatic folder opening if option is enabled and cards were exported."""
+        if self.chk_auto_open.isChecked() and exported_count > 0:
+            self._open_in_explorer()
 
     def _open_in_explorer(self) -> None:
-        if not self.last_export_dir or not self.last_export_dir.exists():
+        """Safely open the current output directory in native file manager."""
+        if not self.last_export_dir:
+            QMessageBox.information(
+                self,
+                "No Output Directory",
+                "Please select an output directory first."
+            )
             return
-        path_str = str(self.last_export_dir)
-        if sys.platform == "win32":
-            os.startfile(path_str)
-        elif sys.platform == "darwin":
-            subprocess.run(["open", path_str])
-        else:
-            subprocess.run(["xdg-open", path_str])
+
+        target_path = Path(self.last_export_dir)
+        if not target_path.exists():
+            res = QMessageBox.question(
+                self,
+                "Directory Does Not Exist",
+                f"The folder '{target_path}' does not exist yet.\n\nWould you like to create it now?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if res == QMessageBox.Yes:
+                try:
+                    target_path.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    QMessageBox.critical(self, "Folder Creation Failed", f"Could not create folder: {e}")
+                    return
+            else:
+                return
+
+        path_str = str(target_path.resolve())
+        try:
+            if sys.platform == "win32":
+                os.startfile(path_str)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", path_str], check=False)
+            else:
+                subprocess.run(["xdg-open", path_str], check=False)
+        except Exception as e:
+            logger.error("Failed to open directory '%s': %s", path_str, e)
+            QMessageBox.warning(self, "Error Opening Directory", f"Could not open directory: {e}")

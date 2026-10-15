@@ -95,6 +95,23 @@ class ElementInspector(QWidget):
         self.chk_locked.toggled.connect(self._on_lock_toggled)
         geom_layout.addRow("", self.chk_locked)
 
+        self.chk_visible = QCheckBox("Visible")
+        self.chk_visible.setChecked(True)
+        self.chk_visible.toggled.connect(self._on_visible_toggled)
+        geom_layout.addRow("", self.chk_visible)
+
+        self.chk_aspect_ratio = QCheckBox("Lock aspect ratio")
+        self.chk_aspect_ratio.toggled.connect(self._on_aspect_ratio_toggled)
+        geom_layout.addRow("", self.chk_aspect_ratio)
+
+        self.spin_rotation = QDoubleSpinBox()
+        self.spin_rotation.setRange(-360.0, 360.0)
+        self.spin_rotation.setDecimals(1)
+        self.spin_rotation.setValue(0.0)
+        self.spin_rotation.setSuffix("°")
+        self.spin_rotation.valueChanged.connect(self._on_rotation_changed)
+        geom_layout.addRow("Rotation:", self.spin_rotation)
+
         self.form_layout.addWidget(geom_group)
 
         # Layer Arrangement Group (Bring to top, send to bottom, step forward/backward)
@@ -125,19 +142,26 @@ class ElementInspector(QWidget):
 
         self.form_layout.addWidget(arrange_group)
 
-        # 2. Data Binding Group
-        binding_group = QGroupBox("Data Binding")
-        binding_layout = QFormLayout(binding_group)
-
-        self.cmb_binding = QComboBox()
-        self.cmb_binding.currentIndexChanged.connect(self._on_binding_changed)
-        binding_layout.addRow("Bind Column:", self.cmb_binding)
+        # 2. Text Content & Image Asset Group
+        self.content_group = QGroupBox("Content & Asset Source")
+        content_layout = QFormLayout(self.content_group)
 
         self.txt_static = QLineEdit()
         self.txt_static.textChanged.connect(self._on_static_changed)
-        binding_layout.addRow("Static Text:", self.txt_static)
+        content_layout.addRow("Content / Text:", self.txt_static)
 
-        self.form_layout.addWidget(binding_group)
+        img_box = QHBoxLayout()
+        self.btn_choose_image = QPushButton("Choose Image...")
+        self.btn_choose_image.clicked.connect(self._on_choose_image_clicked)
+        img_box.addWidget(self.btn_choose_image)
+        content_layout.addRow("Asset File:", img_box)
+
+        # Hidden or legacy binding combo for compatibility with tests
+        self.cmb_binding = QComboBox()
+        self.cmb_binding.setVisible(False)
+        self.cmb_binding.currentIndexChanged.connect(self._on_binding_changed)
+
+        self.form_layout.addWidget(self.content_group)
 
         # 3. Typography Group
         self.type_group = QGroupBox("Typography")
@@ -169,6 +193,33 @@ class ElementInspector(QWidget):
         self.cmb_align.addItems(["left", "center", "right"])
         self.cmb_align.currentTextChanged.connect(self._on_align_changed)
         type_layout.addRow("Align:", self.cmb_align)
+
+        self.chk_wrap = QCheckBox("Enable word wrapping")
+        self.chk_wrap.toggled.connect(self._on_wrap_toggled)
+        type_layout.addRow("", self.chk_wrap)
+
+        self.spin_line_spacing = QDoubleSpinBox()
+        self.spin_line_spacing.setRange(0.5, 3.0)
+        self.spin_line_spacing.setSingleStep(0.1)
+        self.spin_line_spacing.setValue(1.2)
+        self.spin_line_spacing.valueChanged.connect(self._on_line_spacing_changed)
+        type_layout.addRow("Line Spacing:", self.spin_line_spacing)
+
+        font_range_box = QHBoxLayout()
+        self.spin_min_font = QSpinBox()
+        self.spin_min_font.setRange(4, 72)
+        self.spin_min_font.setValue(8)
+        self.spin_min_font.valueChanged.connect(self._on_min_font_changed)
+        font_range_box.addWidget(QLabel("Min:"))
+        font_range_box.addWidget(self.spin_min_font)
+
+        self.spin_max_font = QSpinBox()
+        self.spin_max_font.setRange(8, 200)
+        self.spin_max_font.setValue(72)
+        self.spin_max_font.valueChanged.connect(self._on_max_font_changed)
+        font_range_box.addWidget(QLabel("Max:"))
+        font_range_box.addWidget(self.spin_max_font)
+        type_layout.addRow("Font Fitting:", font_range_box)
 
         self.form_layout.addWidget(self.type_group)
 
@@ -238,8 +289,11 @@ class ElementInspector(QWidget):
         self.spin_w.setValue(elem.width)
         self.spin_h.setValue(elem.height)
         self.chk_locked.setChecked(elem.locked)
+        self.chk_visible.setChecked(elem.visible)
+        self.chk_aspect_ratio.setChecked(getattr(elem.style, "lock_aspect_ratio", False))
+        self.spin_rotation.setValue(getattr(elem.style, "rotation", 0.0))
 
-        # Binding
+        # Binding / Content
         self._refresh_binding_combo()
         if elem.binding:
             idx = self.cmb_binding.findText(elem.binding)
@@ -249,6 +303,9 @@ class ElementInspector(QWidget):
             self.cmb_binding.setCurrentIndex(0)
 
         self.txt_static.setText(elem.static_content or "")
+        is_image = elem.type == "image"
+        self.btn_choose_image.setVisible(is_image)
+        self.content_group.setVisible(elem.type in ("static_text", "image"))
 
         # Typography
         self.cmb_font.setCurrentFont(elem.style.font_family)
@@ -257,6 +314,10 @@ class ElementInspector(QWidget):
         self.chk_italic.setChecked(elem.style.font_italic)
         self.cmb_align.setCurrentText(elem.style.text_align)
         self.btn_font_color.setStyleSheet(f"background-color: {elem.style.font_color}; color: #FFFFFF;")
+        self.chk_wrap.setChecked(getattr(elem.style, "wrap", True))
+        self.spin_line_spacing.setValue(getattr(elem.style, "line_spacing", 1.2))
+        self.spin_min_font.setValue(getattr(elem.style, "min_font_size", 8))
+        self.spin_max_font.setValue(getattr(elem.style, "max_font_size", 72))
 
         # Appearance
         self.btn_bg_color.setStyleSheet(
@@ -461,3 +522,63 @@ class ElementInspector(QWidget):
             def _update():
                 self._current_item.element.style.fit_mode = ImageFitMode(text)
             self._apply_change(_update, "Change Fit Mode")
+
+    def _on_visible_toggled(self, checked: bool):
+        if not self._updating and self._current_item:
+            def _update():
+                self._current_item.element.visible = checked
+                self._current_item.setVisible(checked)
+            self._apply_change(_update, "Toggle Visibility")
+
+    def _on_aspect_ratio_toggled(self, checked: bool):
+        if not self._updating and self._current_item:
+            def _update():
+                self._current_item.element.style.lock_aspect_ratio = checked
+            self._apply_change(_update, "Toggle Aspect Ratio Lock")
+
+    def _on_rotation_changed(self, val: float):
+        if not self._updating and self._current_item:
+            def _update():
+                self._current_item.element.style.rotation = val
+                self._current_item.setRotation(val)
+            self._apply_change(_update, "Change Rotation")
+
+    def _on_wrap_toggled(self, checked: bool):
+        if not self._updating and self._current_item:
+            def _update():
+                self._current_item.element.style.wrap = checked
+            self._apply_change(_update, "Toggle Word Wrap")
+
+    def _on_line_spacing_changed(self, val: float):
+        if not self._updating and self._current_item:
+            def _update():
+                self._current_item.element.style.line_spacing = val
+            self._apply_change(_update, "Change Line Spacing")
+
+    def _on_min_font_changed(self, val: int):
+        if not self._updating and self._current_item:
+            def _update():
+                self._current_item.element.style.min_font_size = val
+            self._apply_change(_update, "Change Min Font Size")
+
+    def _on_max_font_changed(self, val: int):
+        if not self._updating and self._current_item:
+            def _update():
+                self._current_item.element.style.max_font_size = val
+            self._apply_change(_update, "Change Max Font Size")
+
+    def _on_choose_image_clicked(self):
+        if not self._current_item:
+            return
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Element Image",
+            "",
+            "Image Files (*.png *.jpg *.jpeg *.bmp *.webp *.svg)",
+        )
+        if path:
+            def _update():
+                self._current_item.element.static_content = path
+                self.txt_static.setText(path)
+            self._apply_change(_update, "Set Element Image")

@@ -1,23 +1,33 @@
 """Photoshop-inspired Visual Canvas Editor workspace with vertical tool strip, contextual options bar, layer hierarchy, and integrated field mapping."""
 
+import json
 import logging
-from typing import Dict, List, Optional
 from pathlib import Path
+from typing import Dict, List, Optional
+from uuid import uuid4
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QColor, QFont, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
+    QFileDialog,
     QFontComboBox,
     QFrame,
+    QGraphicsItem,
+    QGraphicsView,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
+    QMenuBar,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
@@ -34,6 +44,7 @@ from id_card_generator.core.constants import ImageFitMode, WorkflowStep
 from id_card_generator.core.models import (
     CanvasElement,
     PhotoMatchResult,
+    RenderSettings,
     SourceRecord,
     TemplateDefinition,
 )
@@ -44,6 +55,12 @@ from id_card_generator.editor.canvas_view import CanvasView
 from id_card_generator.editor.element_inspector import ElementInspector
 from id_card_generator.editor.field_mapping_panel import FieldMappingPanel
 from id_card_generator.editor.layers_panel import LayersPanel
+from id_card_generator.editor.photoshop_dock_panels import ColorSwatchesPanel, HistoryPanel
+from id_card_generator.editor.ruler_widget import CanvasContainer
+from id_card_generator.rendering.pillow_renderer import PillowRenderer
+from id_card_generator.templates.template_validator import TemplateValidator
+from id_card_generator.ui.dialogs.blank_canvas_dialog import BlankCanvasDialog
+from id_card_generator.ui.mapping_editor_view import MappingEditorView
 from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
@@ -54,6 +71,7 @@ class EditorPage(QWidget):
 
     template_updated = Signal(object)  # TemplateDefinition
     navigate_requested = Signal(str)  # WorkflowStep value
+    mappings_updated = Signal(dict)  # column_mappings Dict[str, str]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,10 +80,17 @@ class EditorPage(QWidget):
         self.inspector = ElementInspector(self)
         self.layers_panel = LayersPanel(self.scene, self)
         self.mapping_panel = FieldMappingPanel(self)
+        self.swatches_panel = ColorSwatchesPanel(self)
+        self.history_panel = HistoryPanel(self.scene.undo_stack, self)
+        self.canvas_container = CanvasContainer(self.view, self)
+
+        self.foreground_color = "#2563EB"
+        self.background_color = "#FFFFFF"
 
         self.records: List[SourceRecord] = []
         self.match_results: Dict[str, PhotoMatchResult] = {}
         self.columns: List[str] = []
+        self.column_mappings: Dict[str, str] = {}
         self.sample_index: int = 0
         self._updating_context_bar: bool = False
         self._user_adjusted_splitter: bool = False
@@ -73,12 +98,266 @@ class EditorPage(QWidget):
         self._setup_ui()
         self._connect_signals()
 
-    def _setup_ui(self) -> None:
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(6, 6, 6, 6)
-        main_layout.setSpacing(6)
+    def _create_photoshop_menu_bar(self) -> QMenuBar:
+        """Create standard Photoshop menu bar: File, Edit, Layer, Type, View, Window."""
+        menubar = QMenuBar()
+        menubar.setStyleSheet(
+            "QMenuBar { background-color: #18181B; color: #E4E4E7; font-size: 12px; border-bottom: 1px solid #27272A; } "
+            "QMenuBar::item { padding: 4px 10px; background: transparent; } "
+            "QMenuBar::item:selected { background-color: #27272A; border-radius: 4px; } "
+            "QMenu { background-color: #18181B; color: #E4E4E7; border: 1px solid #3F3F46; } "
+            "QMenu::item { padding: 6px 24px; } "
+            "QMenu::item:selected { background-color: #2563EB; color: #FFFFFF; } "
+            "QMenu::separator { height: 1px; background: #3F3F46; margin: 4px 0; }"
+        )
 
-        # 1. Top Contextual Options Bar
+        # 1. File Menu
+        file_menu = menubar.addMenu("&File")
+        act_new = file_menu.addAction("New Canvas...")
+        act_new.setShortcut(QKeySequence("Ctrl+N"))
+        act_new.triggered.connect(self._create_blank_canvas_clicked)
+
+        act_open = file_menu.addAction("Open Template File...")
+        act_open.setShortcut(QKeySequence("Ctrl+O"))
+        act_open.triggered.connect(self._open_template_file_clicked)
+
+        file_menu.addSeparator()
+
+        act_save = file_menu.addAction("Save Template")
+        act_save.setShortcut(QKeySequence("Ctrl+S"))
+        act_save.triggered.connect(self._save_template_clicked)
+
+        act_dup = file_menu.addAction("Duplicate Template...")
+        act_dup.triggered.connect(self._duplicate_template_clicked)
+
+        act_import = file_menu.addAction("Import Template JSON...")
+        act_import.triggered.connect(self._import_template_clicked)
+
+        file_menu.addSeparator()
+
+        act_preview = file_menu.addAction("Render 300 DPI Preview...")
+        act_preview.triggered.connect(self._preview_card_clicked)
+
+        file_menu.addSeparator()
+
+        act_finalize = file_menu.addAction("Finalize & Proceed to Data Mapping ➔")
+        act_finalize.triggered.connect(self.finalize_template)
+
+        # 2. Edit Menu
+        edit_menu = menubar.addMenu("&Edit")
+        act_undo = edit_menu.addAction("Undo")
+        act_undo.setShortcut(QKeySequence.Undo)
+        act_undo.triggered.connect(self._trigger_undo)
+
+        act_redo = edit_menu.addAction("Redo")
+        act_redo.setShortcut(QKeySequence.Redo)
+        act_redo.triggered.connect(self._trigger_redo)
+
+        edit_menu.addSeparator()
+
+        act_cut = edit_menu.addAction("Cut")
+        act_cut.setShortcut(QKeySequence.Cut)
+        act_cut.triggered.connect(self._cut_selected)
+
+        act_copy = edit_menu.addAction("Copy")
+        act_copy.setShortcut(QKeySequence.Copy)
+        act_copy.triggered.connect(self._copy_selected)
+
+        act_paste = edit_menu.addAction("Paste")
+        act_paste.setShortcut(QKeySequence.Paste)
+        act_paste.triggered.connect(self._paste_selected)
+
+        act_del = edit_menu.addAction("Delete")
+        act_del.setShortcut(QKeySequence.Delete)
+        act_del.triggered.connect(self._delete_selected)
+
+        edit_menu.addSeparator()
+
+        act_sel_all = edit_menu.addAction("Select All")
+        act_sel_all.setShortcut(QKeySequence.SelectAll)
+        act_sel_all.triggered.connect(self._select_all_elements)
+
+        act_desel = edit_menu.addAction("Deselect")
+        act_desel.setShortcut(QKeySequence("Ctrl+D"))
+        act_desel.triggered.connect(self._deselect_all)
+
+        # 3. Layer Menu
+        layer_menu = menubar.addMenu("&Layer")
+        act_layer_text = layer_menu.addAction("New Text Layer")
+        act_layer_text.triggered.connect(self._add_static_text)
+
+        act_layer_dyn = layer_menu.addAction("New Dynamic Data Layer")
+        act_layer_dyn.triggered.connect(self._add_dynamic_text)
+
+        act_layer_photo = layer_menu.addAction("New Photo Placeholder Layer")
+        act_layer_photo.triggered.connect(self._add_photo_element)
+
+        act_layer_rect = layer_menu.addAction("New Rectangle Shape Layer")
+        act_layer_rect.triggered.connect(self._add_rect_element)
+
+        act_layer_img = layer_menu.addAction("New Image Layer...")
+        act_layer_img.triggered.connect(self._add_image_element)
+
+        layer_menu.addSeparator()
+
+        act_front = layer_menu.addAction("Bring to Front")
+        act_front.triggered.connect(self.layers_panel._bring_to_front)
+
+        act_fwd = layer_menu.addAction("Bring Forward")
+        act_fwd.triggered.connect(self.layers_panel._bring_forward)
+
+        act_backw = layer_menu.addAction("Send Backward")
+        act_backw.triggered.connect(self.layers_panel._send_backward)
+
+        act_back = layer_menu.addAction("Send to Back")
+        act_back.triggered.connect(self.layers_panel._send_to_back)
+
+        layer_menu.addSeparator()
+
+        act_lock = layer_menu.addAction("Lock / Unlock Layer")
+        act_lock.triggered.connect(self._toggle_lock_selected)
+
+        act_del_layer = layer_menu.addAction("Delete Layer")
+        act_del_layer.triggered.connect(self._delete_selected)
+
+        # 4. Type Menu
+        type_menu = menubar.addMenu("&Type")
+        act_t1 = type_menu.addAction("Add Static Text Label")
+        act_t1.triggered.connect(self._add_static_text)
+
+        act_t2 = type_menu.addAction("Add Dynamic Database Field")
+        act_t2.triggered.connect(self._add_dynamic_text)
+
+        # 5. View Menu
+        view_menu = menubar.addMenu("&View")
+        act_zin = view_menu.addAction("Zoom In")
+        act_zin.setShortcut(QKeySequence("Ctrl++"))
+        act_zin.triggered.connect(self.view.zoom_in)
+
+        act_zout = view_menu.addAction("Zoom Out")
+        act_zout.setShortcut(QKeySequence("Ctrl+-"))
+        act_zout.triggered.connect(self.view.zoom_out)
+
+        act_fit = view_menu.addAction("Fit Card on Screen")
+        act_fit.setShortcut(QKeySequence("Ctrl+0"))
+        act_fit.triggered.connect(self.view.fit_to_view)
+
+        act_100 = view_menu.addAction("Actual Size (100%)")
+        act_100.setShortcut(QKeySequence("Ctrl+1"))
+        act_100.triggered.connect(self.view.reset_zoom)
+
+        view_menu.addSeparator()
+
+        act_ruler = view_menu.addAction("Toggle Rulers")
+        act_ruler.triggered.connect(self._toggle_rulers)
+
+        act_grid = view_menu.addAction("Toggle Grid")
+        act_grid.triggered.connect(self._toggle_grid)
+
+        act_snap = view_menu.addAction("Toggle Snap to Grid")
+        act_snap.triggered.connect(self._toggle_snap)
+
+        act_safe = view_menu.addAction("Toggle Safe Area Guides")
+        act_safe.triggered.connect(self._toggle_safe_area)
+
+        # 6. Window Menu
+        window_menu = menubar.addMenu("&Window")
+        act_win_layers = window_menu.addAction("Layers")
+        act_win_layers.triggered.connect(lambda: self.right_tabs.setCurrentWidget(self.layers_panel))
+
+        act_win_props = window_menu.addAction("Properties Inspector")
+        act_win_props.triggered.connect(lambda: self.right_tabs.setCurrentWidget(self.inspector))
+
+        act_win_swatch = window_menu.addAction("Color Swatches")
+        act_win_swatch.triggered.connect(lambda: self.right_tabs.setCurrentWidget(self.swatches_panel))
+
+        act_win_hist = window_menu.addAction("Action History")
+        act_win_hist.triggered.connect(lambda: self.right_tabs.setCurrentWidget(self.history_panel))
+
+        act_win_map = window_menu.addAction("Field Mapping")
+        act_win_map.triggered.connect(lambda: self.right_tabs.setCurrentWidget(self.mapping_panel))
+
+        window_menu.addSeparator()
+
+        act_win_reset = window_menu.addAction("Reset Workspace Layout (70% Canvas)")
+        act_win_reset.triggered.connect(lambda: self.apply_default_splitter_sizes(force=True))
+
+        return menubar
+
+    def _setup_ui(self) -> None:
+        self.mode_stack = QStackedWidget(self)
+
+        # =========================================================================
+        # 1. TEMPLATE DESIGNER WORKSPACE (Mode 0 - Photoshop Inspired)
+        # =========================================================================
+        self.designer_container = QWidget()
+        designer_layout = QVBoxLayout(self.designer_container)
+        designer_layout.setContentsMargins(4, 4, 4, 4)
+        designer_layout.setSpacing(4)
+
+        # 1.0 Photoshop Classic Menu Bar
+        self.menu_bar = self._create_photoshop_menu_bar()
+        designer_layout.addWidget(self.menu_bar)
+
+        # 1.1 Application and Document Header
+        self.app_header_frame = QFrame()
+        self.app_header_frame.setObjectName("card_panel")
+        self.app_header_frame.setFixedHeight(48)
+        hf_layout = QHBoxLayout(self.app_header_frame)
+        hf_layout.setContentsMargins(10, 4, 10, 4)
+        hf_layout.setSpacing(10)
+
+        lbl_hdr_title = QLabel("<b>Template:</b>")
+        lbl_hdr_title.setStyleSheet("font-size: 13px; color: #94A3B8;")
+        hf_layout.addWidget(lbl_hdr_title)
+
+        self.combo_active_template = QComboBox()
+        self.combo_active_template.setMinimumWidth(240)
+        self.combo_active_template.setStyleSheet(
+            "QComboBox { font-weight: bold; font-size: 12px; padding: 4px 8px; }"
+        )
+        self.combo_active_template.currentIndexChanged.connect(self._on_combo_template_changed)
+        hf_layout.addWidget(self.combo_active_template)
+
+        self.lbl_app_template_name = QLabel("<b>Untitled Template</b>")
+        self.lbl_app_template_name.setStyleSheet("font-size: 13px; color: #60CDFF; margin-left: 8px;")
+        hf_layout.addWidget(self.lbl_app_template_name)
+
+        hf_layout.addStretch()
+
+        self.btn_new_canvas = QPushButton("+ Blank Canvas...")
+        self.btn_new_canvas.clicked.connect(self._create_blank_canvas_clicked)
+        hf_layout.addWidget(self.btn_new_canvas)
+
+        self.btn_open_template = QPushButton("📂 Open...")
+        self.btn_open_template.clicked.connect(self._open_template_file_clicked)
+        hf_layout.addWidget(self.btn_open_template)
+
+        self.btn_dup_template = QPushButton("🗐 Duplicate")
+        self.btn_dup_template.clicked.connect(self._duplicate_template_clicked)
+        hf_layout.addWidget(self.btn_dup_template)
+
+        self.btn_save_template = QPushButton("💾 Save Template")
+        self.btn_save_template.clicked.connect(self._save_template_clicked)
+        hf_layout.addWidget(self.btn_save_template)
+
+        self.btn_preview_pil = QPushButton("👁 Preview")
+        self.btn_preview_pil.setToolTip("View authoritative Pillow 300 DPI card render preview")
+        self.btn_preview_pil.clicked.connect(self._preview_card_clicked)
+        hf_layout.addWidget(self.btn_preview_pil)
+
+        self.btn_finalize_template = QPushButton("Finalize Template ➔")
+        self.btn_finalize_template.setObjectName("btn_primary")
+        self.btn_finalize_template.setStyleSheet(
+            "font-weight: bold; font-size: 13px; padding: 6px 16px; background-color: #2563EB; color: white;"
+        )
+        self.btn_finalize_template.setToolTip("Validate design and proceed to Data Mapping Editor")
+        self.btn_finalize_template.clicked.connect(self.finalize_template)
+        hf_layout.addWidget(self.btn_finalize_template)
+
+        designer_layout.addWidget(self.app_header_frame)
+
+        # 1.2 Top Contextual Options Bar
         self.options_bar = QFrame()
         self.options_bar.setObjectName("card_panel")
         self.options_bar.setFixedHeight(48)
@@ -125,9 +404,9 @@ class EditorPage(QWidget):
         self.btn_del.clicked.connect(self.scene.delete_selected)
         self.opt_layout.addWidget(self.btn_del)
 
-        main_layout.addWidget(self.options_bar)
+        designer_layout.addWidget(self.options_bar)
 
-        # 2. Editor Central Area: Left Vertical Toolbar + Center Canvas + Right Panels
+        # 1.3 Editor Central Area: Left Vertical Toolbar + Center Canvas with Rulers + Right Panels
         editor_body = QHBoxLayout()
         editor_body.setSpacing(6)
 
@@ -139,16 +418,18 @@ class EditorPage(QWidget):
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(7)
         self.splitter.setChildrenCollapsible(False)
-        self.view.setMinimumWidth(360)
+        self.canvas_container.setMinimumWidth(360)
 
-        # Right Tabbed Dock
+        # Right Tabbed Dock (Photoshop Style Panels)
         self.right_tabs = QTabWidget()
-        self.right_tabs.setMinimumWidth(260)
-        self.right_tabs.addTab(self.inspector, "Properties")
+        self.right_tabs.setMinimumWidth(280)
         self.right_tabs.addTab(self.layers_panel, "Layers")
+        self.right_tabs.addTab(self.inspector, "Properties")
+        self.right_tabs.addTab(self.swatches_panel, "Swatches")
+        self.right_tabs.addTab(self.history_panel, "History")
         self.right_tabs.addTab(self.mapping_panel, "Data Mapping")
 
-        self.splitter.addWidget(self.view)
+        self.splitter.addWidget(self.canvas_container)
         self.splitter.addWidget(self.right_tabs)
 
         self.splitter.setStretchFactor(0, 7)
@@ -157,9 +438,9 @@ class EditorPage(QWidget):
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
         editor_body.addWidget(self.splitter, stretch=1)
 
-        main_layout.addLayout(editor_body, stretch=1)
+        designer_layout.addLayout(editor_body, stretch=1)
 
-        # 3. Bottom Status Bar Readout
+        # 1.4 Bottom Status Bar Readout
         self.status_bar_frame = QFrame()
         self.status_bar_frame.setObjectName("card_panel")
         self.status_bar_frame.setFixedHeight(28)
@@ -187,18 +468,33 @@ class EditorPage(QWidget):
         self.lbl_sb_status = QLabel("Ready")
         sb_layout.addWidget(self.lbl_sb_status)
 
-        main_layout.addWidget(self.status_bar_frame)
+        designer_layout.addWidget(self.status_bar_frame)
 
-        # 4. Bottom Step Navigation Bar
+        # 1.5 Bottom Step Navigation Bar
         self.nav_bar = StepNavBar(
             prev_label="Choose Template",
             next_label="Batch Generate",
-            step_badge="Step 4 of 7: Canvas Editor & Field Mapping",
+            step_badge="Step 3 of 7: Template Designer",
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.TEMPLATES.value))
         self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value))
-        main_layout.addWidget(self.nav_bar)
+        designer_layout.addWidget(self.nav_bar)
+
+        self.mode_stack.addWidget(self.designer_container)
+
+        # =========================================================================
+        # 2. STREAMLINED MAPPING WORKSPACE (Mode 1)
+        # =========================================================================
+        self.mapping_view = MappingEditorView(self)
+        self.mapping_view.edit_template_requested.connect(self._return_to_designer)
+        self.mapping_view.mappings_updated.connect(self._on_mapping_view_updated)
+        self.mapping_view.navigate_requested.connect(lambda s: self.navigate_requested.emit(s))
+        self.mode_stack.addWidget(self.mapping_view)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(self.mode_stack)
 
     def _create_vertical_tool_strip(self) -> QFrame:
         """Create Photoshop-inspired vertical icon toolbar."""
@@ -214,12 +510,17 @@ class EditorPage(QWidget):
 
         tools = [
             ("select", "↖", "Select / Move Tool (V)"),
-            ("static_text", "T", "Text Tool (T)"),
-            ("dynamic_text", "{T}", "Dynamic Field Tool (D)"),
-            ("photo", "📷", "Photo Tool (P)"),
-            ("rect", "▭", "Rectangle Tool (U)"),
-            ("round_rect", "▢", "Rounded Rectangle Tool (R)"),
-            ("line", "―", "Line Tool (L)"),
+            ("marquee", "⬚", "Marquee Selection Tool (M)"),
+            ("static_text", "T", "Horizontal Type / Text Tool (T)"),
+            ("dynamic_text", "{T}", "Dynamic Field / Data Field Tool (D)"),
+            ("photo", "📷", "Photo Tool / Profile Photo (P)"),
+            ("image", "🖼", "Place Embedded Image / Logo (I)"),
+            ("rect", "▭", "Rectangle Vector Shape (U)"),
+            ("round_rect", "▢", "Rounded Rectangle Shape (R)"),
+            ("line", "―", "Divider Line Tool (L)"),
+            ("eyedropper", "💉", "Eyedropper Color Picker (E)"),
+            ("hand", "✋", "Hand Pan Tool (H)"),
+            ("zoom", "🔍", "Zoom In Tool (Z)"),
         ]
 
         for tool_id, icon_char, tooltip in tools:
@@ -227,41 +528,82 @@ class EditorPage(QWidget):
             btn.setText(icon_char)
             btn.setToolTip(tooltip)
             btn.setCheckable(True)
-            btn.setFixedSize(40, 36)
-            btn.setStyleSheet("font-size: 15px; font-weight: bold;")
+            btn.setFixedSize(40, 34)
+            btn.setStyleSheet("font-size: 14px; font-weight: bold;")
             if tool_id == "select":
                 btn.setChecked(True)
             btn.clicked.connect(lambda checked, tid=tool_id: self._on_tool_selected(tid))
             self.tool_group.addButton(btn)
             layout.addWidget(btn)
 
-        layout.addSpacing(10)
+        layout.addSpacing(6)
         # Separator line
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("color: #3F3F46;")
         layout.addWidget(sep)
-        layout.addSpacing(10)
+        layout.addSpacing(6)
 
-        # Zoom & Fit actions
+        # Photoshop Classic Overlapping Color Swatches
+        color_box = QFrame()
+        color_box.setFixedSize(42, 46)
+        color_box.setStyleSheet("background: transparent;")
+
+        self.btn_bg_color = QToolButton(color_box)
+        self.btn_bg_color.setGeometry(16, 18, 22, 22)
+        self.btn_bg_color.setStyleSheet("background-color: #FFFFFF; border: 1px solid #71717A; border-radius: 2px;")
+        self.btn_bg_color.setToolTip("Background Color (Click to change)")
+        self.btn_bg_color.clicked.connect(self._pick_bg_swatch_color)
+
+        self.btn_fg_color = QToolButton(color_box)
+        self.btn_fg_color.setGeometry(4, 6, 22, 22)
+        self.btn_fg_color.setStyleSheet("background-color: #2563EB; border: 1px solid #FFFFFF; border-radius: 2px;")
+        self.btn_fg_color.setToolTip("Foreground Color (Click to change)")
+        self.btn_fg_color.clicked.connect(self._pick_fg_swatch_color)
+
+        self.btn_swap_colors = QToolButton(color_box)
+        self.btn_swap_colors.setGeometry(26, 0, 14, 14)
+        self.btn_swap_colors.setText("⇄")
+        self.btn_swap_colors.setStyleSheet("font-size: 10px; padding: 0; background: transparent; color: #94A3B8; border: none;")
+        self.btn_swap_colors.setToolTip("Swap Foreground and Background Colors (X)")
+        self.btn_swap_colors.clicked.connect(self._swap_swatch_colors)
+
+        self.btn_default_bw = QToolButton(color_box)
+        self.btn_default_bw.setGeometry(0, 30, 14, 14)
+        self.btn_default_bw.setText("■")
+        self.btn_default_bw.setStyleSheet("font-size: 8px; padding: 0; background: transparent; color: #94A3B8; border: none;")
+        self.btn_default_bw.setToolTip("Reset Default Colors (Black & White, D)")
+        self.btn_default_bw.clicked.connect(self._reset_default_colors)
+
+        layout.addWidget(color_box)
+
+        layout.addSpacing(6)
+        # Separator line
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.HLine)
+        sep2.setStyleSheet("color: #3F3F46;")
+        layout.addWidget(sep2)
+        layout.addSpacing(6)
+
+        # Quick Zoom & Fit actions
         btn_fit = QToolButton()
         btn_fit.setText("⛶")
         btn_fit.setToolTip("Fit Card to View")
-        btn_fit.setFixedSize(40, 36)
+        btn_fit.setFixedSize(40, 32)
         btn_fit.clicked.connect(self.view.fit_to_view)
         layout.addWidget(btn_fit)
 
         btn_100 = QToolButton()
         btn_100.setText("1:1")
         btn_100.setToolTip("Zoom 100%")
-        btn_100.setFixedSize(40, 36)
+        btn_100.setFixedSize(40, 32)
         btn_100.clicked.connect(self.view.reset_zoom)
         layout.addWidget(btn_100)
 
         btn_reset_split = QToolButton()
         btn_reset_split.setText("70%")
         btn_reset_split.setToolTip("Reset Canvas Area to 70% Screen Width")
-        btn_reset_split.setFixedSize(40, 36)
+        btn_reset_split.setFixedSize(40, 32)
         btn_reset_split.clicked.connect(lambda: self.apply_default_splitter_sizes(force=True))
         layout.addWidget(btn_reset_split)
 
@@ -405,6 +747,12 @@ class EditorPage(QWidget):
         self.btn_undo.setEnabled(self.scene.undo_stack.canUndo())
         self.btn_redo.setEnabled(self.scene.undo_stack.canRedo())
 
+        # Cursor tracking on rulers
+        self.view.cursor_moved.connect(self.canvas_container.update_cursor_pos)
+
+        # Color swatches panel signal
+        self.swatches_panel.color_selected.connect(self._on_swatch_color_selected)
+
         # Setup keyboard shortcuts for Windows (Ctrl+Z, Ctrl+Y) and Mac (Cmd+Z, Cmd+Y)
         self._setup_shortcuts()
 
@@ -494,12 +842,29 @@ class EditorPage(QWidget):
         """Load template into canvas editor and update metadata readouts."""
         self.scene.load_template(template)
         self.layers_panel.refresh_layers()
+        if hasattr(self, "lbl_app_template_name"):
+            self.lbl_app_template_name.setText(f"<b>{template.name}</b>")
+        self._populate_templates_dropdown()
+        if hasattr(self, "canvas_container"):
+            unit = template.unit or "mm"
+            self.canvas_container.ruler_h.set_unit(unit, template.dpi)
+            self.canvas_container.ruler_v.set_unit(unit, template.dpi)
+            self.canvas_container.corner.unit = unit
+            self.canvas_container.corner.update()
         if not self._user_adjusted_splitter:
             self.apply_default_splitter_sizes(force=False)
             QTimer.singleShot(20, lambda: self.apply_default_splitter_sizes(force=False))
         QTimer.singleShot(60, lambda: self.view.fit_to_view(enlarge_factor=1.35))
         self._update_status_dimensions()
         self._update_sample_preview()
+        if hasattr(self, "mapping_view"):
+            self.mapping_view.set_mapping_context(
+                template=template,
+                records=self.records,
+                match_results=self.match_results,
+                columns=self.columns,
+                column_mappings=self.column_mappings,
+            )
 
     def set_dataset(
         self,
@@ -513,11 +878,366 @@ class EditorPage(QWidget):
         self.columns = columns
         self.inspector.set_available_columns(columns)
         self.mapping_panel.set_dataset(columns, records, match_results)
+        if self.scene.template and hasattr(self, "mapping_view"):
+            self.mapping_view.set_mapping_context(
+                template=self.scene.template,
+                records=records,
+                match_results=match_results,
+                columns=columns,
+                column_mappings=self.column_mappings,
+            )
         self.sample_index = 0
         self._update_sample_preview()
 
+    def finalize_template(self) -> bool:
+        """Validate and finalize template before advancing to data mapping."""
+        if not self.scene.template:
+            return False
+
+        report = TemplateValidator.validate_for_finalization(self.scene.template)
+        if not report.is_valid:
+            err_msg = "\n• " + "\n• ".join(report.errors)
+            QMessageBox.critical(
+                self,
+                "Template Finalization Failed",
+                f"Cannot finalize template due to the following design issues:\n{err_msg}\n\nPlease correct these in the editor before continuing to data mapping.",
+            )
+            return False
+
+        if report.warnings:
+            logger.info("Template finalization notices: %s", report.warnings)
+
+        # Save template to user templates directory
+        try:
+            from id_card_generator.templates.template_manager import TemplateManager
+            mgr = TemplateManager()
+            mgr.save_user_template(self.scene.template)
+        except Exception as e:
+            logger.warning("Could not persist template on finalization: %s", e)
+
+        # Reconcile mappings: preserve surviving valid elements, prune deleted ones
+        surviving_ids = {el.id for el in self.scene.template.elements}
+        for eid in list(self.column_mappings.keys()):
+            if eid not in surviving_ids:
+                self.column_mappings.pop(eid, None)
+
+        self.mapping_view.set_mapping_context(
+            template=self.scene.template,
+            records=self.records,
+            match_results=self.match_results,
+            columns=self.columns,
+            column_mappings=self.column_mappings,
+        )
+
+        self.template_updated.emit(self.scene.template)
+        self.mode_stack.setCurrentIndex(1)
+        self.lbl_sb_status.setText("Template Finalized. Mapping Workspace Active.")
+        return True
+
+    def _return_to_designer(self) -> None:
+        """Return from Mapping Editor to Template Designer, preserving valid bindings."""
+        self.column_mappings.update(self.mapping_view.column_mappings)
+        self.mode_stack.setCurrentIndex(0)
+        self.lbl_sb_status.setText("Template Designer active.")
+
+    def _on_mapping_view_updated(self, mappings: dict) -> None:
+        self.column_mappings.update(mappings)
+        self.mappings_updated.emit(self.column_mappings)
+
+    def _create_blank_canvas_clicked(self) -> None:
+        dialog = BlankCanvasDialog(self)
+        if dialog.exec():
+            tmpl = dialog.template_definition
+            if tmpl:
+                self.load_template(tmpl)
+                self.template_updated.emit(tmpl)
+
+    def _save_template_clicked(self) -> None:
+        if not self.scene.template:
+            return
+        from id_card_generator.templates.template_manager import TemplateManager
+        mgr = TemplateManager()
+        saved_p = mgr.save_user_template(self.scene.template)
+        QMessageBox.information(
+            self,
+            "Template Saved",
+            f"Template '{self.scene.template.name}' saved successfully to:\n{saved_p.name}",
+        )
+
+    def _preview_card_clicked(self) -> None:
+        if not self.scene.template:
+            return
+        curr_rec = self.records[self.sample_index] if (self.records and 0 <= self.sample_index < len(self.records)) else None
+        photo_path = None
+        if curr_rec:
+            m = self.match_results.get(curr_rec.record_id)
+            if m:
+                photo_path = m.photo_path
+
+        try:
+            pil_img, warnings = PillowRenderer.render_card(
+                template=self.scene.template,
+                record=curr_rec,
+                photo_path=photo_path,
+                column_mappings=self.column_mappings,
+                settings=RenderSettings(dpi=300),
+            )
+            dlg = QDialog(self)
+            dlg.setWindowTitle(f"Pillow Render Preview — {self.scene.template.name} (300 DPI)")
+            dlg.resize(720, 520)
+            d_layout = QVBoxLayout(dlg)
+
+            lbl = QLabel()
+            lbl.setAlignment(Qt.AlignCenter)
+            if pil_img.mode != "RGBA":
+                pil_img = pil_img.convert("RGBA")
+            qimg = QImage(pil_img.tobytes("raw", "RGBA"), pil_img.width, pil_img.height, QImage.Format_RGBA8888)
+            pix = QPixmap.fromImage(qimg)
+            lbl.setPixmap(pix.scaled(680, 440, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            d_layout.addWidget(lbl, stretch=1)
+
+            if warnings:
+                lbl_warn = QLabel("Warnings:\n• " + "\n• ".join(warnings))
+                lbl_warn.setStyleSheet("color: #F59E0B; font-size: 11px;")
+                d_layout.addWidget(lbl_warn)
+
+            btn_close = QPushButton("Close")
+            btn_close.clicked.connect(dlg.accept)
+            d_layout.addWidget(btn_close)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Preview Error", f"Failed to render preview: {e}")
+
+    def _add_image_element(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Image or Logo", "", "Images (*.png *.jpg *.jpeg *.bmp *.webp *.svg)"
+        )
+        name = Path(file_path).stem if file_path else "Static Image"
+        el = CanvasElement(
+            name=name,
+            type="image",
+            x=60.0,
+            y=60.0,
+            width=140.0,
+            height=70.0,
+            static_content=file_path if file_path else "",
+        )
+        el.style.fit_mode = ImageFitMode.CONTAIN
+        self.scene.add_element(el)
+        self.layers_panel.refresh_layers()
+
+    def _toggle_rulers(self) -> None:
+        if hasattr(self, "canvas_container"):
+            self.canvas_container.toggle_rulers()
+
+    def _toggle_grid(self) -> None:
+        self.scene.show_grid = not self.scene.show_grid
+        self.scene.update()
+
+    def _toggle_snap(self) -> None:
+        self.scene.snap_to_grid = not self.scene.snap_to_grid
+
+    def _toggle_safe_area(self) -> None:
+        self.scene.show_safe_area = not self.scene.show_safe_area
+        self.scene.update()
+
+    def _populate_templates_dropdown(self) -> None:
+        if not hasattr(self, "combo_active_template"):
+            return
+        from id_card_generator.templates.template_manager import TemplateManager
+        mgr = TemplateManager()
+        all_tmpls = mgr.list_templates()
+        self.combo_active_template.blockSignals(True)
+        self.combo_active_template.clear()
+        current_id = self.scene.template.id if self.scene.template else ""
+        sel_idx = 0
+        for idx, t in enumerate(all_tmpls):
+            is_built = mgr.is_builtin(t.id)
+            tag = "Built-in" if is_built else "Custom"
+            self.combo_active_template.addItem(f"{t.name} [{tag}]", t.id)
+            if t.id == current_id or (self.scene.template and t.name == self.scene.template.name):
+                sel_idx = idx
+        if all_tmpls:
+            self.combo_active_template.setCurrentIndex(sel_idx)
+        self.combo_active_template.blockSignals(False)
+
+    def _on_combo_template_changed(self, index: int) -> None:
+        if index < 0 or not hasattr(self, "combo_active_template"):
+            return
+        tid = self.combo_active_template.itemData(index)
+        if not tid:
+            return
+        if self.scene.template and self.scene.template.id == tid:
+            return
+        from id_card_generator.templates.template_manager import TemplateManager
+        mgr = TemplateManager()
+        t = mgr.get_template(tid)
+        if t:
+            self.load_template(t)
+            self.template_updated.emit(t)
+
+    def _open_template_file_clicked(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open Template JSON File", "", "Template Files (*.json)"
+        )
+        if not file_path:
+            return
+        try:
+            from id_card_generator.templates.template_manager import TemplateManager
+            tmpl = TemplateManager.load_template_from_file(Path(file_path))
+            self.load_template(tmpl)
+            self.template_updated.emit(tmpl)
+        except Exception as e:
+            QMessageBox.critical(self, "Open Failed", f"Could not load template file:\n{e}")
+
+    def _duplicate_template_clicked(self) -> None:
+        if not self.scene.template:
+            return
+        new_name, ok = QInputDialog.getText(
+            self, "Duplicate Template", "New Template Name:", text=f"{self.scene.template.name} Copy"
+        )
+        if ok and new_name.strip():
+            data = self.scene.template.model_dump(mode="json")
+            data["id"] = f"tmpl_{uuid4().hex[:8]}"
+            data["name"] = new_name.strip()
+            dup_tmpl = TemplateDefinition.model_validate(data)
+            from id_card_generator.templates.template_manager import TemplateManager
+            mgr = TemplateManager()
+            mgr.save_user_template(dup_tmpl)
+            self.load_template(dup_tmpl)
+            self.template_updated.emit(dup_tmpl)
+
+    def _import_template_clicked(self) -> None:
+        self._open_template_file_clicked()
+
+    def _pick_fg_swatch_color(self) -> None:
+        col = QColorDialog.getColor(QColor(self.foreground_color), self, "Select Foreground Color")
+        if col.isValid():
+            self.foreground_color = col.name().upper()
+            self.btn_fg_color.setStyleSheet(f"background-color: {self.foreground_color}; border: 1px solid #FFFFFF; border-radius: 2px;")
+            self._apply_color_to_selected(self.foreground_color)
+
+    def _pick_bg_swatch_color(self) -> None:
+        col = QColorDialog.getColor(QColor(self.background_color), self, "Select Background Color")
+        if col.isValid():
+            self.background_color = col.name().upper()
+            self.btn_bg_color.setStyleSheet(f"background-color: {self.background_color}; border: 1px solid #71717A; border-radius: 2px;")
+
+    def _swap_swatch_colors(self) -> None:
+        self.foreground_color, self.background_color = self.background_color, self.foreground_color
+        self.btn_fg_color.setStyleSheet(f"background-color: {self.foreground_color}; border: 1px solid #FFFFFF; border-radius: 2px;")
+        self.btn_bg_color.setStyleSheet(f"background-color: {self.background_color}; border: 1px solid #71717A; border-radius: 2px;")
+
+    def _reset_default_colors(self) -> None:
+        self.foreground_color = "#000000"
+        self.background_color = "#FFFFFF"
+        self.btn_fg_color.setStyleSheet(f"background-color: {self.foreground_color}; border: 1px solid #FFFFFF; border-radius: 2px;")
+        self.btn_bg_color.setStyleSheet(f"background-color: {self.background_color}; border: 1px solid #71717A; border-radius: 2px;")
+
+    def _on_swatch_color_selected(self, hex_color: str) -> None:
+        self.foreground_color = hex_color.upper()
+        self.btn_fg_color.setStyleSheet(f"background-color: {self.foreground_color}; border: 1px solid #FFFFFF; border-radius: 2px;")
+        self._apply_color_to_selected(self.foreground_color)
+
+    def _apply_color_to_selected(self, hex_color: str) -> None:
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasItem)]
+        if not selected:
+            return
+        for it in selected:
+            elem = it.element
+            if elem.type in ("static_text", "dynamic_text", "pin_field"):
+                self._apply_context_change(lambda x: setattr(x.element.style, "font_color", hex_color), "Change Font Color")
+            elif elem.type in ("rect", "round_rect"):
+                self._apply_context_change(lambda x: setattr(x.element.style, "background_color", hex_color), "Change Fill Color")
+            elif elem.type == "line":
+                self._apply_context_change(lambda x: setattr(x.element.style, "border_color", hex_color), "Change Line Color")
+
+    def _pick_canvas_color(self) -> None:
+        col = QColorDialog.getColor(QColor(self.foreground_color), self, "Eyedropper - Pick Color")
+        if col.isValid():
+            self._on_swatch_color_selected(col.name().upper())
+
+    def _reset_to_select_tool(self) -> None:
+        self.view.setDragMode(QGraphicsView.RubberBandDrag)
+        for btn in self.tool_group.buttons():
+            if btn.text() == "↖":
+                btn.setChecked(True)
+                break
+
+    def _cut_selected(self) -> None:
+        self._copy_selected()
+        self._delete_selected()
+
+    def _copy_selected(self) -> None:
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasItem)]
+        if not selected:
+            return
+        data = [it.element.model_dump(mode="json") for it in selected]
+        QApplication.clipboard().setText(json.dumps(data))
+
+    def _paste_selected(self) -> None:
+        text = QApplication.clipboard().text()
+        if not text:
+            return
+        try:
+            raw_items = json.loads(text)
+            if not isinstance(raw_items, list):
+                return
+            for raw in raw_items:
+                raw["id"] = f"el_{uuid4().hex[:8]}"
+                raw["x"] = raw.get("x", 50) + 20
+                raw["y"] = raw.get("y", 50) + 20
+                el = CanvasElement.model_validate(raw)
+                self.scene.add_element(el)
+            self.layers_panel.refresh_layers()
+            self._on_template_modified()
+        except Exception as e:
+            logger.warning("Paste failed: %s", e)
+
+    def _delete_selected(self) -> None:
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasItem)]
+        for it in selected:
+            self.scene.remove_element(it.element.id)
+        self.layers_panel.refresh_layers()
+        self._on_template_modified()
+
+    def _select_all_elements(self) -> None:
+        for item in self.scene.items():
+            if isinstance(item, CanvasItem):
+                item.setSelected(True)
+
+    def _deselect_all(self) -> None:
+        self.scene.clearSelection()
+
+    def _toggle_lock_selected(self) -> None:
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasItem)]
+        if not selected:
+            return
+        is_locked = any(it.element.locked for it in selected)
+        for it in selected:
+            it.element.locked = not is_locked
+            it.setFlag(QGraphicsItem.ItemIsMovable, not it.element.locked)
+            it.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.layers_panel.refresh_layers()
+        self._on_template_modified()
+
     def _on_tool_selected(self, tool_id: str) -> None:
         if tool_id == "select":
+            self.view.setDragMode(QGraphicsView.RubberBandDrag)
+            return
+        elif tool_id == "marquee":
+            self.view.setDragMode(QGraphicsView.RubberBandDrag)
+            return
+        elif tool_id == "hand":
+            self.view.setDragMode(QGraphicsView.ScrollHandDrag)
+            return
+        elif tool_id == "zoom":
+            self.view.zoom_in()
+            self._reset_to_select_tool()
+            return
+        elif tool_id == "eyedropper":
+            self._pick_canvas_color()
+            self._reset_to_select_tool()
             return
         elif tool_id == "static_text":
             self._add_static_text()
@@ -525,6 +1245,8 @@ class EditorPage(QWidget):
             self._add_dynamic_text()
         elif tool_id == "photo":
             self._add_photo_element()
+        elif tool_id == "image":
+            self._add_image_element()
         elif tool_id == "rect":
             self._add_rect_element()
         elif tool_id == "round_rect":
@@ -532,11 +1254,7 @@ class EditorPage(QWidget):
         elif tool_id == "line":
             self._add_line_element()
 
-        # Reset selection tool
-        for btn in self.tool_group.buttons():
-            if btn.text() == "↖":
-                btn.setChecked(True)
-                break
+        self._reset_to_select_tool()
 
     def _on_element_selected(self, item: Optional[CanvasItem]) -> None:
         self.inspector.set_selected_item(item)

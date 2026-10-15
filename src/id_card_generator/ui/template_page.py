@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QColorDialog,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -175,6 +176,12 @@ class TemplatePage(QWidget):
         self.btn_import.clicked.connect(self._import_template)
         top_bar.addWidget(self.btn_import)
 
+        self.btn_open_designer = QPushButton("🎨 Open in Photoshop Designer ➔")
+        self.btn_open_designer.setStyleSheet("background-color: #2563EB; color: #FFFFFF; font-weight: bold; padding: 6px 14px; border-radius: 4px;")
+        self.btn_open_designer.setToolTip("Open full-fledged Photoshop-inspired Template Designer with Rulers, Layers, Swatches, and History")
+        self.btn_open_designer.clicked.connect(self._open_designer_clicked)
+        top_bar.addWidget(self.btn_open_designer)
+
         layout.addLayout(top_bar)
 
         # Main Splitter: Left List (templates) vs Right Workspace (preview + properties)
@@ -189,6 +196,11 @@ class TemplatePage(QWidget):
         lbl_list_title = QLabel("<b>Available Templates</b>")
         lbl_list_title.setStyleSheet("font-size: 13px; color: #94A3B8;")
         left_layout.addWidget(lbl_list_title)
+
+        self.combo_tmpl_filter = QComboBox()
+        self.combo_tmpl_filter.addItems(["All Templates", "Built-in Templates", "Custom Templates", "Recently Used"])
+        self.combo_tmpl_filter.currentTextChanged.connect(lambda _: self._load_templates())
+        left_layout.addWidget(self.combo_tmpl_filter)
 
         self.list_widget = QListWidget()
         self.list_widget.currentItemChanged.connect(self._on_item_changed)
@@ -316,8 +328,8 @@ class TemplatePage(QWidget):
         self.btn_use.clicked.connect(self._use_template)
         btn_layout.addWidget(self.btn_use)
 
-        self.btn_edit = QPushButton("Open in Visual Canvas Editor")
-        self.btn_edit.clicked.connect(lambda: self.open_editor_requested.emit())
+        self.btn_edit = QPushButton("🎨 Open in Photoshop Template Designer ➔")
+        self.btn_edit.clicked.connect(self._open_designer_clicked)
         btn_layout.addWidget(self.btn_edit)
 
         sub_btn_row = QHBoxLayout()
@@ -363,8 +375,18 @@ class TemplatePage(QWidget):
         self.list_widget.clear()
         templates = self.manager.list_templates()
 
+        filter_mode = self.combo_tmpl_filter.currentText() if hasattr(self, "combo_tmpl_filter") else "All Templates"
+        recent_ids = self.manager.get_recent_template_ids() if hasattr(self.manager, "get_recent_template_ids") else []
+
         for tmpl in templates:
             is_built = self.manager.is_builtin(tmpl.id)
+            if filter_mode == "Built-in Templates" and not is_built:
+                continue
+            elif filter_mode == "Custom Templates" and is_built:
+                continue
+            elif filter_mode == "Recently Used" and tmpl.id not in recent_ids:
+                continue
+
             tag = "[Built-in]" if is_built else "[Custom]"
             item = QListWidgetItem(f"{tag} {tmpl.name}")
             item.setData(Qt.UserRole, tmpl.id)
@@ -381,6 +403,7 @@ class TemplatePage(QWidget):
         if not tmpl:
             return
 
+        self.manager.record_recent_template(tmpl.id)
         self._updating_ui = True
         self.active_template = tmpl
         is_built = self.manager.is_builtin(tmpl.id)
@@ -575,14 +598,15 @@ class TemplatePage(QWidget):
         if self.active_template:
             self._update_preview(self.active_template)
 
+    def _open_designer_clicked(self) -> None:
+        if self.active_template:
+            self.template_selected.emit(self.active_template)
+        self.open_editor_requested.emit()
+
     def _use_template(self) -> None:
         if self.active_template:
             self.template_selected.emit(self.active_template)
-            QMessageBox.information(
-                self,
-                "Template Activated",
-                f"'{self.active_template.name}' is now the active template for your project.",
-            )
+            self.open_editor_requested.emit()
 
     def _duplicate_template(self) -> None:
         if not self.active_template:

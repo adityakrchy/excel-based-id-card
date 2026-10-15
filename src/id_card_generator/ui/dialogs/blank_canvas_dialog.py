@@ -174,7 +174,34 @@ class BlankCanvasDialog(QDialog):
         self.btn_clear_img.clicked.connect(self._clear_image)
         img_box.addWidget(self.btn_clear_img)
 
-        bg_layout.addRow("Background Image:", img_box)
+        # Optional border
+        border_box = QHBoxLayout()
+        self.btn_border_color = QPushButton()
+        self.btn_border_color.setFixedSize(36, 24)
+        self._border_color = (self.existing_template.border_color if self.existing_template and self.existing_template.border_color else "transparent")
+        self._update_border_color_btn()
+        self.btn_border_color.clicked.connect(self._pick_border_color)
+        border_box.addWidget(self.btn_border_color)
+
+        border_box.addWidget(QLabel("Width (px):"))
+        self.spin_border_width = QSpinBox()
+        self.spin_border_width.setRange(0, 50)
+        self.spin_border_width.setValue(self.existing_template.border_width if self.existing_template else 0)
+        border_box.addWidget(self.spin_border_width)
+        border_box.addStretch()
+        bg_layout.addRow("Optional Border:", border_box)
+
+        # Margin & Safe Area
+        safe_box = QHBoxLayout()
+        self.spin_margin = QDoubleSpinBox()
+        self.spin_margin.setRange(0.0, 50.0)
+        self.spin_margin.setDecimals(1)
+        self.spin_margin.setValue(self.existing_template.safe_area_margin_mm if self.existing_template else 3.0)
+        self.spin_margin.setSuffix(" mm")
+        safe_box.addWidget(self.spin_margin)
+        safe_box.addWidget(QLabel("(print guide margin from card edges)"))
+        safe_box.addStretch()
+        bg_layout.addRow("Safe Area Margin:", safe_box)
 
         layout.addWidget(bg_group)
 
@@ -244,6 +271,12 @@ class BlankCanvasDialog(QDialog):
         self._bg_color = tmpl.background_color or "#FFFFFF"
         self._update_color_btn()
 
+        if tmpl.border_color:
+            self._border_color = tmpl.border_color
+            self._update_border_color_btn()
+        self.spin_border_width.setValue(tmpl.border_width or 0)
+        self.spin_margin.setValue(tmpl.safe_area_margin_mm or 3.0)
+
         if tmpl.background_image_path:
             self._bg_image_path = tmpl.background_image_path
             self.txt_bg_image.setText(Path(tmpl.background_image_path).name)
@@ -311,6 +344,18 @@ class BlankCanvasDialog(QDialog):
         if hasattr(self, "lbl_color_hex"):
             self.lbl_color_hex.setText(self._bg_color)
 
+    def _pick_border_color(self) -> None:
+        cur_col = QColor(self._border_color) if self._border_color != "transparent" else QColor("#000000")
+        col = QColorDialog.getColor(cur_col, self, "Select Border Color")
+        if col.isValid():
+            self._border_color = col.name().upper()
+            self._update_border_color_btn()
+
+    def _update_border_color_btn(self) -> None:
+        if hasattr(self, "btn_border_color"):
+            bg_css = self._border_color if self._border_color != "transparent" else "#E2E8F0"
+            self.btn_border_color.setStyleSheet(f"background-color: {bg_css}; border: 1px solid #64748B; border-radius: 4px;")
+
     def _browse_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -335,6 +380,10 @@ class BlankCanvasDialog(QDialog):
 
         w_px, h_px, _, _ = calculate_card_dimensions(w, h, unit, dpi, orient)
 
+        bw = self.spin_border_width.value() if hasattr(self, "spin_border_width") else 0
+        b_col = self._border_color if (bw > 0 and self._border_color != "transparent") else None
+        safe_margin = self.spin_margin.value() if hasattr(self, "spin_margin") else 3.0
+
         if self.existing_template:
             # Preserve all existing canvas elements and IDs while updating canvas properties
             self.template_definition = self.existing_template.model_copy(deep=True)
@@ -348,6 +397,9 @@ class BlankCanvasDialog(QDialog):
             self.template_definition.orientation = orient
             self.template_definition.background_color = self._bg_color
             self.template_definition.background_image_path = self._bg_image_path
+            self.template_definition.border_color = b_col
+            self.template_definition.border_width = bw
+            self.template_definition.safe_area_margin_mm = safe_margin
         else:
             self.template_definition = TemplateDefinition(
                 name=self.txt_name.text().strip() or "Blank ID Card",
@@ -360,6 +412,9 @@ class BlankCanvasDialog(QDialog):
                 orientation=orient,
                 background_color=self._bg_color,
                 background_image_path=self._bg_image_path,
+                border_color=b_col,
+                border_width=bw,
+                safe_area_margin_mm=safe_margin,
                 elements=[],
             )
         self.accept()

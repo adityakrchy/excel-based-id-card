@@ -248,13 +248,24 @@ class CanvasScene(QGraphicsScene):
                 painter.drawLine(QPointF(scene_rect.left(), y), QPointF(scene_rect.right(), y))
                 y += self.grid_size
 
-        # Safe area indicator (20px margin inside card)
+        # Safe area indicator (calculated from safe_area_margin_mm or default 20px)
         if self.show_safe_area:
-            safe_rect = scene_rect.adjusted(20, 20, -20, -20)
-            safe_pen = QPen(QColor(59, 130, 246, 60), 1.0, Qt.DashLine)
+            margin_mm = getattr(self.template, "safe_area_margin_mm", 3.0) or 3.0
+            dpi = getattr(self.template, "dpi", 300) or 300
+            margin_px = int(margin_mm / 25.4 * dpi)
+            safe_rect = scene_rect.adjusted(margin_px, margin_px, -margin_px, -margin_px)
+            safe_pen = QPen(QColor(59, 130, 246, 120), 1.0, Qt.DashLine)
             painter.setPen(safe_pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(safe_rect)
+
+        # Optional card border
+        if getattr(self.template, "border_width", 0) > 0 and getattr(self.template, "border_color", None) and self.template.border_color != "transparent":
+            bw = self.template.border_width
+            b_col = QColor(self.template.border_color)
+            painter.setPen(QPen(b_col, float(bw)))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(scene_rect.adjusted(bw / 2.0, bw / 2.0, -bw / 2.0, -bw / 2.0))
 
         # Outer card boundary shadow outline
         painter.setPen(QPen(QColor(148, 163, 184), 1.5))

@@ -20,8 +20,8 @@ class WorkflowNav(QFrame):
     STEPS = [
         (WorkflowStep.DATA_SOURCE, "1. Data Source"),
         (WorkflowStep.PHOTOS, "2. Photos"),
-        (WorkflowStep.TEMPLATES, "3. Template"),
-        (WorkflowStep.CANVAS_EDITOR, "4. Mapping & Editor"),
+        (WorkflowStep.TEMPLATES, "3. Template Design"),
+        (WorkflowStep.CANVAS_EDITOR, "4. Data Mapping"),
         (WorkflowStep.GENERATE, "5. Generate"),
         (WorkflowStep.REVIEW, "6. Review"),
         (WorkflowStep.EXPORT, "7. Export"),

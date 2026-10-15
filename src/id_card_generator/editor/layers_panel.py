@@ -256,6 +256,8 @@ class LayersPanel(QWidget):
             self.refresh_layers()
             self.order_changed.emit()
 
+    _bring_forward = _move_layer_up
+
     def _move_layer_down(self) -> None:
         """Send layer one step backward (behind adjacent element)."""
         item = self._get_selected_canvas_item()
@@ -263,6 +265,8 @@ class LayersPanel(QWidget):
             self.scene.send_backward(item)
             self.refresh_layers()
             self.order_changed.emit()
+
+    _send_backward = _move_layer_down
 
     def _send_to_back(self) -> None:
         """Send layer back to bottom of all canvas elements."""

@@ -70,6 +70,10 @@ class CanvasElementStyle(BaseModel):
     fit_mode: ImageFitMode = ImageFitMode.COVER
     mask_shape: str = "rect"  # rect, circle, rounded
     opacity: float = 1.0
+    rotation: float = 0.0
+    lock_aspect_ratio: bool = False
+    min_font_size: int = 8
+    max_font_size: int = 72
 
 
 class CanvasElement(BaseModel):
@@ -104,6 +108,9 @@ class TemplateDefinition(BaseModel):
     orientation: str = "portrait"
     background_color: str = "#FFFFFF"
     background_image_path: Optional[str] = None
+    border_color: Optional[str] = None
+    border_width: int = 0
+    safe_area_margin_mm: float = 3.0
     elements: List[CanvasElement] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -157,6 +164,7 @@ class ExportConfiguration(BaseModel):
     approved_only: bool = True
     export_manifest: bool = True
     export_contact_sheet: bool = False
+    open_output_dir_on_complete: bool = False
 
 
 class ExportResult(BaseModel):
@@ -189,3 +197,4 @@ class ProjectConfiguration(BaseModel):
     missing_photo_policy: MissingPhotoPolicy = MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER
     review_states: Dict[str, ReviewStatus] = Field(default_factory=dict)  # record_id -> ReviewStatus
     last_export_dir: Optional[str] = None
+    open_output_dir_on_export: bool = False

@@ -145,3 +145,31 @@ class TemplateManager:
         with open(destination, "w", encoding="utf-8") as f:
             json.dump(tmpl.model_dump(mode="json"), f, indent=2, ensure_ascii=False)
         logger.info("Exported template %s to %s", template_id, destination)
+
+    def get_recent_template_ids(self) -> List[str]:
+        """Return list of recently used template IDs."""
+        try:
+            from id_card_generator.resources.resource_loader import get_app_data_dir
+            rec_file = get_app_data_dir() / "recent_templates.json"
+            if rec_file.exists():
+                with open(rec_file, "r", encoding="utf-8") as f:
+                    ids = json.load(f)
+                    return [tid for tid in ids if tid in self._templates]
+        except Exception as e:
+            logger.debug("Could not read recent templates: %s", e)
+        return []
+
+    def record_recent_template(self, template_id: str) -> None:
+        """Record template ID as recently used."""
+        try:
+            from id_card_generator.resources.resource_loader import get_app_data_dir
+            rec_file = get_app_data_dir() / "recent_templates.json"
+            recents = self.get_recent_template_ids()
+            if template_id in recents:
+                recents.remove(template_id)
+            recents.insert(0, template_id)
+            recents = recents[:10]
+            with open(rec_file, "w", encoding="utf-8") as f:
+                json.dump(recents, f, indent=2)
+        except Exception as e:
+            logger.debug("Could not record recent template: %s", e)

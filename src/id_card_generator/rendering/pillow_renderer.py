@@ -77,9 +77,13 @@ class PillowRenderer:
                 warnings.extend(elem_warnings)
             except Exception as e:
                 logger.error("Failed to render element '%s' (%s): %s", elem.name, elem.id, e)
-                warnings.append(f"Element '{elem.name}' render error: {e}")
+        # 5. Render optional template border
+        if getattr(template, "border_width", 0) > 0 and getattr(template, "border_color", None) and template.border_color != "transparent":
+            bw = template.border_width
+            draw = ImageDraw.Draw(card_img)
+            draw.rectangle([(0, 0), (card_w - 1, card_h - 1)], outline=template.border_color, width=bw)
 
-        # 5. Format conversion if JPEG requested
+        # 6. Format conversion if JPEG requested
         if settings.output_format == OutputFormat.JPEG:
             # Flatten RGBA onto RGB
             rgb_bg = Image.new("RGB", (card_w, card_h), template.background_color or "#FFFFFF")

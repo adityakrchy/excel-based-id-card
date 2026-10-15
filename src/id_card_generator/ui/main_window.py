@@ -264,6 +264,7 @@ class MainWindow(QMainWindow):
 
         # Editor page signals
         self.page_editor.template_updated.connect(self._on_editor_template_updated)
+        self.page_editor.mappings_updated.connect(self._on_mappings_updated)
 
         # Generation page signals
         self.page_generation.generation_completed.connect(self._on_generation_completed)
@@ -314,10 +315,13 @@ class MainWindow(QMainWindow):
         if step == WorkflowStep.CANVAS_EDITOR:
             tmpl = self.active_template or self.page_templates.active_template
             if tmpl:
+                self.page_editor.column_mappings = self.column_mappings.copy()
                 self.page_editor.load_template(tmpl)
                 self.page_editor.set_dataset(self.records, self.match_results, self.columns)
 
         elif step == WorkflowStep.GENERATE:
+            if hasattr(self.page_editor, "column_mappings") and self.page_editor.column_mappings:
+                self.column_mappings.update(self.page_editor.column_mappings)
             tmpl = self.active_template or self.page_templates.active_template
             self.page_generation.set_generation_context(
                 template=tmpl,
@@ -372,6 +376,10 @@ class MainWindow(QMainWindow):
     def _on_editor_template_updated(self, template: TemplateDefinition) -> None:
         self.active_template = template
         self.workflow_nav.mark_step_completed(WorkflowStep.CANVAS_EDITOR, True)
+
+    def _on_mappings_updated(self, mappings: Dict[str, str]) -> None:
+        self.column_mappings.update(mappings)
+        self.status_bar.showMessage(f"Field mappings updated ({len(self.column_mappings)} mapped).")
 
     def _on_generation_completed(self, summary: GenerationSummary) -> None:
         self.last_generation_summary = summary
@@ -486,6 +494,11 @@ class MainWindow(QMainWindow):
 
             self.column_mappings = cfg.column_mappings
             self.settings.missing_photo_policy = cfg.missing_photo_policy
+            if hasattr(cfg, "open_output_dir_on_export") and hasattr(self.page_export, "chk_auto_open"):
+                self.page_export.chk_auto_open.setChecked(cfg.open_output_dir_on_export)
+            if cfg.last_export_dir and Path(cfg.last_export_dir).exists():
+                self.page_export.last_export_dir = Path(cfg.last_export_dir)
+                self.page_export.lbl_dest_dir.setText(cfg.last_export_dir)
 
             self.switch_page(WorkflowStep.DASHBOARD)
             self._refresh_dashboard_metrics()
@@ -521,6 +534,8 @@ class MainWindow(QMainWindow):
                 photo_overrides=self.page_photos.matcher.overrides,
                 missing_photo_policy=self.settings.missing_photo_policy,
                 review_states={r.record_id: r.status for r in self.page_review.manager.records},
+                last_export_dir=str(self.page_export.last_export_dir) if self.page_export.last_export_dir else None,
+                open_output_dir_on_export=self.page_export.chk_auto_open.isChecked() if hasattr(self.page_export, "chk_auto_open") else False,
             )
             ProjectManager.save_project(cfg, path)
             self._refresh_status_bar()
