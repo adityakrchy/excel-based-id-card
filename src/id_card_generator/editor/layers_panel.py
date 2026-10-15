@@ -205,8 +205,11 @@ class LayersPanel(QWidget):
             return
         self._updating = True
         try:
+            try:
+                selected_canvas_items = self.scene.selectedItems()
+            except RuntimeError:
+                return
             self.tree.clearSelection()
-            selected_canvas_items = self.scene.selectedItems()
 
             for idx in range(self.tree.topLevelItemCount()):
                 t_item = self.tree.topLevelItem(idx)

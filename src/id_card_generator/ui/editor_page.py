@@ -68,6 +68,7 @@ class EditorPage(QWidget):
         self.columns: List[str] = []
         self.sample_index: int = 0
         self._updating_context_bar: bool = False
+        self._user_adjusted_splitter: bool = False
 
         self._setup_ui()
         self._connect_signals()
@@ -134,19 +135,26 @@ class EditorPage(QWidget):
         self.tool_strip = self._create_vertical_tool_strip()
         editor_body.addWidget(self.tool_strip)
 
-        # Resizable Splitter (Canvas ~70% and Right Panels ~30%)
+        # Resizable Splitter (Canvas 70% and Right Panels 30% by default)
         self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.addWidget(self.view)
+        self.splitter.setHandleWidth(7)
+        self.splitter.setChildrenCollapsible(False)
+        self.view.setMinimumWidth(360)
 
         # Right Tabbed Dock
         self.right_tabs = QTabWidget()
+        self.right_tabs.setMinimumWidth(260)
         self.right_tabs.addTab(self.inspector, "Properties")
         self.right_tabs.addTab(self.layers_panel, "Layers")
         self.right_tabs.addTab(self.mapping_panel, "Data Mapping")
+
+        self.splitter.addWidget(self.view)
         self.splitter.addWidget(self.right_tabs)
 
         self.splitter.setStretchFactor(0, 7)
         self.splitter.setStretchFactor(1, 3)
+        self.splitter.setSizes([840, 360])
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
         editor_body.addWidget(self.splitter, stretch=1)
 
         main_layout.addLayout(editor_body, stretch=1)
@@ -249,6 +257,13 @@ class EditorPage(QWidget):
         btn_100.setFixedSize(40, 36)
         btn_100.clicked.connect(self.view.reset_zoom)
         layout.addWidget(btn_100)
+
+        btn_reset_split = QToolButton()
+        btn_reset_split.setText("70%")
+        btn_reset_split.setToolTip("Reset Canvas Area to 70% Screen Width")
+        btn_reset_split.setFixedSize(40, 36)
+        btn_reset_split.clicked.connect(lambda: self.apply_default_splitter_sizes(force=True))
+        layout.addWidget(btn_reset_split)
 
         layout.addStretch()
         return frame
@@ -439,14 +454,49 @@ class EditorPage(QWidget):
             sc.activated.connect(self._trigger_redo)
             self._redo_shortcuts.append(sc)
 
+    def _on_splitter_moved(self, pos: int, index: int) -> None:
+        """Record when user manually resizes canvas using the center slider handle."""
+        self._user_adjusted_splitter = True
+
+    def apply_default_splitter_sizes(self, force: bool = False) -> None:
+        """Ensure canvas area occupies 70% of available screen width by default."""
+        if self._user_adjusted_splitter and not force:
+            return
+
+        total_w = self.splitter.width()
+        if total_w <= 100:
+            total_w = self.width() - self.tool_strip.width() - 24
+            if total_w <= 100 and self.window():
+                total_w = self.window().width() - self.tool_strip.width() - 32
+
+        if total_w > 100:
+            canvas_w = int(total_w * 0.70)
+            right_w = max(240, total_w - canvas_w)
+            self.splitter.setSizes([canvas_w, right_w])
+            if force:
+                self._user_adjusted_splitter = False
+                self.view.fit_to_view(enlarge_factor=1.35)
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        if not self._user_adjusted_splitter:
+            self.apply_default_splitter_sizes(force=False)
+            QTimer.singleShot(0, lambda: self.apply_default_splitter_sizes(force=False))
+            QTimer.singleShot(50, lambda: self.apply_default_splitter_sizes(force=False))
         QTimer.singleShot(80, lambda: self.view.fit_to_view(enlarge_factor=1.35))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if not self._user_adjusted_splitter:
+            self.apply_default_splitter_sizes(force=False)
 
     def load_template(self, template: TemplateDefinition) -> None:
         """Load template into canvas editor and update metadata readouts."""
         self.scene.load_template(template)
         self.layers_panel.refresh_layers()
+        if not self._user_adjusted_splitter:
+            self.apply_default_splitter_sizes(force=False)
+            QTimer.singleShot(20, lambda: self.apply_default_splitter_sizes(force=False))
         QTimer.singleShot(60, lambda: self.view.fit_to_view(enlarge_factor=1.35))
         self._update_status_dimensions()
         self._update_sample_preview()

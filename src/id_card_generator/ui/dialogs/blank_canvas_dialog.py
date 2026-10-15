@@ -34,29 +34,43 @@ logger = logging.getLogger(__name__)
 
 
 class BlankCanvasDialog(QDialog):
-    """Dialog allowing users to create a clean blank canvas with physical dimensions and DPI."""
+    """Dialog allowing users to create a clean blank canvas or edit existing template canvas properties."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, existing_template: Optional[TemplateDefinition] = None):
         super().__init__(parent)
-        self.setWindowTitle("Create Blank Canvas")
-        self.setMinimumWidth(440)
+        self.existing_template = existing_template
+        is_edit = existing_template is not None
+        self.setWindowTitle(f"Edit Canvas Properties - {existing_template.name}" if is_edit else "Create Blank Canvas")
+        self.setMinimumWidth(460)
         self.template_definition: Optional[TemplateDefinition] = None
 
-        self._bg_color = "#FFFFFF"
-        self._bg_image_path: Optional[str] = None
+        self._bg_color = (existing_template.background_color or "#FFFFFF") if existing_template else "#FFFFFF"
+        self._bg_image_path: Optional[str] = existing_template.background_image_path if existing_template else None
 
         self._setup_ui()
-        self._on_preset_changed(0)  # Standard CR80 default
+
+        if existing_template:
+            self._load_from_template(existing_template)
+        else:
+            self._on_preset_changed(0)  # Standard CR80 default
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(14)
 
         # Header
-        lbl_head = QLabel("<b>Create New Blank Canvas</b>")
+        is_edit = self.existing_template is not None
+        title_text = "<b>Edit Canvas Properties</b>" if is_edit else "<b>Create New Blank Canvas</b>"
+        lbl_head = QLabel(title_text)
         lbl_head.setStyleSheet("font-size: 15px;")
         layout.addWidget(lbl_head)
-        lbl_desc = QLabel("Configure physical card dimensions, DPI, and background properties.")
+
+        desc_text = (
+            "Modify physical card dimensions, print DPI, orientation, and card surface properties."
+            if is_edit else
+            "Configure physical card dimensions, DPI, and background properties."
+        )
+        lbl_desc = QLabel(desc_text)
         lbl_desc.setStyleSheet("color: #94A3B8; font-size: 12px;")
         layout.addWidget(lbl_desc)
 
@@ -64,7 +78,8 @@ class BlankCanvasDialog(QDialog):
         form_layout = QFormLayout(form_group)
 
         # Name
-        self.txt_name = QLineEdit("Blank ID Card")
+        default_name = self.existing_template.name if self.existing_template else "Blank ID Card"
+        self.txt_name = QLineEdit(default_name)
         form_layout.addRow("Template Name:", self.txt_name)
 
         # Presets
@@ -149,9 +164,16 @@ class BlankCanvasDialog(QDialog):
         self.txt_bg_image.setPlaceholderText("Optional image file...")
         self.txt_bg_image.setReadOnly(True)
         img_box.addWidget(self.txt_bg_image)
+
         self.btn_browse_img = QPushButton("Browse...")
         self.btn_browse_img.clicked.connect(self._browse_image)
         img_box.addWidget(self.btn_browse_img)
+
+        self.btn_clear_img = QPushButton("Clear")
+        self.btn_clear_img.setToolTip("Remove background image")
+        self.btn_clear_img.clicked.connect(self._clear_image)
+        img_box.addWidget(self.btn_clear_img)
+
         bg_layout.addRow("Background Image:", img_box)
 
         layout.addWidget(bg_group)
@@ -161,6 +183,75 @@ class BlankCanvasDialog(QDialog):
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _load_from_template(self, tmpl: TemplateDefinition) -> None:
+        """Pre-populate dialog controls from an existing template."""
+        self.txt_name.setText(tmpl.name)
+
+        unit = tmpl.unit or "mm"
+        idx = self.combo_unit.findText(unit)
+        if idx >= 0:
+            self.combo_unit.blockSignals(True)
+            self.combo_unit.setCurrentIndex(idx)
+            self.combo_unit.blockSignals(False)
+
+        dpi = tmpl.dpi or DEFAULT_DPI
+        self.spin_dpi.blockSignals(True)
+        self.spin_dpi.setValue(dpi)
+        self.spin_dpi.blockSignals(False)
+
+        # Determine physical dimensions
+        if tmpl.width_physical and tmpl.height_physical:
+            w_val = tmpl.width_physical
+            h_val = tmpl.height_physical
+        else:
+            w_mm = tmpl.width_px / dpi * 25.4
+            h_mm = tmpl.height_px / dpi * 25.4
+            w_val = convert_unit(w_mm, "mm", unit)
+            h_val = convert_unit(h_mm, "mm", unit)
+
+        is_portrait = (tmpl.orientation.lower() == "portrait") or (tmpl.height_px > tmpl.width_px)
+        self.radio_portrait.blockSignals(True)
+        self.radio_landscape.blockSignals(True)
+        self.radio_portrait.setChecked(is_portrait)
+        self.radio_landscape.setChecked(not is_portrait)
+        self.radio_portrait.blockSignals(False)
+        self.radio_landscape.blockSignals(False)
+
+        self.spin_width.blockSignals(True)
+        self.spin_height.blockSignals(True)
+        self.spin_width.setValue(round(w_val, 2))
+        self.spin_height.setValue(round(h_val, 2))
+        self.spin_width.blockSignals(False)
+        self.spin_height.blockSignals(False)
+
+        # Match preset
+        w_mm = convert_unit(w_val, unit, "mm")
+        h_mm = convert_unit(h_val, unit, "mm")
+        dim_pair = (min(round(w_mm, 1), round(h_mm, 1)), max(round(w_mm, 1), round(h_mm, 1)))
+        self.combo_presets.blockSignals(True)
+        if dim_pair == (54.0, 85.6):
+            self.combo_presets.setCurrentIndex(0)
+        elif dim_pair == (52.1, 83.9):
+            self.combo_presets.setCurrentIndex(1)
+        elif dim_pair == (70.0, 100.0):
+            self.combo_presets.setCurrentIndex(2)
+        else:
+            self.combo_presets.setCurrentIndex(3)
+        self.combo_presets.blockSignals(False)
+
+        # Surface
+        self._bg_color = tmpl.background_color or "#FFFFFF"
+        self._update_color_btn()
+
+        if tmpl.background_image_path:
+            self._bg_image_path = tmpl.background_image_path
+            self.txt_bg_image.setText(Path(tmpl.background_image_path).name)
+        else:
+            self._bg_image_path = None
+            self.txt_bg_image.clear()
+
+        self._update_pixel_preview()
 
     def _on_preset_changed(self, index: int) -> None:
         unit = self.combo_unit.currentText()
@@ -231,6 +322,10 @@ class BlankCanvasDialog(QDialog):
             self._bg_image_path = path
             self.txt_bg_image.setText(Path(path).name)
 
+    def _clear_image(self) -> None:
+        self._bg_image_path = None
+        self.txt_bg_image.clear()
+
     def _on_accept(self) -> None:
         unit = self.combo_unit.currentText()
         w = self.spin_width.value()
@@ -240,17 +335,35 @@ class BlankCanvasDialog(QDialog):
 
         w_px, h_px, _, _ = calculate_card_dimensions(w, h, unit, dpi, orient)
 
-        self.template_definition = TemplateDefinition(
-            name=self.txt_name.text().strip() or "Blank ID Card",
-            width_px=w_px,
-            height_px=h_px,
-            dpi=dpi,
-            unit=unit,
-            width_physical=w,
-            height_physical=h,
-            orientation=orient,
-            background_color=self._bg_color,
-            background_image_path=self._bg_image_path,
-            elements=[],
-        )
+        if self.existing_template:
+            # Preserve all existing canvas elements and IDs while updating canvas properties
+            self.template_definition = self.existing_template.model_copy(deep=True)
+            self.template_definition.name = self.txt_name.text().strip() or self.existing_template.name
+            self.template_definition.width_px = w_px
+            self.template_definition.height_px = h_px
+            self.template_definition.dpi = dpi
+            self.template_definition.unit = unit
+            self.template_definition.width_physical = w
+            self.template_definition.height_physical = h
+            self.template_definition.orientation = orient
+            self.template_definition.background_color = self._bg_color
+            self.template_definition.background_image_path = self._bg_image_path
+        else:
+            self.template_definition = TemplateDefinition(
+                name=self.txt_name.text().strip() or "Blank ID Card",
+                width_px=w_px,
+                height_px=h_px,
+                dpi=dpi,
+                unit=unit,
+                width_physical=w,
+                height_physical=h,
+                orientation=orient,
+                background_color=self._bg_color,
+                background_image_path=self._bg_image_path,
+                elements=[],
+            )
         self.accept()
+
+
+# Semantic alias for explicit property editing
+CanvasPropertiesDialog = BlankCanvasDialog

@@ -104,3 +104,33 @@ def test_canvas_view_auto_enlarge(qtbot):
 
     assert scale_135 > scale_100
     assert abs(scale_135 / scale_100 - 1.35) < 0.05
+
+
+def test_editor_page_splitter_default_70_percent(app_window: MainWindow, qtbot):
+    """Verify that when navigating to canvas editor, canvas area defaults to 70% of splitter width."""
+    app_window.resize(1200, 800)
+    app_window.show()
+
+    # Navigate to canvas editor
+    app_window.switch_page(WorkflowStep.CANVAS_EDITOR)
+    qtbot.wait(100)
+
+    splitter = app_window.page_editor.splitter
+    sizes = splitter.sizes()
+    total_w = sum(sizes)
+    assert total_w > 0
+    canvas_ratio = sizes[0] / total_w
+    # Canvas should be approximately 70% (between 68% and 72%)
+    assert 0.68 <= canvas_ratio <= 0.72
+    assert not splitter.childrenCollapsible()
+
+    # Manual resize by user
+    app_window.page_editor._on_splitter_moved(700, 1)
+    assert app_window.page_editor._user_adjusted_splitter is True
+
+    # Reset button should restore 70%
+    app_window.page_editor.apply_default_splitter_sizes(force=True)
+    sizes2 = splitter.sizes()
+    ratio2 = sizes2[0] / sum(sizes2)
+    assert 0.68 <= ratio2 <= 0.72
+

@@ -278,17 +278,24 @@ class MainWindow(QMainWindow):
         self.page_settings.policy_changed.connect(self._on_policy_changed)
 
         # Background task progress indicators
+        def _safe_status(msg: str) -> None:
+            try:
+                if hasattr(self, "status_bar") and self.status_bar:
+                    self.status_bar.showMessage(msg)
+            except RuntimeError:
+                pass
+
         task_signals = TaskManager.instance().signals
         task_signals.task_progress.connect(
-            lambda tid, cur, tot, msg: self.status_bar.showMessage(
+            lambda tid, cur, tot, msg: _safe_status(
                 f"{msg} ({cur}/{tot})" if tot > 0 else msg
             )
         )
         task_signals.task_completed.connect(
-            lambda tid, res: self.status_bar.showMessage("Background task completed successfully.")
+            lambda tid, res: _safe_status("Background task completed successfully.")
         )
         task_signals.task_failed.connect(
-            lambda tid, err: self.status_bar.showMessage(f"Task error: {err}")
+            lambda tid, err: _safe_status(f"Task error: {err}")
         )
 
     def switch_page(self, step: WorkflowStep) -> None:
@@ -346,6 +353,7 @@ class MainWindow(QMainWindow):
         self.workflow_nav.mark_step_completed(WorkflowStep.DATA_SOURCE, True)
         self.page_photos.set_columns(columns)
         self.page_photos.set_records(records)
+        self.page_templates.set_sample_record(records[0] if records else None)
         self._refresh_dashboard_metrics()
         self.status_bar.showMessage(f"Data source loaded: {len(records)} records ({report.valid_records} valid).")
 
