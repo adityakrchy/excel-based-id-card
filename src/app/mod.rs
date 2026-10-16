@@ -42,7 +42,10 @@ use crate::{
         TaskKind, TaskManager, ThumbnailPriority, ThumbnailQueue, ThumbnailRequest,
     },
     templates::{builtin_templates, BUILTIN_TEMPLATE_IDS},
-    ui::{MappingEditor, MappingEditorState, TemplateEditor, TemplateEditorState},
+    ui::{
+        MappingEditor, MappingEditorState, NewCanvasDialogState, TemplateEditor,
+        TemplateEditorState,
+    },
 };
 
 const CHANNEL_CAPACITY: usize = 1024;
@@ -188,6 +191,7 @@ pub struct MigrationApp {
     templates: Vec<(String, TemplateDefinition)>,
     selected_template_id: String,
     editor_state: TemplateEditorState,
+    new_canvas_dialog: NewCanvasDialogState,
     mapping_state: MappingEditorState,
     selected_sample: usize,
 
@@ -272,6 +276,7 @@ impl MigrationApp {
                 .collect(),
             selected_template_id: String::new(),
             editor_state: TemplateEditorState::default(),
+            new_canvas_dialog: NewCanvasDialogState::default(),
             mapping_state: MappingEditorState::default(),
             selected_sample: 0,
             output_dir: "staging".into(),
@@ -691,12 +696,8 @@ impl MigrationApp {
     }
 
     fn create_blank_template(&mut self) {
-        log::info!("Creating blank template");
-        let template = TemplateDefinition {
-            name: "Blank Template".into(),
-            ..TemplateDefinition::default()
-        };
-        self.choose_template("blank-template".into(), template);
+        log::info!("Opening new blank canvas dialog");
+        self.new_canvas_dialog.open();
     }
 
     fn start_generation(&mut self) {
@@ -1457,6 +1458,7 @@ impl MigrationApp {
         self.canvas_background = template.background_color.clone();
     }
 
+    #[allow(dead_code)]
     fn show_canvas_controls(
         &mut self,
         ui: &mut egui::Ui,
@@ -2136,7 +2138,6 @@ impl MigrationApp {
     }
 
     fn show_template_editor(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Template Editor");
         if self.project.template.is_some() {
             let mut template = self
                 .project
@@ -2149,7 +2150,6 @@ impl MigrationApp {
                 .get(self.selected_sample)
                 .and_then(|rec| self.match_results.get(&rec.record_id))
                 .cloned();
-            let geometry_changed = self.show_canvas_controls(ui, &mut template);
             let editor_changed = TemplateEditor::with_context(
                 &mut template,
                 &mut self.editor_state,
@@ -2165,14 +2165,21 @@ impl MigrationApp {
                 self.refresh_photo_matches();
                 self.dirty = true;
             }
-            if geometry_changed || editor_changed {
+            if editor_changed {
                 self.dirty = true;
             }
         } else {
-            ui.label("Choose a template before opening the editor.");
-            if ui.button("Browse templates").clicked() {
-                self.page = WorkflowPage::Templates;
-            }
+            ui.heading("Template Editor");
+            ui.label("No template active. Choose a template or create a custom canvas.");
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("📄 Create Blank Canvas…").clicked() {
+                    self.new_canvas_dialog.open();
+                }
+                if ui.button("Browse templates").clicked() {
+                    self.page = WorkflowPage::Templates;
+                }
+            });
         }
     }
 
@@ -2927,6 +2934,19 @@ impl eframe::App for MigrationApp {
             WorkflowPage::Export => self.show_export(ui),
             WorkflowPage::Settings => self.show_settings(context, ui),
         });
+
+        // Show Photoshop-style New Document modal dialog if opened
+        if let Some(new_template) = self.new_canvas_dialog.show(context) {
+            log::info!(
+                "Created new custom blank canvas: {} ({}x{} px @ {} DPI)",
+                new_template.name,
+                new_template.width_px,
+                new_template.height_px,
+                new_template.dpi
+            );
+            self.choose_template("custom-blank-template".into(), new_template);
+            self.page = WorkflowPage::TemplateEditor;
+        }
     }
 }
 

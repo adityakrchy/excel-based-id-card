@@ -18,7 +18,9 @@ use image::{
 };
 use imageproc::{
     drawing::{
-        draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut, text_size,
+        draw_filled_circle_mut, draw_filled_ellipse_mut, draw_filled_rect_mut,
+        draw_hollow_ellipse_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
+        text_size,
     },
     rect::Rect,
 };
@@ -254,8 +256,11 @@ impl NativeRenderer {
         let mut layer = RgbaImage::from_pixel(canvas.width(), canvas.height(), Rgba([0, 0, 0, 0]));
 
         match element.r#type.as_str() {
-            "rect" | "round_rect" | "line" => {
+            "rect" | "round_rect" | "line" | "ellipse" | "gradient" => {
                 draw_shape(&mut layer, element, x, y, width, height, opacity, warnings);
+            }
+            "brush" => {
+                draw_brush_element(&mut layer, element, opacity, warnings);
             }
             "static_text" => {
                 let text = element.static_content.as_deref().unwrap_or_default();
@@ -329,14 +334,80 @@ fn draw_shape(
 ) {
     let fill = parse_color(&element.style.background_color, "shape fill", warnings);
     let border = parse_color(&element.style.border_color, "shape border", warnings);
+
     if element.r#type == "line" {
         let color = if fill[3] > 0 { fill } else { border };
-        draw_line_segment_mut(
-            layer,
-            (x as f32, y as f32),
-            ((x + width as i32) as f32, (y + height as i32) as f32),
-            apply_opacity(color, opacity),
-        );
+        let stroke_w = element.style.border_width.max(1) as i32;
+        let start = (x as f32, y as f32);
+        let end = ((x + width as i32) as f32, (y + height as i32) as f32);
+        for offset in 0..stroke_w {
+            let dy = offset as f32 - (stroke_w as f32 / 2.0);
+            draw_line_segment_mut(
+                layer,
+                (start.0, start.1 + dy),
+                (end.0, end.1 + dy),
+                apply_opacity(color, opacity),
+            );
+        }
+        return;
+    }
+
+    if element.r#type == "ellipse" {
+        let center_x = x + (width as i32) / 2;
+        let center_y = y + (height as i32) / 2;
+        let rx = ((width / 2) as i32).max(1);
+        let ry = ((height / 2) as i32).max(1);
+        if fill[3] > 0 {
+            draw_filled_ellipse_mut(
+                layer,
+                (center_x, center_y),
+                rx,
+                ry,
+                apply_opacity(fill, opacity),
+            );
+        }
+        if element.style.border_width > 0 && border[3] > 0 {
+            let stroke_w = element.style.border_width as i32;
+            for w in 0..stroke_w {
+                let r_x = (rx - w).max(1);
+                let r_y = (ry - w).max(1);
+                draw_hollow_ellipse_mut(
+                    layer,
+                    (center_x, center_y),
+                    r_x,
+                    r_y,
+                    apply_opacity(border, opacity),
+                );
+            }
+        }
+        return;
+    }
+
+    if element.r#type == "gradient" {
+        let c1 = fill;
+        let c2 = border;
+        let h = (height as f32).max(1.0);
+        let img_w = layer.width() as i32;
+        let img_h = layer.height() as i32;
+        for py in 0..height {
+            let curr_y = y + py as i32;
+            if curr_y < 0 || curr_y >= img_h {
+                continue;
+            }
+            let t = py as f32 / h;
+            let r = (c1[0] as f32 * (1.0 - t) + c2[0] as f32 * t) as u8;
+            let g = (c1[1] as f32 * (1.0 - t) + c2[1] as f32 * t) as u8;
+            let b = (c1[2] as f32 * (1.0 - t) + c2[2] as f32 * t) as u8;
+            let a = ((c1[3] as f32 * (1.0 - t) + c2[3] as f32 * t) * opacity.clamp(0.0, 1.0)) as u8;
+            let col = Rgba([r, g, b, a]);
+            for px in 0..width {
+                let curr_x = x + px as i32;
+                if curr_x < 0 || curr_x >= img_w {
+                    continue;
+                }
+                layer.put_pixel(curr_x as u32, curr_y as u32, col);
+            }
+        }
         return;
     }
 
@@ -390,6 +461,73 @@ fn draw_shape(
             }
         } else {
             draw_filled_rect_mut(layer, rect, apply_opacity(fill, opacity));
+        }
+    }
+}
+
+fn draw_brush_element(
+    layer: &mut RgbaImage,
+    element: &CanvasElement,
+    opacity: f32,
+    warnings: &mut Vec<RenderWarning>,
+) {
+    let Some(content) = element.static_content.as_deref() else {
+        return;
+    };
+    let stroke_color = parse_color(&element.style.font_color, "brush stroke", warnings);
+    let color = apply_opacity(stroke_color, opacity);
+    let radius = (element.style.border_width / 2).max(1) as i32;
+
+    let paths: Vec<Vec<(f32, f32)>> =
+        if let Ok(multi) = serde_json::from_str::<Vec<Vec<[f32; 2]>>>(content) {
+            multi
+                .into_iter()
+                .map(|p| p.into_iter().map(|pt| (pt[0], pt[1])).collect())
+                .collect()
+        } else if let Ok(parsed) = serde_json::from_str::<Vec<[f32; 2]>>(content) {
+            vec![parsed.into_iter().map(|p| (p[0], p[1])).collect()]
+        } else if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(content) {
+            let single: Vec<(f32, f32)> = parsed
+                .into_iter()
+                .filter_map(|v| {
+                    if let (Some(x), Some(y)) = (
+                        v.get("x").and_then(|x| x.as_f64()),
+                        v.get("y").and_then(|y| y.as_f64()),
+                    ) {
+                        Some((x as f32, y as f32))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if single.is_empty() {
+                Vec::new()
+            } else {
+                vec![single]
+            }
+        } else {
+            Vec::new()
+        };
+
+    if paths.is_empty() {
+        return;
+    }
+
+    let img_w = layer.width() as i32;
+    let img_h = layer.height() as i32;
+
+    for points in &paths {
+        for i in 0..points.len() {
+            let (px, py) = points[i];
+            let ix = px.round() as i32;
+            let iy = py.round() as i32;
+            if ix + radius >= 0 && ix - radius < img_w && iy + radius >= 0 && iy - radius < img_h {
+                draw_filled_circle_mut(layer, (ix, iy), radius, color);
+            }
+            if i + 1 < points.len() {
+                let (nx, ny) = points[i + 1];
+                draw_line_segment_mut(layer, (px, py), (nx, ny), color);
+            }
         }
     }
 }
