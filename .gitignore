@@ -46,3 +46,7 @@ Thumbs.db
 output/
 staging/
 exports/
+
+# Rust
+/target/
+*.rs.bk

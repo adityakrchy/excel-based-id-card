@@ -1,0 +1,94 @@
+name: Build Rust Windows Application
+
+on:
+  push:
+    branches: [main, master, feature-branch]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-rust-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify code formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy lints
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run automated test suite
+        run: cargo test --all-targets
+
+      - name: Build standalone release executable
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Verify release executable
+        shell: pwsh
+        run: |
+          $exePath = "target\x86_64-pc-windows-msvc\release\excel-id-card-rust.exe"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "Release executable not found at $exePath!"
+            exit 1
+          }
+          Write-Host "Verified $exePath exists successfully." -ForegroundColor Green
+
+      - name: Package standalone ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+          Compress-Archive -Path "target\x86_64-pc-windows-msvc\release\excel-id-card-rust.exe" -DestinationPath "dist\ExcelIDCardGenerator-Rust-Windows-x64.zip"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          winget install --id JRSoftware.InnoSetup --exact --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Build Inno Setup Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup compiler (ISCC.exe) was not found."
+          }
+
+          New-Item -ItemType Directory -Force -Path "dist\rust-installer" | Out-Null
+          & $iscc "packaging\rust_installer.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Upload Windows Standalone ZIP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExcelIDCardGenerator-Rust-Windows-x64
+          path: dist/ExcelIDCardGenerator-Rust-Windows-x64.zip
+          retention-days: 14
+
+      - name: Upload Windows Installer Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ExcelIDCardGenerator-Rust-Installer
+          path: dist/rust-installer/*.exe
+          retention-days: 14
