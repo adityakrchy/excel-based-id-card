@@ -89,7 +89,7 @@ class CanvasView(QGraphicsView):
             super().wheelEvent(event)
 
     def keyPressEvent(self, event):
-        """Forward undo and redo shortcuts to canvas scene."""
+        """Forward undo, redo, and arrow key nudges to canvas scene."""
         is_ctrl_or_cmd = bool(event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier))
         if is_ctrl_or_cmd:
             if event.key() == Qt.Key_Z:
@@ -106,4 +106,12 @@ class CanvasView(QGraphicsView):
                     self.scene().redo()
                 event.accept()
                 return
+
+        # Forward arrow keys to canvas scene for element nudging instead of scrolling view
+        if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            if self.scene() and hasattr(self.scene(), "keyPressEvent"):
+                self.scene().keyPressEvent(event)
+                if event.isAccepted():
+                    return
+
         super().keyPressEvent(event)

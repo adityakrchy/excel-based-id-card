@@ -586,6 +586,20 @@ class EditorPage(QWidget):
         if not self._user_adjusted_splitter:
             self.apply_default_splitter_sizes(force=False)
 
+    def keyPressEvent(self, event) -> None:
+        """Forward arrow keys and element actions from editor page to canvas scene."""
+        fw = QApplication.focusWidget()
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox)):
+            super().keyPressEvent(event)
+            return
+
+        if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Delete, Qt.Key_Backspace):
+            if self.scene and hasattr(self.scene, "keyPressEvent"):
+                self.scene.keyPressEvent(event)
+                if event.isAccepted():
+                    return
+        super().keyPressEvent(event)
+
     def load_template(self, template: TemplateDefinition) -> None:
         """Load template into canvas editor and update metadata readouts."""
         self.scene.load_template(template)

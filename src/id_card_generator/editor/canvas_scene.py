@@ -422,55 +422,84 @@ class CanvasScene(QGraphicsScene):
                 event.accept()
                 return
 
-        item = self.get_selected_item()
-        if not item or item.element.locked:
+        selected_items = [it for it in self.selectedItems() if isinstance(it, CanvasItem) and not it.element.locked]
+        if not selected_items:
             super().keyPressEvent(event)
             return
 
         step = 10.0 if (event.modifiers() & Qt.ShiftModifier) else 1.0
 
         if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
-            old_pos = QPointF(item.pos())
+            dx, dy = 0.0, 0.0
             if event.key() == Qt.Key_Left:
-                raw_pos = QPointF(old_pos.x() - step, old_pos.y())
+                dx = -step
             elif event.key() == Qt.Key_Right:
-                raw_pos = QPointF(old_pos.x() + step, old_pos.y())
+                dx = step
             elif event.key() == Qt.Key_Up:
-                raw_pos = QPointF(old_pos.x(), old_pos.y() - step)
-            else:
-                raw_pos = QPointF(old_pos.x(), old_pos.y() + step)
+                dy = -step
+            elif event.key() == Qt.Key_Down:
+                dy = step
 
-            bypass = bool(event.modifiers() & Qt.AltModifier)
-            if not bypass and self._snap_settings.object_snapping_enabled:
-                moving_rect = QRectF(raw_pos.x(), raw_pos.y(), item.element.width, item.element.height)
-                targets = self.get_reference_targets(exclude_items={item})
-                snap_res = self.smart_alignment_engine.snap_move(
-                    moving_rect=moving_rect,
+            # Calculate collective bounding box of all moving items
+            lefts = [it.pos().x() + it._rect.x() for it in selected_items]
+            rights = [it.pos().x() + it._rect.x() + it._rect.width() for it in selected_items]
+            tops = [it.pos().y() + it._rect.y() for it in selected_items]
+            bottoms = [it.pos().y() + it._rect.y() + it._rect.height() for it in selected_items]
+
+            group_rect = QRectF(min(lefts), min(tops), max(rights) - min(lefts), max(bottoms) - min(tops))
+            proposed_rect = group_rect.translated(dx, dy)
+
+            # In professional tools like Figma and Photoshop, arrow-key nudging moves strictly
+            # by the nudge step (1px normal, 10px with Shift) so precision placement is never
+            # neutralized or trapped by magnetic snapping suction.
+            final_dx = dx
+            final_dy = dy
+
+            # If smart guides are enabled, flash alignment guides only when the position lands
+            # directly on an alignment guide line (within 0.5px tolerance)
+            if self._snap_settings.smart_guides_enabled and not (event.modifiers() & Qt.AltModifier):
+                targets = self.get_reference_targets(exclude_items=set(selected_items))
+                align_check = self.smart_alignment_engine.snap_move(
+                    moving_rect=proposed_rect,
                     targets=targets,
                     canvas_rect=self.sceneRect(),
                     zoom_factor=self.get_zoom_factor(),
                     bypass_snap=False,
                 )
-                new_pos = QPointF(snap_res.snapped_x, snap_res.snapped_y)
-                if snap_res.guides or snap_res.spacing_badges:
-                    self.set_active_guides(snap_res.guides, snap_res.spacing_badges)
+                if abs(align_check.delta_x) <= 0.5 and abs(align_check.delta_y) <= 0.5 and (align_check.guides or align_check.spacing_badges):
+                    self.set_active_guides(align_check.guides, align_check.spacing_badges)
                     self.update()
-                    self._start_nudge_guide_timer()
+                    self._start_nudge_guide_timer(600)
                 else:
                     self.clear_guides()
             else:
-                new_pos = raw_pos
                 self.clear_guides()
 
-            item.setPos(new_pos)
-            item.update_model_position()
-            from id_card_generator.editor.undo_manager import MoveElementCommand
-            self.undo_stack.push(MoveElementCommand(item, old_pos, new_pos, "Nudge Element"))
+            moves = []
+            for it in selected_items:
+                old_p = QPointF(it.pos())
+                new_p = QPointF(old_p.x() + final_dx, old_p.y() + final_dy)
+                it.setPos(new_p)
+                it.update_model_position()
+                moves.append((it, old_p, new_p))
+
+            from id_card_generator.editor.undo_manager import (
+                MoveElementCommand,
+                MoveMultipleElementsCommand,
+            )
+            if len(moves) == 1:
+                it, old_p, new_p = moves[0]
+                self.undo_stack.push(MoveElementCommand(it, old_p, new_p, "Nudge Element"))
+            elif len(moves) > 1:
+                self.undo_stack.push(MoveMultipleElementsCommand(moves, "Nudge Elements"))
+
             self.template_modified.emit()
             event.accept()
+            return
         elif event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             self.delete_selected()
             event.accept()
+            return
         else:
             super().keyPressEvent(event)
 

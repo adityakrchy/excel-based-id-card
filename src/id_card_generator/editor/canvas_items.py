@@ -64,6 +64,7 @@ class CanvasItem(QGraphicsObject):
             QGraphicsItem.ItemIsMovable
             | QGraphicsItem.ItemIsSelectable
             | QGraphicsItem.ItemSendsGeometryChanges
+            | QGraphicsItem.ItemIsFocusable
         )
         self.setAcceptHoverEvents(True)
 
@@ -177,6 +178,7 @@ class CanvasItem(QGraphicsObject):
 
         self._active_handle = None
         super().mousePressEvent(event)
+        self.setFocus()
         self.selected_changed.emit(self)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):

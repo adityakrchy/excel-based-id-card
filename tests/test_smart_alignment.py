@@ -521,7 +521,88 @@ def test_interactive_canvas_drag_snapping(canvas_scene: CanvasScene):
 
 
 def test_interactive_keyboard_nudge_snapping(canvas_scene: CanvasScene):
-    """Test that keyboard arrow nudge snaps when approaching an alignment target."""
+    """Test that keyboard arrow nudge moves freely 1px at a time and flashes guides on alignment."""
+    target_el = CanvasElement(name="Target", x=200.0, y=200.0, width=100.0, height=100.0)
+    mover_el = CanvasElement(name="Mover", x=201.0, y=300.0, width=50.0, height=50.0)
+
+    canvas_scene.add_element(target_el, push_undo=False)
+    mover_item = canvas_scene.add_element(mover_el, push_undo=False)
+
+    canvas_scene.clearSelection()
+    mover_item.setSelected(True)
+
+    from PySide6.QtGui import QKeyEvent
+
+    # 1. Mover at 201.0. Press Left (1px) -> lands exactly on 200.0 (aligned with Target left)
+    key_left = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Left, Qt.NoModifier)
+    canvas_scene.keyPressEvent(key_left)
+    assert mover_item.pos().x() == 200.0
+    assert mover_item.element.x == 200.0
+    # Smart guide is triggered because it's aligned!
+    assert len(canvas_scene._active_guides) > 0
+
+    # 2. Press Left again (1px) -> MUST move to 199.0 and NOT be trapped by snapping back to 200.0!
+    canvas_scene.keyPressEvent(key_left)
+    assert mover_item.pos().x() == 199.0
+    assert mover_item.element.x == 199.0
+    # Guides cleared because it moved past alignment
+    assert len(canvas_scene._active_guides) == 0
+
+    # 3. Press Right (1px) -> moves back to 200.0
+    key_right = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Right, Qt.NoModifier)
+    canvas_scene.keyPressEvent(key_right)
+    assert mover_item.pos().x() == 200.0
+    assert mover_item.element.x == 200.0
+    assert len(canvas_scene._active_guides) > 0
+
+    # 4. Press Right again (1px) -> MUST move to 201.0 freely
+    canvas_scene.keyPressEvent(key_right)
+    assert mover_item.pos().x() == 201.0
+    assert mover_item.element.x == 201.0
+    assert len(canvas_scene._active_guides) == 0
+
+
+def test_keyboard_nudge_steps_and_undo(canvas_scene: CanvasScene):
+    """Test 1px normal nudge, 10px Shift nudge, and undo/redo."""
+    from PySide6.QtGui import QKeyEvent
+
+    el = CanvasElement(name="Item", x=50.0, y=50.0, width=30.0, height=30.0)
+    item = canvas_scene.add_element(el, push_undo=False)
+    canvas_scene.clearSelection()
+    item.setSelected(True)
+
+    # 1px nudge Right
+    ev_right = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Right, Qt.NoModifier)
+    canvas_scene.keyPressEvent(ev_right)
+    assert item.pos().x() == 51.0
+    assert item.element.x == 51.0
+
+    # 10px Shift nudge Down
+    ev_down_shift = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Down, Qt.ShiftModifier)
+    canvas_scene.keyPressEvent(ev_down_shift)
+    assert item.pos().y() == 60.0
+    assert item.element.y == 60.0
+
+    # Undo 10px down
+    canvas_scene.undo()
+    assert item.pos().y() == 50.0
+    assert item.element.y == 50.0
+
+    # Undo 1px right
+    canvas_scene.undo()
+    assert item.pos().x() == 50.0
+    assert item.element.x == 50.0
+
+    # Redo 1px right
+    canvas_scene.redo()
+    assert item.pos().x() == 51.0
+    assert item.element.x == 51.0
+
+
+def test_keyboard_nudge_alt_bypass(canvas_scene: CanvasScene):
+    """Test that Alt modifier completely bypasses snapping during keyboard nudge."""
+    from PySide6.QtGui import QKeyEvent
+
     target_el = CanvasElement(name="Target", x=200.0, y=200.0, width=100.0, height=100.0)
     mover_el = CanvasElement(name="Mover", x=207.0, y=300.0, width=50.0, height=50.0)
 
@@ -531,20 +612,45 @@ def test_interactive_keyboard_nudge_snapping(canvas_scene: CanvasScene):
     canvas_scene.clearSelection()
     mover_item.setSelected(True)
 
-    # Mover is at x=207.0. Nudging Left by 10 px would be 197.0.
-    # Target left is 200.0 (delta +3 from 197.0).
-    from PySide6.QtGui import QKeyEvent
-    key_event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Left, Qt.ShiftModifier)
-    canvas_scene.keyPressEvent(key_event)
+    # Alt+Shift+Left: would snap to 200 without Alt, but with Alt it moves exactly 10px to 197.0
+    ev = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Left, Qt.AltModifier | Qt.ShiftModifier)
+    canvas_scene.keyPressEvent(ev)
 
-    # Snapped to 200.0!
-    assert mover_item.pos().x() == 200.0
-    assert mover_item.element.x == 200.0
-    assert len(canvas_scene._active_guides) > 0
-
-    # Clear guides
-    canvas_scene.clear_guides()
+    assert mover_item.pos().x() == 197.0
+    assert mover_item.element.x == 197.0
     assert len(canvas_scene._active_guides) == 0
+
+
+def test_keyboard_nudge_multi_selection(canvas_scene: CanvasScene):
+    """Test that multiple selected elements move together and undo in a single step."""
+    from PySide6.QtGui import QKeyEvent
+
+    el1 = CanvasElement(name="El1", x=100.0, y=100.0, width=50.0, height=50.0)
+    el2 = CanvasElement(name="El2", x=300.0, y=200.0, width=60.0, height=40.0)
+
+    item1 = canvas_scene.add_element(el1, push_undo=False)
+    item2 = canvas_scene.add_element(el2, push_undo=False)
+
+    canvas_scene.clearSelection()
+    item1.setSelected(True)
+    item2.setSelected(True)
+    assert len(canvas_scene.selectedItems()) == 2
+
+    # Nudge Right with Shift (10px) + Alt (bypass snap)
+    ev = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Right, Qt.ShiftModifier | Qt.AltModifier)
+    canvas_scene.keyPressEvent(ev)
+
+    assert item1.pos().x() == 110.0
+    assert item1.element.x == 110.0
+    assert item2.pos().x() == 310.0
+    assert item2.element.x == 310.0
+
+    # Single undo step restores both items
+    canvas_scene.undo()
+    assert item1.pos().x() == 100.0
+    assert item1.element.x == 100.0
+    assert item2.pos().x() == 300.0
+    assert item2.element.x == 300.0
 
 
 # ============================================================================
