@@ -288,17 +288,13 @@ class PillowRenderer:
             )
         else:
             # Photo is missing
-            initials = "?"
             if record:
-                name = record.get_value("Name")
-                if name:
-                    initials = "".join(part[0] for part in name.split() if part)[:2]
                 warnings.append(f"Missing photograph for PIN '{record.pin}'")
 
             if settings.missing_photo_policy == MissingPhotoPolicy.FAIL_RECORD:
                 raise ValueError(f"Missing required photo for PIN {record.pin if record else 'unknown'}")
 
-            resolved_img = ImageProcessor.generate_placeholder(w, h, initials=initials)
+            resolved_img = ImageProcessor.generate_placeholder(w, h)
 
         # Apply mask and border
         masked_img = ImageProcessor.apply_mask_and_border(

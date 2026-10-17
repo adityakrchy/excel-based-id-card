@@ -36,6 +36,23 @@ class CanvasItem(QGraphicsObject):
     # Handles: 0:TL, 1:T, 2:TR, 3:R, 4:BR, 5:B, 6:BL, 7:L
     HANDLE_NAMES = ["TL", "T", "TR", "R", "BR", "B", "BL", "L"]
 
+    _cached_avatar_pixmap: Optional[QPixmap] = None
+
+    @classmethod
+    def get_avatar_pixmap(cls) -> QPixmap:
+        """Return cached avatar placeholder pixmap."""
+        if cls._cached_avatar_pixmap is None or cls._cached_avatar_pixmap.isNull():
+            try:
+                from id_card_generator.resources.resource_loader import get_resource_path
+                p = get_resource_path("assets", "avatar_placeholder.png")
+                if p.exists():
+                    cls._cached_avatar_pixmap = QPixmap(str(p))
+                else:
+                    cls._cached_avatar_pixmap = QPixmap()
+            except Exception:
+                cls._cached_avatar_pixmap = QPixmap()
+        return cls._cached_avatar_pixmap
+
     def __init__(self, element: CanvasElement, parent=None):
         super().__init__(parent)
         self.element = element
@@ -279,22 +296,37 @@ class CanvasItem(QGraphicsObject):
             y = rect.y() + (rect.height() - scaled.height()) / 2
             painter.drawPixmap(int(x), int(y), scaled)
         else:
-            # Placeholder
+            # Placeholder: Render clean avatar image
             painter.fillRect(rect, QColor("#E2E8F0"))
-            painter.setPen(QColor("#64748B"))
-            font = QFont("Arial", 14, QFont.Bold)
-            painter.setFont(font)
-            initials = "?"
-            if self._sample_record:
-                name = self._sample_record.get_value("Name", "")
-                if not name:
-                    for k, v in self._sample_record.data.items():
-                        if "name" in k.lower() and v:
-                            name = str(v).strip()
-                            break
-                if name:
-                    initials = "".join(p[0] for p in name.split())[:2].upper()
-            painter.drawText(rect, Qt.AlignCenter, initials)
+            avatar_pix = self.get_avatar_pixmap()
+            if avatar_pix and not avatar_pix.isNull():
+                target_w = max(1, int(rect.width() * 0.75))
+                target_h = max(1, int(rect.height() * 0.75))
+                size = min(target_w, target_h)
+                scaled_avatar = avatar_pix.scaled(
+                    size,
+                    size,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+                ax = rect.x() + (rect.width() - scaled_avatar.width()) / 2
+                ay = rect.y() + (rect.height() - scaled_avatar.height()) / 2
+                painter.drawPixmap(int(ax), int(ay), scaled_avatar)
+            else:
+                # Vector fallback if asset cannot be loaded
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor("#717A8A"))
+                cx = rect.center().x()
+                cy = rect.top() + rect.height() * 0.36
+                r = min(rect.width(), rect.height()) * 0.18
+                painter.drawEllipse(QPointF(cx, cy), r, r)
+
+                torso_w = min(rect.width(), rect.height()) * 0.68
+                torso_h = min(rect.width(), rect.height()) * 0.42
+                tx = cx - torso_w / 2
+                ty = rect.top() + rect.height() * 0.52
+                torso_rect = QRectF(tx, ty, torso_w, torso_h * 2)
+                painter.drawChord(torso_rect, 0 * 16, 180 * 16)
 
         painter.restore()
 

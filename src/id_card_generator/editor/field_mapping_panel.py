@@ -218,10 +218,18 @@ class FieldMappingPanel(QWidget):
             else:
                 self.lbl_photo_status.setText(f"<b style='color: #22C55E;'>Matched:</b> {Path(match.photo_path).name}")
         elif match and match.status == MatchStatus.AMBIGUOUS:
-            self.lbl_photo_thumb.clear()
+            avatar = CanvasItem.get_avatar_pixmap()
+            if avatar and not avatar.isNull():
+                self.lbl_photo_thumb.setPixmap(avatar.scaled(44, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            else:
+                self.lbl_photo_thumb.clear()
             self.lbl_photo_status.setText(f"<b style='color: #EAB308;'>Ambiguous:</b> {len(match.candidate_paths)} photos found")
         else:
-            self.lbl_photo_thumb.clear()
+            avatar = CanvasItem.get_avatar_pixmap()
+            if avatar and not avatar.isNull():
+                self.lbl_photo_thumb.setPixmap(avatar.scaled(44, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            else:
+                self.lbl_photo_thumb.clear()
             self.lbl_photo_status.setText("<b style='color: #EF4444;'>Photo Missing</b>")
 
         # Values table
