@@ -6,7 +6,14 @@ from id_card_generator.ui.dialogs.blank_canvas_dialog import (
 )
 from id_card_generator.ui.dialogs.project_dialog import ProjectDialog
 from id_card_generator.ui.dialogs.relink_dialog import RelinkDialog
+from id_card_generator.ui.dialogs.template_cleanup_dialog import TemplateCleanupDialog
 
-__all__ = ["BlankCanvasDialog", "CanvasPropertiesDialog", "ProjectDialog", "RelinkDialog"]
+__all__ = [
+    "BlankCanvasDialog",
+    "CanvasPropertiesDialog",
+    "ProjectDialog",
+    "RelinkDialog",
+    "TemplateCleanupDialog",
+]
 
 

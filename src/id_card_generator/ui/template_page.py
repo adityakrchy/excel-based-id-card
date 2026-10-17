@@ -38,6 +38,7 @@ from id_card_generator.ui.dialogs.blank_canvas_dialog import (
     BlankCanvasDialog,
     CanvasPropertiesDialog,
 )
+from id_card_generator.ui.dialogs.template_cleanup_dialog import TemplateCleanupDialog
 from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,11 @@ class TemplatePage(QWidget):
         self.btn_import.clicked.connect(self._import_template)
         top_bar.addWidget(self.btn_import)
 
+        self.btn_cleanup = QPushButton("🧹 Clean Up Saved Templates...")
+        self.btn_cleanup.setToolTip("Open template cleanup manager to search, delete, and clean up older saved templates")
+        self.btn_cleanup.clicked.connect(self._open_cleanup_dialog)
+        top_bar.addWidget(self.btn_cleanup)
+
         layout.addLayout(top_bar)
 
         # Main Splitter: Left List (templates) vs Right Workspace (preview + properties)
@@ -189,6 +195,12 @@ class TemplatePage(QWidget):
         lbl_list_title = QLabel("<b>Available Templates</b>")
         lbl_list_title.setStyleSheet("font-size: 13px; color: #94A3B8;")
         left_layout.addWidget(lbl_list_title)
+
+        self.txt_filter = QLineEdit()
+        self.txt_filter.setPlaceholderText("🔍 Filter templates...")
+        self.txt_filter.setClearButtonEnabled(True)
+        self.txt_filter.textChanged.connect(self._filter_template_list)
+        left_layout.addWidget(self.txt_filter)
 
         self.list_widget = QListWidget()
         self.list_widget.currentItemChanged.connect(self._on_item_changed)
@@ -660,3 +672,39 @@ class TemplatePage(QWidget):
                         break
                 self.template_selected.emit(tmpl)
                 self.open_editor_requested.emit()
+
+    def _open_cleanup_dialog(self) -> None:
+        """Open modal cleanup dialog to search, delete, and clean up older templates."""
+        active_id = self.active_template.id if self.active_template else ""
+        dialog = TemplateCleanupDialog(self, active_template_id=active_id)
+        dialog.template_selected.connect(self._on_template_selected_from_dialog)
+        dialog.exec()
+        self.manager.reload()
+        self._load_templates()
+
+    def _on_template_selected_from_dialog(self, template: TemplateDefinition) -> None:
+        """Handle template selected from cleanup dialog."""
+        self.manager.reload()
+        self._load_templates()
+        for idx in range(self.list_widget.count()):
+            it = self.list_widget.item(idx)
+            if it.data(Qt.UserRole) == template.id:
+                self.list_widget.setCurrentItem(it)
+                break
+
+    def _filter_template_list(self, text: str) -> None:
+        """Filter the templates list widget based on search text."""
+        query = text.strip().lower()
+        for idx in range(self.list_widget.count()):
+            it = self.list_widget.item(idx)
+            tmpl_id = it.data(Qt.UserRole)
+            tmpl = self.manager.get_template(tmpl_id)
+            if not tmpl or not query:
+                it.setHidden(False)
+            else:
+                match = (
+                    query in tmpl.name.lower()
+                    or query in (tmpl.description or "").lower()
+                    or query in tmpl.id.lower()
+                )
+                it.setHidden(not match)

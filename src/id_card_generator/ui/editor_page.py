@@ -16,9 +16,11 @@ from PySide6.QtWidgets import (
     QFontComboBox,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
@@ -45,6 +47,8 @@ from id_card_generator.editor.canvas_view import CanvasView
 from id_card_generator.editor.element_inspector import ElementInspector
 from id_card_generator.editor.field_mapping_panel import FieldMappingPanel
 from id_card_generator.editor.layers_panel import LayersPanel
+from id_card_generator.templates.template_manager import TemplateManager
+from id_card_generator.ui.dialogs.template_cleanup_dialog import TemplateCleanupDialog
 from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
@@ -70,6 +74,7 @@ class EditorPage(QWidget):
         self.sample_index: int = 0
         self._updating_context_bar: bool = False
         self._user_adjusted_splitter: bool = False
+        self.template_manager = TemplateManager()
 
         self._setup_ui()
         self._connect_signals()
@@ -78,6 +83,49 @@ class EditorPage(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(6, 6, 6, 6)
         main_layout.setSpacing(6)
+
+        # 0. Top Template Management Bar
+        self.template_bar = QFrame()
+        self.template_bar.setObjectName("card_panel")
+        self.template_bar.setFixedHeight(42)
+        tmpl_bar_layout = QHBoxLayout(self.template_bar)
+        tmpl_bar_layout.setContentsMargins(10, 4, 10, 4)
+        tmpl_bar_layout.setSpacing(8)
+
+        tmpl_icon = QLabel("📐")
+        tmpl_icon.setStyleSheet("font-size: 15px;")
+        tmpl_bar_layout.addWidget(tmpl_icon)
+
+        self.lbl_tmpl_name = QLabel("<b>Template:</b> Default Template")
+        self.lbl_tmpl_name.setStyleSheet("color: #F8FAFC; font-size: 13px;")
+        tmpl_bar_layout.addWidget(self.lbl_tmpl_name)
+
+        self.lbl_tmpl_badge = QLabel("Built-in")
+        self.lbl_tmpl_badge.setStyleSheet(
+            "color: #94A3B8; font-size: 10px; font-weight: bold; padding: 2px 6px; background: #27272A; border-radius: 4px;"
+        )
+        tmpl_bar_layout.addWidget(self.lbl_tmpl_badge)
+
+        tmpl_bar_layout.addStretch()
+
+        self.btn_tmpl_save = QPushButton("💾 Save Template")
+        self.btn_tmpl_save.setToolTip("Save canvas design to custom saved templates")
+        self.btn_tmpl_save.clicked.connect(self._save_current_template)
+        tmpl_bar_layout.addWidget(self.btn_tmpl_save)
+
+        self.btn_tmpl_delete = QPushButton("🗑 Delete Template")
+        self.btn_tmpl_delete.setObjectName("btn_danger")
+        self.btn_tmpl_delete.setToolTip("Delete this custom saved template from disk (built-in templates cannot be deleted)")
+        self.btn_tmpl_delete.setEnabled(False)
+        self.btn_tmpl_delete.clicked.connect(self._delete_current_template)
+        tmpl_bar_layout.addWidget(self.btn_tmpl_delete)
+
+        self.btn_tmpl_cleanup = QPushButton("🧹 Clean Up Older Templates...")
+        self.btn_tmpl_cleanup.setToolTip("Open template cleanup manager to search, delete, and clean up older saved templates")
+        self.btn_tmpl_cleanup.clicked.connect(self._open_cleanup_dialog)
+        tmpl_bar_layout.addWidget(self.btn_tmpl_cleanup)
+
+        main_layout.addWidget(self.template_bar)
 
         # 1. Top Contextual Options Bar
         self.options_bar = QFrame()
@@ -606,6 +654,7 @@ class EditorPage(QWidget):
         """Load template into canvas editor and update metadata readouts."""
         self.scene.load_template(template)
         self.layers_panel.refresh_layers()
+        self._update_template_bar_ui()
         if not self._user_adjusted_splitter:
             self.apply_default_splitter_sizes(force=False)
             QTimer.singleShot(20, lambda: self.apply_default_splitter_sizes(force=False))
@@ -926,3 +975,118 @@ class EditorPage(QWidget):
         el.style.border_width = 2
         self.scene.add_element(el)
         self.layers_panel.refresh_layers()
+
+    def _update_template_bar_ui(self) -> None:
+        """Update top template bar title, badge, and delete button enabled state."""
+        if not hasattr(self, "lbl_tmpl_name") or not self.scene.template:
+            return
+        tmpl = self.scene.template
+        is_built = self.template_manager.is_builtin(tmpl.id)
+        self.lbl_tmpl_name.setText(f"<b>Template:</b> {tmpl.name}")
+        if is_built:
+            self.lbl_tmpl_badge.setText("Built-in")
+            self.lbl_tmpl_badge.setStyleSheet(
+                "color: #94A3B8; font-size: 10px; font-weight: bold; padding: 2px 6px; background: #27272A; border-radius: 4px;"
+            )
+            self.btn_tmpl_delete.setEnabled(False)
+            self.btn_tmpl_delete.setToolTip("Built-in templates cannot be deleted")
+        else:
+            self.lbl_tmpl_badge.setText("Custom Saved")
+            self.lbl_tmpl_badge.setStyleSheet(
+                "color: #C084FC; font-size: 10px; font-weight: bold; padding: 2px 6px; background: rgba(192, 132, 252, 0.15); border-radius: 4px;"
+            )
+            self.btn_tmpl_delete.setEnabled(True)
+            self.btn_tmpl_delete.setToolTip(f"Delete '{tmpl.name}' from disk")
+
+    def _save_current_template(self) -> None:
+        """Save the current canvas elements and settings as a user template."""
+        tmpl = self.scene.get_current_template_definition()
+        if not tmpl:
+            QMessageBox.warning(self, "No Template", "No active template to save.")
+            return
+
+        is_built = self.template_manager.is_builtin(tmpl.id)
+        default_name = f"{tmpl.name} (Custom)" if is_built and not tmpl.name.endswith("(Custom)") else tmpl.name
+
+        name, ok = QInputDialog.getText(
+            self,
+            "Save Template",
+            "Enter template name:",
+            text=default_name,
+        )
+        if not ok or not name.strip():
+            return
+
+        tmpl.name = name.strip()
+        try:
+            saved_path = self.template_manager.save_user_template(tmpl)
+            self.scene.template = tmpl
+            self._update_template_bar_ui()
+            self.template_updated.emit(tmpl)
+            QMessageBox.information(
+                self,
+                "Template Saved",
+                f"Template '{tmpl.name}' has been successfully saved to:\n{saved_path.name}",
+            )
+        except Exception as e:
+            logger.error("Failed to save template: %s", e)
+            QMessageBox.critical(self, "Save Error", f"Could not save template:\n{e}")
+
+    def _delete_current_template(self) -> None:
+        """Delete the current custom template from disk with confirmation and fallback to a default template."""
+        tmpl = self.scene.template
+        if not tmpl:
+            return
+
+        if self.template_manager.is_builtin(tmpl.id):
+            QMessageBox.warning(
+                self,
+                "Protected Template",
+                "Built-in templates cannot be deleted.",
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Delete Template",
+            f"Are you sure you want to permanently delete custom template '{tmpl.name}' from disk?\n\nThis cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            self.template_manager.delete_user_template(tmpl.id)
+            QMessageBox.information(
+                self,
+                "Template Deleted",
+                f"Custom template '{tmpl.name}' has been deleted.",
+            )
+
+            # Fallback to a built-in or remaining template
+            templates = self.template_manager.list_templates()
+            fallback = next(
+                (t for t in templates if self.template_manager.is_builtin(t.id)),
+                templates[0] if templates else None,
+            )
+            if fallback:
+                self.load_template(fallback)
+                self.template_updated.emit(fallback)
+        except Exception as e:
+            logger.error("Failed to delete template: %s", e)
+            QMessageBox.critical(self, "Delete Error", f"Could not delete template:\n{e}")
+
+    def _open_cleanup_dialog(self) -> None:
+        """Open modal cleanup dialog to search, delete, and clean up older templates."""
+        active_id = self.scene.template.id if self.scene.template else ""
+        dialog = TemplateCleanupDialog(self, active_template_id=active_id)
+        dialog.template_selected.connect(self._on_template_selected_from_cleanup)
+        dialog.exec()
+        self.template_manager.reload()
+        self._update_template_bar_ui()
+
+    def _on_template_selected_from_cleanup(self, template: TemplateDefinition) -> None:
+        """Load template selected from cleanup dialog."""
+        self.load_template(template)
+        self.template_updated.emit(template)

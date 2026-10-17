@@ -180,6 +180,15 @@ class CanvasScene(QGraphicsScene):
 
         self.update()
 
+    def get_current_template_definition(self) -> Optional[TemplateDefinition]:
+        """Return a fresh TemplateDefinition reflecting current canvas items and properties."""
+        if not self.template:
+            return None
+        tmpl = self.template.model_copy(deep=True)
+        items = self._get_sorted_canvas_items()
+        tmpl.elements = [it.element.model_copy(deep=True) for it in items]
+        return tmpl
+
     def _create_and_add_item(self, elem: CanvasElement) -> CanvasItem:
         item = CanvasItem(elem)
         item.setZValue(elem.z_index)

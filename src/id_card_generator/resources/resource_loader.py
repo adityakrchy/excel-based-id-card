@@ -63,6 +63,18 @@ def get_user_templates_dir() -> Path:
     return path
 
 
+def get_user_template_dirs() -> list[Path]:
+    """Return all directories where user custom templates may be located."""
+    dirs = [get_user_templates_dir()]
+    try:
+        cf_dir = Path(user_data_dir(appname="CardForge")) / "templates"
+        if cf_dir.exists() and cf_dir not in dirs:
+            dirs.append(cf_dir)
+    except Exception:
+        pass
+    return dirs
+
+
 def get_projects_dir() -> Path:
     """Return default directory for saved projects."""
     path = get_app_data_dir() / "projects"
