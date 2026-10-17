@@ -228,6 +228,10 @@ class CanvasItem(QGraphicsObject):
                 bypass = bool(event.modifiers() & Qt.AltModifier)
                 keep_aspect = bool(event.modifiers() & Qt.ShiftModifier)
 
+                if scene and scene.template:
+                    scene._snap_settings.unit = getattr(scene.template, "unit", "mm") or "mm"
+                    scene._snap_settings.dpi = getattr(scene.template, "dpi", 300) or 300
+
                 snapped_scene, snap_res = scene.smart_alignment_engine.snap_resize(
                     handle=handle,
                     start_rect_scene=start_scene,
@@ -291,6 +295,10 @@ class CanvasItem(QGraphicsObject):
             targets = scene.get_reference_targets(exclude_items=set(selected_items)) if hasattr(scene, "get_reference_targets") else []
             zoom = scene.get_zoom_factor() if hasattr(scene, "get_zoom_factor") else 1.0
             bypass = bool(event.modifiers() & Qt.AltModifier)
+
+            if scene.template:
+                scene._snap_settings.unit = getattr(scene.template, "unit", "mm") or "mm"
+                scene._snap_settings.dpi = getattr(scene.template, "dpi", 300) or 300
 
             snap_res = scene.smart_alignment_engine.snap_move(
                 moving_rect=proposed_group_rect,

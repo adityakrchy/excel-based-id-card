@@ -31,6 +31,36 @@ class GuideType(Enum):
     SPACING_Y = "spacing_y"
 
 
+def format_distance(dist_px: float, unit: str = "px", dpi: int = 300) -> str:
+    """Format pixel distance into canvas unit (mm, cm, inch, or px)."""
+    u = (unit or "px").lower().strip()
+    dpi = max(1, dpi or 300)
+    inches = dist_px / dpi
+
+    if u in ("mm", "millimeter", "millimeters"):
+        val = inches * 25.4
+        unit_str = "mm"
+    elif u in ("cm", "centimeter", "centimeters"):
+        val = inches * 2.54
+        unit_str = "cm"
+    elif u in ("in", "inch", "inches"):
+        val = inches
+        unit_str = "in"
+    elif u in ("pt", "point", "points"):
+        val = inches * 72.0
+        unit_str = "pt"
+    else:  # px
+        val = dist_px
+        unit_str = "px"
+
+    if unit_str == "px":
+        return f"{int(round(val))} px"
+    elif abs(val - round(val)) < 0.04:
+        return f"{int(round(val))} {unit_str}"
+    else:
+        return f"{val:.1f} {unit_str}"
+
+
 @dataclass
 class SnapSettings:
     """Configuration options for smart alignment and magnetic snapping."""
@@ -43,11 +73,21 @@ class SnapSettings:
     # Screen-space snapping threshold in logical screen pixels (visual sensitivity)
     snap_threshold_screen: float = 8.0
     guide_color: str = "#FF2D9A"  # Photoshop / Figma Smart Guide Magenta
+    unit: str = "px"
+    dpi: int = 300
 
     def get_scene_threshold(self, zoom_factor: float = 1.0) -> float:
         """Convert screen-space threshold into scene coordinates based on viewport zoom."""
         zf = max(0.05, zoom_factor)
         return self.snap_threshold_screen / zf
+
+
+@dataclass
+class GuideLabel:
+    """Represents a dimension distance badge rendered along a smart guide line."""
+    pos: QPointF
+    text: str
+    distance_px: float = 0.0
 
 
 @dataclass
@@ -58,6 +98,9 @@ class GuideLine:
     guide_type: GuideType
     color: str = "#FF2D9A"
     is_center: bool = False
+    labels: List[GuideLabel] = field(default_factory=list)
+    distance_text: Optional[str] = None
+    distance_pos: Optional[QPointF] = None
 
 
 @dataclass
@@ -92,6 +135,8 @@ class SmartSpacingEngine:
         moving_rect: QRectF,
         targets: List[QRectF],
         threshold: float,
+        unit: str = "px",
+        dpi: int = 300,
     ) -> Optional[Tuple[float, List[SpacingBadge], List[GuideLine]]]:
         """Detect if moving_rect can snap to equal horizontal spacing between/adjacent to targets.
         
@@ -140,7 +185,9 @@ class SmartSpacingEngine:
                             [
                                 (t_a.right(), desired_x, y_mid, equal_gap),
                                 (desired_x + moving_rect.width(), t_b.left(), y_mid, equal_gap),
-                            ]
+                            ],
+                            unit=unit,
+                            dpi=dpi,
                         )
                         candidates.append((abs(delta), delta, badges))
 
@@ -165,7 +212,9 @@ class SmartSpacingEngine:
                     [
                         (t_a.right(), t_b.left(), y_ab, gap_ab),
                         (t_b.right(), desired_x_right, y_bm, gap_ab),
-                    ]
+                    ],
+                    unit=unit,
+                    dpi=dpi,
                 )
                 candidates.append((abs(delta_right), delta_right, badges))
 
@@ -179,7 +228,9 @@ class SmartSpacingEngine:
                     [
                         (desired_x_left + moving_rect.width(), t_a.left(), y_ma, gap_ab),
                         (t_a.right(), t_b.left(), y_ab, gap_ab),
-                    ]
+                    ],
+                    unit=unit,
+                    dpi=dpi,
                 )
                 candidates.append((abs(delta_left), delta_left, badges))
 
@@ -196,6 +247,8 @@ class SmartSpacingEngine:
         moving_rect: QRectF,
         targets: List[QRectF],
         threshold: float,
+        unit: str = "px",
+        dpi: int = 300,
     ) -> Optional[Tuple[float, List[SpacingBadge], List[GuideLine]]]:
         """Detect if moving_rect can snap to equal vertical spacing between/adjacent to targets."""
         if len(targets) < 1:
@@ -235,7 +288,9 @@ class SmartSpacingEngine:
                             [
                                 (t_a.bottom(), desired_y, x_mid, equal_gap),
                                 (desired_y + moving_rect.height(), t_b.top(), x_mid, equal_gap),
-                            ]
+                            ],
+                            unit=unit,
+                            dpi=dpi,
                         )
                         candidates.append((abs(delta), delta, badges))
 
@@ -259,7 +314,9 @@ class SmartSpacingEngine:
                     [
                         (t_a.bottom(), t_b.top(), x_ab, gap_ab),
                         (t_b.bottom(), desired_y_bottom, x_bm, gap_ab),
-                    ]
+                    ],
+                    unit=unit,
+                    dpi=dpi,
                 )
                 candidates.append((abs(delta_bottom), delta_bottom, badges))
 
@@ -273,7 +330,9 @@ class SmartSpacingEngine:
                     [
                         (desired_y_top + moving_rect.height(), t_a.top(), x_ma, gap_ab),
                         (t_a.bottom(), t_b.top(), x_ab, gap_ab),
-                    ]
+                    ],
+                    unit=unit,
+                    dpi=dpi,
                 )
                 candidates.append((abs(delta_top), delta_top, badges))
 
@@ -285,14 +344,16 @@ class SmartSpacingEngine:
         return best_delta, badges, []
 
     @staticmethod
-    def _create_h_spacing_badges(spans: List[Tuple[float, float, float, float]]) -> List[SpacingBadge]:
+    def _create_h_spacing_badges(
+        spans: List[Tuple[float, float, float, float]], unit: str = "px", dpi: int = 300
+    ) -> List[SpacingBadge]:
         badges = []
         for x_start, x_end, y, dist in spans:
             x1 = min(x_start, x_end)
             x2 = max(x_start, x_end)
             tick1 = (QPointF(x1, y - 5), QPointF(x1, y + 5))
             tick2 = (QPointF(x2, y - 5), QPointF(x2, y + 5))
-            text = f"{int(round(dist))} px"
+            text = format_distance(dist, unit, dpi)
             badges.append(
                 SpacingBadge(
                     axis="x",
@@ -306,14 +367,16 @@ class SmartSpacingEngine:
         return badges
 
     @staticmethod
-    def _create_v_spacing_badges(spans: List[Tuple[float, float, float, float]]) -> List[SpacingBadge]:
+    def _create_v_spacing_badges(
+        spans: List[Tuple[float, float, float, float]], unit: str = "px", dpi: int = 300
+    ) -> List[SpacingBadge]:
         badges = []
         for y_start, y_end, x, dist in spans:
             y1 = min(y_start, y_end)
             y2 = max(y_start, y_end)
             tick1 = (QPointF(x - 5, y1), QPointF(x + 5, y1))
             tick2 = (QPointF(x - 5, y2), QPointF(x + 5, y2))
-            text = f"{int(round(dist))} px"
+            text = format_distance(dist, unit, dpi)
             badges.append(
                 SpacingBadge(
                     axis="y",
@@ -604,9 +667,13 @@ class SmartAlignmentEngine:
         spacing_badges = []
         if self.settings.smart_spacing_enabled:
             if is_x:
-                res = SmartSpacingEngine.detect_horizontal_spacing(moving_rect, targets, threshold)
+                res = SmartSpacingEngine.detect_horizontal_spacing(
+                    moving_rect, targets, threshold, unit=self.settings.unit, dpi=self.settings.dpi
+                )
             else:
-                res = SmartSpacingEngine.detect_vertical_spacing(moving_rect, targets, threshold)
+                res = SmartSpacingEngine.detect_vertical_spacing(
+                    moving_rect, targets, threshold, unit=self.settings.unit, dpi=self.settings.dpi
+                )
             if res is not None:
                 spacing_delta, spacing_badges, _ = res
 
@@ -698,40 +765,88 @@ class SmartAlignmentEngine:
         guides = []
         if is_x:
             snapped_x = edge_val + best_delta
+            labels: List[GuideLabel] = []
             if target_rect is not None:
                 y1 = min(current_rect.top(), target_rect.top()) - 10.0
                 y2 = max(current_rect.bottom(), target_rect.bottom()) + 10.0
+                sorted_r = sorted([current_rect, target_rect], key=lambda r: r.top())
+                gap = sorted_r[1].top() - sorted_r[0].bottom()
+                if gap >= 2.0:
+                    y_mid = (sorted_r[0].bottom() + sorted_r[1].top()) / 2.0
+                    txt = format_distance(gap, self.settings.unit, self.settings.dpi)
+                    labels.append(GuideLabel(pos=QPointF(snapped_x, y_mid), text=txt, distance_px=gap))
             elif canvas_rect is not None:
                 y1 = canvas_rect.top()
                 y2 = canvas_rect.bottom()
+                gap_top = current_rect.top() - canvas_rect.top()
+                if gap_top >= 2.0:
+                    y_mid = (canvas_rect.top() + current_rect.top()) / 2.0
+                    txt = format_distance(gap_top, self.settings.unit, self.settings.dpi)
+                    labels.append(GuideLabel(pos=QPointF(snapped_x, y_mid), text=txt, distance_px=gap_top))
+                gap_bottom = canvas_rect.bottom() - current_rect.bottom()
+                if gap_bottom >= 2.0:
+                    y_mid = (current_rect.bottom() + canvas_rect.bottom()) / 2.0
+                    txt = format_distance(gap_bottom, self.settings.unit, self.settings.dpi)
+                    labels.append(GuideLabel(pos=QPointF(snapped_x, y_mid), text=txt, distance_px=gap_bottom))
             else:
                 y1 = current_rect.top() - 50.0
                 y2 = current_rect.bottom() + 50.0
+
+            dist_text = labels[0].text if labels else None
+            dist_pos = labels[0].pos if labels else None
+
             guides.append(
                 GuideLine(
                     p1=QPointF(snapped_x, y1),
                     p2=QPointF(snapped_x, y2),
                     guide_type=GuideType.ALIGN_LEFT if edge_name == "left" else GuideType.ALIGN_RIGHT,
                     color=self.settings.guide_color,
+                    labels=labels,
+                    distance_text=dist_text,
+                    distance_pos=dist_pos,
                 )
             )
         else:
             snapped_y = edge_val + best_delta
+            labels: List[GuideLabel] = []
             if target_rect is not None:
                 x1 = min(current_rect.left(), target_rect.left()) - 10.0
                 x2 = max(current_rect.right(), target_rect.right()) + 10.0
+                sorted_r = sorted([current_rect, target_rect], key=lambda r: r.left())
+                gap = sorted_r[1].left() - sorted_r[0].right()
+                if gap >= 2.0:
+                    x_mid = (sorted_r[0].right() + sorted_r[1].left()) / 2.0
+                    txt = format_distance(gap, self.settings.unit, self.settings.dpi)
+                    labels.append(GuideLabel(pos=QPointF(x_mid, snapped_y), text=txt, distance_px=gap))
             elif canvas_rect is not None:
                 x1 = canvas_rect.left()
                 x2 = canvas_rect.right()
+                gap_left = current_rect.left() - canvas_rect.left()
+                if gap_left >= 2.0:
+                    x_mid = (canvas_rect.left() + current_rect.left()) / 2.0
+                    txt = format_distance(gap_left, self.settings.unit, self.settings.dpi)
+                    labels.append(GuideLabel(pos=QPointF(x_mid, snapped_y), text=txt, distance_px=gap_left))
+                gap_right = canvas_rect.right() - current_rect.right()
+                if gap_right >= 2.0:
+                    x_mid = (current_rect.right() + canvas_rect.right()) / 2.0
+                    txt = format_distance(gap_right, self.settings.unit, self.settings.dpi)
+                    labels.append(GuideLabel(pos=QPointF(x_mid, snapped_y), text=txt, distance_px=gap_right))
             else:
                 x1 = current_rect.left() - 50.0
                 x2 = current_rect.right() + 50.0
+
+            dist_text = labels[0].text if labels else None
+            dist_pos = labels[0].pos if labels else None
+
             guides.append(
                 GuideLine(
                     p1=QPointF(x1, snapped_y),
                     p2=QPointF(x2, snapped_y),
                     guide_type=GuideType.ALIGN_TOP if edge_name == "top" else GuideType.ALIGN_BOTTOM,
                     color=self.settings.guide_color,
+                    labels=labels,
+                    distance_text=dist_text,
+                    distance_pos=dist_pos,
                 )
             )
 
@@ -745,7 +860,7 @@ class SmartAlignmentEngine:
         winning_candidates: List[Tuple[float, float, float, str, Optional[QRectF]]],
         canvas_rect: Optional[QRectF],
     ) -> List[GuideLine]:
-        """Construct crisp guide lines spanning all aligned elements."""
+        """Construct crisp guide lines spanning all aligned elements with boundary distance badges."""
         guides: List[GuideLine] = []
         # Group candidates by alignment line coordinate
         grouped_by_coord: Dict[float, List[Tuple[str, Optional[QRectF]]]] = {}
@@ -759,15 +874,56 @@ class SmartAlignmentEngine:
             is_center = any("center" in it[0] for it in items)
             participating_rects = [m_snapped] + [r for _, r in items if r is not None]
 
+            # De-duplicate participating rects
+            unique_rects: List[QRectF] = []
+            for r in participating_rects:
+                if not any(
+                    abs(r.left() - u.left()) < 1e-3
+                    and abs(r.top() - u.top()) < 1e-3
+                    and abs(r.width() - u.width()) < 1e-3
+                    and abs(r.height() - u.height()) < 1e-3
+                    for u in unique_rects
+                ):
+                    unique_rects.append(r)
+
+            labels: List[GuideLabel] = []
+
             if is_x:
                 if is_canvas and canvas_rect is not None:
                     y1 = canvas_rect.top()
                     y2 = canvas_rect.bottom()
                     g_type = GuideType.CANVAS_CENTER_X if is_center else GuideType.CANVAS_EDGE_X
                 else:
-                    y1 = min(r.top() for r in participating_rects) - 8.0
-                    y2 = max(r.bottom() for r in participating_rects) + 8.0
+                    y1 = min(r.top() for r in unique_rects) - 8.0
+                    y2 = max(r.bottom() for r in unique_rects) + 8.0
                     g_type = GuideType.ALIGN_CENTER_X if is_center else GuideType.ALIGN_LEFT
+
+                sorted_rects = sorted(unique_rects, key=lambda r: r.top())
+
+                for i in range(len(sorted_rects) - 1):
+                    r_a = sorted_rects[i]
+                    r_b = sorted_rects[i + 1]
+                    gap = r_b.top() - r_a.bottom()
+                    if gap >= 2.0:
+                        y_mid = (r_a.bottom() + r_b.top()) / 2.0
+                        txt = format_distance(gap, self.settings.unit, self.settings.dpi)
+                        labels.append(GuideLabel(pos=QPointF(coord, y_mid), text=txt, distance_px=gap))
+
+                if is_canvas and canvas_rect is not None and sorted_rects:
+                    gap_top = sorted_rects[0].top() - canvas_rect.top()
+                    if gap_top >= 2.0:
+                        y_mid = (canvas_rect.top() + sorted_rects[0].top()) / 2.0
+                        txt = format_distance(gap_top, self.settings.unit, self.settings.dpi)
+                        labels.append(GuideLabel(pos=QPointF(coord, y_mid), text=txt, distance_px=gap_top))
+
+                    gap_bottom = canvas_rect.bottom() - sorted_rects[-1].bottom()
+                    if gap_bottom >= 2.0:
+                        y_mid = (sorted_rects[-1].bottom() + canvas_rect.bottom()) / 2.0
+                        txt = format_distance(gap_bottom, self.settings.unit, self.settings.dpi)
+                        labels.append(GuideLabel(pos=QPointF(coord, y_mid), text=txt, distance_px=gap_bottom))
+
+                dist_text = labels[0].text if labels else None
+                dist_pos = labels[0].pos if labels else None
 
                 guides.append(
                     GuideLine(
@@ -776,6 +932,9 @@ class SmartAlignmentEngine:
                         guide_type=g_type,
                         color=self.settings.guide_color,
                         is_center=is_center,
+                        labels=labels,
+                        distance_text=dist_text,
+                        distance_pos=dist_pos,
                     )
                 )
             else:
@@ -784,9 +943,36 @@ class SmartAlignmentEngine:
                     x2 = canvas_rect.right()
                     g_type = GuideType.CANVAS_CENTER_Y if is_center else GuideType.CANVAS_EDGE_Y
                 else:
-                    x1 = min(r.left() for r in participating_rects) - 8.0
-                    x2 = max(r.right() for r in participating_rects) + 8.0
+                    x1 = min(r.left() for r in unique_rects) - 8.0
+                    x2 = max(r.right() for r in unique_rects) + 8.0
                     g_type = GuideType.ALIGN_CENTER_Y if is_center else GuideType.ALIGN_TOP
+
+                sorted_rects = sorted(unique_rects, key=lambda r: r.left())
+
+                for i in range(len(sorted_rects) - 1):
+                    r_a = sorted_rects[i]
+                    r_b = sorted_rects[i + 1]
+                    gap = r_b.left() - r_a.right()
+                    if gap >= 2.0:
+                        x_mid = (r_a.right() + r_b.left()) / 2.0
+                        txt = format_distance(gap, self.settings.unit, self.settings.dpi)
+                        labels.append(GuideLabel(pos=QPointF(x_mid, coord), text=txt, distance_px=gap))
+
+                if is_canvas and canvas_rect is not None and sorted_rects:
+                    gap_left = sorted_rects[0].left() - canvas_rect.left()
+                    if gap_left >= 2.0:
+                        x_mid = (canvas_rect.left() + sorted_rects[0].left()) / 2.0
+                        txt = format_distance(gap_left, self.settings.unit, self.settings.dpi)
+                        labels.append(GuideLabel(pos=QPointF(x_mid, coord), text=txt, distance_px=gap_left))
+
+                    gap_right = canvas_rect.right() - sorted_rects[-1].right()
+                    if gap_right >= 2.0:
+                        x_mid = (sorted_rects[-1].right() + canvas_rect.right()) / 2.0
+                        txt = format_distance(gap_right, self.settings.unit, self.settings.dpi)
+                        labels.append(GuideLabel(pos=QPointF(x_mid, coord), text=txt, distance_px=gap_right))
+
+                dist_text = labels[0].text if labels else None
+                dist_pos = labels[0].pos if labels else None
 
                 guides.append(
                     GuideLine(
@@ -795,6 +981,9 @@ class SmartAlignmentEngine:
                         guide_type=g_type,
                         color=self.settings.guide_color,
                         is_center=is_center,
+                        labels=labels,
+                        distance_text=dist_text,
+                        distance_pos=dist_pos,
                     )
                 )
 
@@ -834,6 +1023,35 @@ class GuideRenderer:
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawLine(g.p1, g.p2)
+
+        # 2. Render guide line distance badges in the middle of guide lines between boundaries
+        for g in guides:
+            labels_to_draw = list(getattr(g, "labels", []))
+            if not labels_to_draw and getattr(g, "distance_text", None) and getattr(g, "distance_pos", None):
+                labels_to_draw.append(GuideLabel(pos=g.distance_pos, text=g.distance_text))
+
+            for lbl in labels_to_draw:
+                mid_x = lbl.pos.x()
+                mid_y = lbl.pos.y()
+
+                font = QFont("Segoe UI", max(7, int(9 / zf)))
+                font.setBold(True)
+                painter.setFont(font)
+                fm = painter.fontMetrics()
+                tw = fm.horizontalAdvance(lbl.text) + (8.0 / zf)
+                th = fm.height() + (4.0 / zf)
+
+                badge_rect = QRectF(mid_x - tw / 2.0, mid_y - th / 2.0, tw, th)
+
+                # Pill background
+                painter.setPen(QPen(QColor(255, 255, 255, 220), 0.75 / zf))
+                painter.setBrush(QBrush(QColor(g.color or "#FF2D9A")))
+                radius = 3.0 / zf
+                painter.drawRoundedRect(badge_rect, radius, radius)
+
+                # Text
+                painter.setPen(QColor("#FFFFFF"))
+                painter.drawText(badge_rect, Qt.AlignCenter, lbl.text)
 
         # 2. Render spacing dimension lines & badges
         for badge in spacing_badges:

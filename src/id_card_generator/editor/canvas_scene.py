@@ -40,7 +40,7 @@ class CanvasScene(QGraphicsScene):
         self.undo_stack = QUndoStack(self)
 
         # Smart Alignment and Snapping Subsystem
-        self._snap_settings = SnapSettings()
+        self._snap_settings = SnapSettings(unit="mm", dpi=300)
         self.smart_alignment_engine = SmartAlignmentEngine(self._snap_settings)
         self._active_guides: List[GuideLine] = []
         self._active_spacing_badges: List[SpacingBadge] = []
@@ -160,6 +160,9 @@ class CanvasScene(QGraphicsScene):
         self.clear()
         self._items_by_id.clear()
         self.template = template
+        if template:
+            self._snap_settings.unit = getattr(template, "unit", "mm") or "mm"
+            self._snap_settings.dpi = getattr(template, "dpi", 300) or 300
         self.undo_stack.clear()
 
         w = template.width_px

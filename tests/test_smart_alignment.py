@@ -10,6 +10,7 @@ from id_card_generator.core.models import CanvasElement, TemplateDefinition
 from id_card_generator.editor.canvas_items import CanvasItem
 from id_card_generator.editor.canvas_scene import CanvasScene
 from id_card_generator.editor.smart_alignment import (
+    GuideLabel,
     GuideLine,
     GuideRenderer,
     GuideType,
@@ -17,6 +18,7 @@ from id_card_generator.editor.smart_alignment import (
     SmartSpacingEngine,
     SnapSettings,
     SpacingBadge,
+    format_distance,
 )
 
 
@@ -672,3 +674,120 @@ def test_performance_many_elements(snap_engine: SmartAlignmentEngine):
     assert res is not None
     # Must compute within 15 milliseconds even with 250 elements
     assert elapsed < 0.015
+
+
+# ============================================================================
+# 14. Boundary Distance Measurement on Smart Guides
+# ============================================================================
+
+def test_boundary_distance_between_two_objects_horizontal():
+    """Verify smart guide lines display boundary gap distance in mm between two horizontal objects."""
+    settings = SnapSettings(smart_guides_enabled=True, snap_to_canvas_enabled=False, unit="mm", dpi=300)
+    engine = SmartAlignmentEngine(settings)
+
+    # Target A [x: 50..150, y: 100..150] (w=100, h=50)
+    # Moving B [x: 250..350, y: 102..152] (w=100, h=50) -> snaps top to 100 (delta_y = -2)
+    t_a = QRectF(50, 100, 100, 50)
+    m_b = QRectF(250, 102, 100, 50)
+
+    res = engine.snap_move(m_b, [t_a], zoom_factor=1.0)
+    assert res.has_vertical_snap
+    assert res.delta_y == -2.0
+    assert len(res.guides) > 0
+
+    # Top alignment guide should have a label in the middle of the gap (at x=200, y=100)
+    top_guides = [g for g in res.guides if g.guide_type == GuideType.ALIGN_TOP]
+    assert len(top_guides) > 0
+    g = top_guides[0]
+    assert len(g.labels) == 1
+    lbl = g.labels[0]
+    # Gap is 100px. At 300 DPI, 100 / 300 * 25.4 = 8.466 mm -> 8.5 mm
+    assert lbl.text == "8.5 mm"
+    assert lbl.pos.x() == 200.0  # Midpoint of 150 and 250
+    assert lbl.pos.y() == 100.0
+
+
+def test_boundary_distance_between_two_objects_vertical():
+    """Verify smart guide lines display boundary gap distance in cm between two vertically stacked objects."""
+    settings = SnapSettings(smart_guides_enabled=True, snap_to_canvas_enabled=False, unit="cm", dpi=300)
+    engine = SmartAlignmentEngine(settings)
+
+    # Target A [x: 100..200, y: 50..110] (bottom=110)
+    # Moving B [x: 103..203, y: 250..310] (top=250) -> snaps left to 100 (delta_x = -3)
+    t_a = QRectF(100, 50, 100, 60)
+    m_b = QRectF(103, 250, 100, 60)
+
+    res = engine.snap_move(m_b, [t_a], zoom_factor=1.0)
+    assert res.has_horizontal_snap
+    assert res.delta_x == -3.0
+
+    left_guides = [g for g in res.guides if g.guide_type == GuideType.ALIGN_LEFT]
+    assert len(left_guides) > 0
+    g = left_guides[0]
+    assert len(g.labels) == 1
+    lbl = g.labels[0]
+    # Gap is 140px. At 300 DPI, 140 / 300 * 2.54 = 1.185 cm -> 1.2 cm
+    assert lbl.text == "1.2 cm"
+    assert lbl.pos.x() == 100.0
+    assert lbl.pos.y() == 180.0  # Midpoint of 110 and 250
+
+
+def test_boundary_distance_canvas_unit_formatting():
+    """Verify format_distance formats accurately for mm, cm, inch, and px."""
+    # 300 DPI
+    assert format_distance(118.11, "mm", 300) == "10 mm"
+    assert format_distance(125.0, "mm", 300) == "10.6 mm"
+    assert format_distance(118.11, "cm", 300) == "1 cm"
+    assert format_distance(150.0, "inch", 300) == "0.5 in"
+    assert format_distance(50.0, "px", 300) == "50 px"
+
+
+def test_boundary_distance_with_canvas_edge():
+    """Verify distance between canvas boundaries and object boundaries on smart guides."""
+    settings = SnapSettings(smart_guides_enabled=True, snap_to_canvas_enabled=True, unit="mm", dpi=300)
+    engine = SmartAlignmentEngine(settings)
+
+    canvas = QRectF(0, 0, 1000, 600)
+    # Moving element center y snapped to canvas center (y=300)
+    m = QRectF(200, 278, 200, 40)
+    res = engine.snap_move(m, [], canvas_rect=canvas, zoom_factor=1.0)
+    assert res.has_vertical_snap
+    center_guides = [g for g in res.guides if g.guide_type == GuideType.CANVAS_CENTER_Y]
+    assert len(center_guides) > 0
+    g = center_guides[0]
+    # Should have labels for distance to left canvas edge and right canvas edge
+    assert len(g.labels) == 2
+    # Left: 200px / 300 * 25.4 = 16.9 mm at x=100
+    assert g.labels[0].text == "16.9 mm"
+    assert g.labels[0].pos.x() == 100.0
+    # Right: (1000 - 400) = 600px / 300 * 25.4 = 50.8 mm at x=700
+    assert g.labels[1].text == "50.8 mm"
+    assert g.labels[1].pos.x() == 700.0
+
+
+def test_guide_renderer_renders_distance_labels(qtbot):
+    """Verify GuideRenderer renders guide lines and distance badges without errors."""
+    img = QImage(600, 400, QImage.Format_ARGB32)
+    img.fill(Qt.white)
+    painter = QPainter(img)
+
+    g = GuideLine(
+        p1=QPointF(50, 100),
+        p2=QPointF(400, 100),
+        guide_type=GuideType.ALIGN_TOP,
+        labels=[GuideLabel(pos=QPointF(200, 100), text="12.5 mm", distance_px=147.6)],
+    )
+
+    badge = SpacingBadge(
+        axis="x",
+        distance=60.0,
+        p1=QPointF(50, 200),
+        p2=QPointF(110, 200),
+        badge_text="5.1 mm",
+    )
+
+    GuideRenderer.render(painter, [g], [badge], zoom_factor=1.0)
+    painter.end()
+    # Image must have been painted on
+    assert not img.isNull()
+
