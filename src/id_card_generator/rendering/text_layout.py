@@ -3,7 +3,8 @@
 import logging
 from typing import List, Optional, Tuple
 from PIL import ImageDraw, ImageFont
-from id_card_generator.core.constants import TextOverflowPolicy
+from id_card_generator.core.constants import DEFAULT_DPI, TextOverflowPolicy
+from id_card_generator.core.geometry import points_to_document_pixels
 from id_card_generator.rendering.font_manager import FontManager
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,8 @@ class TextLayoutResult:
         self.lines: List[Tuple[str, float, float]] = []  # (text, x, y)
         self.font: Optional[ImageFont.ImageFont] = None
         self.overflow_detected: bool = False
-        self.font_size_used: int = 0
+        self.font_size_used: float = 0.0  # In typographic points (pt)
+        self.font_size_px: float = 0.0    # In document pixels at target DPI
 
 
 class TextLayout:
@@ -66,7 +68,7 @@ class TextLayout:
         cls,
         text: str,
         family: str,
-        initial_font_size: int,
+        initial_font_size: float,
         bold: bool,
         italic: bool,
         target_width: float,
@@ -78,36 +80,51 @@ class TextLayout:
         line_spacing: float = 1.2,
         wrap: bool = True,
         overflow_policy: TextOverflowPolicy = TextOverflowPolicy.AUTO_SHRINK,
-        min_font_size: int = 10,
+        min_font_size: float = 4.0,  # in typographic points
+        dpi: float = DEFAULT_DPI,
     ) -> TextLayoutResult:
-        """Calculate layout lines for text within bounding box."""
+        """Calculate layout lines for text within bounding box.
+
+        Args:
+            initial_font_size: Font size in typographic points (pt), matching Photoshop.
+            min_font_size: Minimum font size in points for AUTO_SHRINK.
+            dpi: Document resolution (dots/pixels per inch), default 300.
+        """
         result = TextLayoutResult()
-        text = text.strip()
         if not text:
             return result
 
-        font_size = initial_font_size
-        font = FontManager.get_font(family, font_size, bold, italic)
+        font_size_pt = float(initial_font_size)
+        min_font_size_pt = float(min_font_size)
 
         # 1. Handle AUTO_SHRINK
         if overflow_policy == TextOverflowPolicy.AUTO_SHRINK:
-            while font_size >= min_font_size:
-                font = FontManager.get_font(family, font_size, bold, italic)
+            while font_size_pt >= min_font_size_pt:
+                font_size_px = points_to_document_pixels(font_size_pt, dpi)
+                font = FontManager.get_font(family, font_size_px, bold, italic)
                 lines = cls.wrap_text(text, font, target_width) if wrap else [text]
-                total_text_h = len(lines) * (font_size * line_spacing)
+                line_height = font_size_px * line_spacing
+                total_text_h = len(lines) * line_height
                 max_line_w = max((cls.measure_text(font, l)[0] for l in lines), default=0)
 
-                if max_line_w <= target_width and total_text_h <= target_height:
+                fits_single_line = (len(lines) <= 1) and ("\n" not in text) and (max_line_w <= target_width)
+                if fits_single_line or (max_line_w <= target_width and total_text_h <= target_height):
                     break
-                font_size -= 2
+                font_size_pt -= 0.5  # Fine-grained half-point reduction
 
-            if font_size < min_font_size:
-                font_size = min_font_size
-                font = FontManager.get_font(family, font_size, bold, italic)
+            if font_size_pt < min_font_size_pt:
+                font_size_pt = min_font_size_pt
+                font_size_px = points_to_document_pixels(font_size_pt, dpi)
+                font = FontManager.get_font(family, font_size_px, bold, italic)
                 result.overflow_detected = True
+        else:
+            font_size_px = points_to_document_pixels(font_size_pt, dpi)
+            font = FontManager.get_font(family, font_size_px, bold, italic)
 
+        font_size_px = points_to_document_pixels(font_size_pt, dpi)
         result.font = font
-        result.font_size_used = font_size
+        result.font_size_used = font_size_pt
+        result.font_size_px = font_size_px
 
         # 2. Break lines using final font
         lines = cls.wrap_text(text, font, target_width) if wrap else [text]
@@ -125,7 +142,7 @@ class TextLayout:
                 truncated_lines.append(line)
             lines = truncated_lines
 
-        line_height = font_size * line_spacing
+        line_height = font_size_px * line_spacing
         total_block_h = len(lines) * line_height
 
         # 3. Vertical alignment

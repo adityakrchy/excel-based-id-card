@@ -15,6 +15,7 @@ SUPPORTED_EXCEL_EXTENSIONS = {".xlsx", ".xls", ".csv"}
 # Default DPI & standard card sizes in pixels (at 300 DPI)
 # CR80 standard credit/ID card: 85.60 mm x 53.98 mm (approx 3.370" x 2.125") -> 1011 x 638 px (landscape) or 638 x 1011 px (portrait)
 DEFAULT_DPI = 300
+DEFAULT_FONT_SIZE_PT = 10.0
 CR80_WIDTH_PX = 638
 CR80_HEIGHT_PX = 1012
 

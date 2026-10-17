@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from PIL import Image, ImageDraw, ImageOps
 
 from id_card_generator.core.constants import (
+    DEFAULT_DPI,
     ImageFitMode,
     MissingPhotoPolicy,
     OutputFormat,
@@ -43,8 +44,11 @@ class PillowRenderer:
         card_w = template.width_px
         card_h = template.height_px
 
+        card_dpi = template.dpi if getattr(template, "dpi", None) else DEFAULT_DPI
+
         # 1. Base canvas
         card_img = Image.new("RGBA", (card_w, card_h), template.background_color or "#FFFFFF")
+        card_img.info["dpi"] = (card_dpi, card_dpi)
 
         # 2. Background image if present
         if template.background_image_path:
@@ -73,6 +77,7 @@ class PillowRenderer:
                     photo_path=photo_path,
                     column_mappings=column_mappings,
                     settings=settings,
+                    dpi=card_dpi,
                 )
                 warnings.extend(elem_warnings)
             except Exception as e:
@@ -84,6 +89,7 @@ class PillowRenderer:
             # Flatten RGBA onto RGB
             rgb_bg = Image.new("RGB", (card_w, card_h), template.background_color or "#FFFFFF")
             rgb_bg.paste(card_img, (0, 0), card_img)
+            rgb_bg.info["dpi"] = (card_dpi, card_dpi)
             return rgb_bg, warnings
 
         return card_img, warnings
@@ -97,6 +103,7 @@ class PillowRenderer:
         photo_path: Optional[str],
         column_mappings: Dict[str, str],
         settings: RenderSettings,
+        dpi: int = DEFAULT_DPI,
     ) -> List[str]:
         """Render a single canvas element onto card_img. Returns warnings."""
         warnings: List[str] = []
@@ -116,7 +123,7 @@ class PillowRenderer:
         # --- STATIC TEXT ---
         if elem.type == "static_text":
             text = elem.static_content or ""
-            warn = cls._render_text(card_img, elem, text, elem_x, elem_y, elem_w, elem_h, settings)
+            warn = cls._render_text(card_img, elem, text, elem_x, elem_y, elem_w, elem_h, settings, dpi=dpi)
             if warn:
                 warnings.extend(warn)
             return warnings
@@ -124,7 +131,7 @@ class PillowRenderer:
         # --- DYNAMIC TEXT ---
         if elem.type in ("dynamic_text", "pin_field"):
             text = cls._resolve_bound_text(elem, record, column_mappings)
-            warn = cls._render_text(card_img, elem, text, elem_x, elem_y, elem_w, elem_h, settings)
+            warn = cls._render_text(card_img, elem, text, elem_x, elem_y, elem_w, elem_h, settings, dpi=dpi)
             if warn:
                 warnings.extend(warn)
             return warnings
@@ -232,6 +239,7 @@ class PillowRenderer:
         w: int,
         h: int,
         settings: RenderSettings,
+        dpi: int = DEFAULT_DPI,
     ) -> List[str]:
         """Compute layout and draw text onto card_img."""
         warnings: List[str] = []
@@ -253,6 +261,7 @@ class PillowRenderer:
             line_spacing=elem.style.line_spacing,
             wrap=elem.style.wrap,
             overflow_policy=elem.style.overflow_policy,
+            dpi=dpi,
         )
 
         if layout.overflow_detected:

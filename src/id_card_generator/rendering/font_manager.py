@@ -134,28 +134,29 @@ class FontManager:
     def get_font(
         cls,
         family: str = "Arial",
-        size: int = 24,
+        size: float = 24.0,
         bold: bool = False,
         italic: bool = False,
     ) -> ImageFont.ImageFont:
-        """Load and cache an ImageFont instance. Falls back gracefully if unavailable."""
-        cache_key = (family.lower(), size, bold, italic)
+        """Load and cache an ImageFont instance at specified pixel size. Falls back gracefully if unavailable."""
+        int_size = max(1, int(round(size)))
+        cache_key = (family.lower(), int_size, bold, italic)
         if cache_key in cls._font_cache:
             return cls._font_cache[cache_key]
 
         font_path = cls.find_font_file(family, bold, italic)
         if font_path:
             try:
-                font = ImageFont.truetype(str(font_path), size=size)
+                font = ImageFont.truetype(str(font_path), size=int_size)
                 cls._font_cache[cache_key] = font
                 return font
             except Exception as e:
                 logger.warning("Failed to load font from %s: %s", font_path, e)
 
         # Fallback to Pillow's built-in default font
-        logger.debug("Falling back to default font for %s (size %d)", family, size)
+        logger.debug("Falling back to default font for %s (size %d)", family, int_size)
         try:
             # Pillow >= 10.1 has ImageFont.load_default(size=size)
-            return ImageFont.load_default(size=size)
+            return ImageFont.load_default(size=int_size)
         except TypeError:
             return ImageFont.load_default()

@@ -3,7 +3,7 @@
 import logging
 from typing import List, Optional
 from PySide6.QtCore import QPointF, QRectF, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -148,7 +148,9 @@ class ElementInspector(QWidget):
         type_layout.addRow("Font:", self.cmb_font)
 
         self.spin_font_size = QSpinBox()
-        self.spin_font_size.setRange(6, 144)
+        self.spin_font_size.setRange(4, 144)
+        self.spin_font_size.setSuffix(" pt")
+        self.spin_font_size.setValue(10)
         self.spin_font_size.valueChanged.connect(self._on_font_size_changed)
         type_layout.addRow("Size:", self.spin_font_size)
 
@@ -232,27 +234,37 @@ class ElementInspector(QWidget):
         self.lbl_title.setText(f"<b>{elem.name}</b> ({elem.type})")
 
         # Position & Size
-        self.txt_name.setText(elem.name)
-        self.spin_x.setValue(item.pos().x())
-        self.spin_y.setValue(item.pos().y())
-        self.spin_w.setValue(elem.width)
-        self.spin_h.setValue(elem.height)
+        if not self.txt_name.hasFocus() and self.txt_name.text() != elem.name:
+            self.txt_name.setText(elem.name)
+        if not self.spin_x.hasFocus():
+            self.spin_x.setValue(item.pos().x())
+        if not self.spin_y.hasFocus():
+            self.spin_y.setValue(item.pos().y())
+        if not self.spin_w.hasFocus():
+            self.spin_w.setValue(elem.width)
+        if not self.spin_h.hasFocus():
+            self.spin_h.setValue(elem.height)
         self.chk_locked.setChecked(elem.locked)
 
         # Binding
         self._refresh_binding_combo()
         if elem.binding:
             idx = self.cmb_binding.findText(elem.binding)
-            if idx >= 0:
+            if idx >= 0 and self.cmb_binding.currentIndex() != idx:
                 self.cmb_binding.setCurrentIndex(idx)
         else:
-            self.cmb_binding.setCurrentIndex(0)
+            if self.cmb_binding.currentIndex() != 0:
+                self.cmb_binding.setCurrentIndex(0)
 
-        self.txt_static.setText(elem.static_content or "")
+        if not self.txt_static.hasFocus() and self.txt_static.text() != (elem.static_content or ""):
+            self.txt_static.setText(elem.static_content or "")
 
         # Typography
-        self.cmb_font.setCurrentFont(elem.style.font_family)
-        self.spin_font_size.setValue(int(elem.style.font_size))
+        if not self.cmb_font.hasFocus() and self.cmb_font.currentFont().family() != elem.style.font_family:
+            self.cmb_font.setCurrentFont(QFont(elem.style.font_family))
+        sz_val = int(round(elem.style.font_size))
+        if not self.spin_font_size.hasFocus() and self.spin_font_size.value() != sz_val:
+            self.spin_font_size.setValue(sz_val)
         self.chk_bold.setChecked(elem.style.font_bold)
         self.chk_italic.setChecked(elem.style.font_italic)
         self.cmb_align.setCurrentText(elem.style.text_align)
@@ -387,7 +399,7 @@ class ElementInspector(QWidget):
     def _on_font_size_changed(self, val: int):
         if not self._updating and self._current_item:
             def _update():
-                self._current_item.element.style.font_size = val
+                self._current_item.element.style.font_size = float(val)
             self._apply_change(_update, "Change Font Size")
 
     def _on_bold_toggled(self, checked: bool):

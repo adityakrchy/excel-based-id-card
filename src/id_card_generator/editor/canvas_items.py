@@ -7,6 +7,7 @@ from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
+    QFontMetrics,
     QImage,
     QPainter,
     QPainterPath,
@@ -21,7 +22,8 @@ from PySide6.QtWidgets import (
     QMenu,
 )
 
-from id_card_generator.core.constants import ImageFitMode
+from id_card_generator.core.constants import DEFAULT_DPI, ImageFitMode, TextOverflowPolicy
+from id_card_generator.core.geometry import points_to_document_pixels
 from id_card_generator.core.models import CanvasElement, SourceRecord
 
 
@@ -341,6 +343,7 @@ class CanvasItem(QGraphicsObject):
     def paint(self, painter: QPainter, option, widget=None):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
 
         elem = self.element
         rect = self._rect
@@ -488,14 +491,19 @@ class CanvasItem(QGraphicsObject):
             else:
                 text = f"[{col}]"
 
-        font = QFont(elem.style.font_family, int(elem.style.font_size))
+        # Determine document DPI from scene template
+        scene = self.scene()
+        dpi = DEFAULT_DPI
+        if scene and hasattr(scene, "template") and scene.template and getattr(scene.template, "dpi", None):
+            dpi = scene.template.dpi
+
+        font_size_pt = float(elem.style.font_size)
+        font = QFont(elem.style.font_family)
         font.setBold(elem.style.font_bold)
         font.setItalic(elem.style.font_italic)
-        painter.setFont(font)
+        font.setStyleStrategy(QFont.PreferAntialias)
 
-        painter.setPen(QColor(elem.style.font_color or "#000000"))
-
-        flags = 0
+        flags = Qt.TextIncludeTrailingSpaces
         if elem.style.text_align == "center":
             flags |= Qt.AlignHCenter
         elif elem.style.text_align == "right":
@@ -513,7 +521,43 @@ class CanvasItem(QGraphicsObject):
         if elem.style.wrap:
             flags |= Qt.TextWordWrap
 
-        painter.drawText(rect, flags, text)
+        # Auto-shrink in point units to match TextLayout / Photoshop
+        if elem.style.overflow_policy == TextOverflowPolicy.AUTO_SHRINK and text:
+            cur_pt = font_size_pt
+            min_pt = 4.0
+            while cur_pt >= min_pt:
+                doc_px = points_to_document_pixels(cur_pt, dpi)
+                font.setPixelSize(max(1, int(round(doc_px))))
+                fm = QFontMetrics(font)
+                bounding = fm.boundingRect(rect.toRect(), flags, text)
+                single_w = fm.horizontalAdvance(text)
+                fits_single_line = (single_w <= rect.width()) and ("\n" not in text)
+                if fits_single_line:
+                    break
+                if bounding.width() <= rect.width() and bounding.height() <= rect.height():
+                    break
+                cur_pt -= 0.5
+        else:
+            doc_px = points_to_document_pixels(font_size_pt, dpi)
+            font.setPixelSize(max(1, int(round(doc_px))))
+
+        draw_rect = QRectF(rect)
+        fm = QFontMetrics(font)
+        line_h = fm.height()
+        if draw_rect.height() < line_h and ("\n" not in text):
+            if elem.style.vertical_align == "middle":
+                cy = rect.center().y()
+                draw_rect.setTop(cy - line_h / 2.0)
+                draw_rect.setHeight(line_h)
+            elif elem.style.vertical_align == "bottom":
+                draw_rect.setTop(rect.bottom() - line_h)
+                draw_rect.setHeight(line_h)
+            else:
+                draw_rect.setHeight(line_h)
+
+        painter.setFont(font)
+        painter.setPen(QColor(elem.style.font_color or "#000000"))
+        painter.drawText(draw_rect, flags, text)
 
     def _paint_selection(self, painter: QPainter):
         """Draw professional Transform Box (TBox) with outer contrast halo, crisp accent border, 8 resize handles, and element tag."""

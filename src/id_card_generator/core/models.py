@@ -8,6 +8,7 @@ from id_card_generator.core.constants import (
     CR80_WIDTH_PX,
     CR80_HEIGHT_PX,
     DEFAULT_DPI,
+    DEFAULT_FONT_SIZE_PT,
     MatchStatus,
     ReviewStatus,
     ImageFitMode,
@@ -54,7 +55,7 @@ class PhotoMatchResult(BaseModel):
 class CanvasElementStyle(BaseModel):
     """Style attributes for a canvas/template element."""
     font_family: str = "Arial"
-    font_size: int = 24
+    font_size: float = DEFAULT_FONT_SIZE_PT  # Typographic font size in points (pt), default 10 pt
     font_bold: bool = False
     font_italic: bool = False
     font_color: str = "#1A1A1A"

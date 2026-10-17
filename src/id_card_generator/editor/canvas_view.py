@@ -115,3 +115,16 @@ class CanvasView(QGraphicsView):
                     return
 
         super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        """Translate Shift and Meta (Cmd on macOS) to ControlModifier for multi-item selection."""
+        if event.modifiers() & (Qt.ShiftModifier | Qt.MetaModifier):
+            event.setModifiers(event.modifiers() | Qt.ControlModifier)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Translate Shift and Meta (Cmd on macOS) to ControlModifier for multi-item selection."""
+        if event.modifiers() & (Qt.ShiftModifier | Qt.MetaModifier):
+            event.setModifiers(event.modifiers() | Qt.ControlModifier)
+        super().mouseReleaseEvent(event)
+

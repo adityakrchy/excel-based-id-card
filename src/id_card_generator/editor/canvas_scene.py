@@ -362,6 +362,8 @@ class CanvasScene(QGraphicsScene):
         painter.restore()
 
     def mousePressEvent(self, event):
+        if event.modifiers() & (Qt.ShiftModifier | Qt.MetaModifier):
+            event.setModifiers(event.modifiers() | Qt.ControlModifier)
         self._mouse_press_positions = {
             it: QPointF(it.pos()) for it in self.selectedItems() if isinstance(it, CanvasItem)
         }
@@ -371,6 +373,8 @@ class CanvasScene(QGraphicsScene):
                 self._mouse_press_positions[it] = QPointF(it.pos())
 
     def mouseReleaseEvent(self, event):
+        if event.modifiers() & (Qt.ShiftModifier | Qt.MetaModifier):
+            event.setModifiers(event.modifiers() | Qt.ControlModifier)
         self.clear_guides()
         self._in_smart_drag = False
         self.update()

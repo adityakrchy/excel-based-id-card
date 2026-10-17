@@ -86,6 +86,7 @@ class LayersPanel(QWidget):
 
         # Tree Widget for Layers
         self.tree = QTreeWidget()
+        self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
         self.tree.setHeaderLabels(["Layer / Element", "Vis", "Lock"])
         self.tree.setColumnCount(3)
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -162,9 +163,10 @@ class LayersPanel(QWidget):
         """Explicitly focus and select item on canvas with TBox when clicked in layers tab."""
         if column in (1, 2):
             return  # Handled by check state in _on_item_changed
-        canvas_item: Optional[CanvasItem] = tree_item.data(0, Qt.UserRole)
-        if canvas_item:
-            self._select_and_focus_item(canvas_item)
+        if len(self.tree.selectedItems()) <= 1:
+            canvas_item: Optional[CanvasItem] = tree_item.data(0, Qt.UserRole)
+            if canvas_item:
+                self._select_and_focus_item(canvas_item)
 
     def _select_and_focus_item(self, canvas_item: CanvasItem) -> None:
         """Select item on canvas, trigger transform box (TBox) rendering and inspector sync."""
@@ -190,15 +192,29 @@ class LayersPanel(QWidget):
         if self._updating:
             return
         selected = self.tree.selectedItems()
-        if not selected:
+        self._updating = True
+        try:
             self.scene.clearSelection()
-            self.scene.element_selected.emit(None)
-            self.item_selected.emit(None)
-            return
+            selected_canvas_items = []
+            for item in selected:
+                c_item: Optional[CanvasItem] = item.data(0, Qt.UserRole)
+                if c_item and c_item.scene() == self.scene:
+                    c_item.setSelected(True)
+                    selected_canvas_items.append(c_item)
 
-        canvas_item: Optional[CanvasItem] = selected[0].data(0, Qt.UserRole)
-        if canvas_item:
-            self._select_and_focus_item(canvas_item)
+            if selected_canvas_items:
+                last_item = selected_canvas_items[-1]
+                self.scene.element_selected.emit(last_item)
+                self.item_selected.emit(last_item)
+                views = self.scene.views()
+                if views:
+                    views[0].ensureVisible(last_item, 40, 40)
+            else:
+                self.scene.element_selected.emit(None)
+                self.item_selected.emit(None)
+            self.scene.update()
+        finally:
+            self._updating = False
 
     def _on_scene_selection_changed(self) -> None:
         if self._updating:

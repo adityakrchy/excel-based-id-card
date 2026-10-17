@@ -400,7 +400,9 @@ class EditorPage(QWidget):
         layout.addWidget(self.ctx_font_family)
 
         self.ctx_font_size = QSpinBox()
-        self.ctx_font_size.setRange(6, 200)
+        self.ctx_font_size.setRange(4, 144)
+        self.ctx_font_size.setSuffix(" pt")
+        self.ctx_font_size.setValue(10)
         self.ctx_font_size.valueChanged.connect(self._on_ctx_font_size_changed)
         layout.addWidget(self.ctx_font_size)
 
@@ -668,8 +670,11 @@ class EditorPage(QWidget):
         elem = item.element
         if elem.type in ("static_text", "dynamic_text", "pin_field"):
             self.stack_context.setCurrentIndex(1)
-            self.ctx_font_family.setCurrentFont(elem.style.font_family)
-            self.ctx_font_size.setValue(int(elem.style.font_size))
+            if not self.ctx_font_family.hasFocus() and self.ctx_font_family.currentFont().family() != elem.style.font_family:
+                self.ctx_font_family.setCurrentFont(QFont(elem.style.font_family))
+            sz_val = int(round(elem.style.font_size))
+            if not self.ctx_font_size.hasFocus() and self.ctx_font_size.value() != sz_val:
+                self.ctx_font_size.setValue(sz_val)
             self.ctx_chk_bold.setChecked(elem.style.font_bold)
             self.ctx_chk_italic.setChecked(elem.style.font_italic)
             self.ctx_cmb_align.setCurrentText(elem.style.text_align)
@@ -695,7 +700,9 @@ class EditorPage(QWidget):
     def _on_template_modified(self) -> None:
         self.layers_panel.refresh_layers()
         sel = self.scene.get_selected_item()
-        self.inspector.set_selected_item(sel)
+        from PySide6.QtWidgets import QWidget
+        if not self.inspector.hasFocus() and not any(w.hasFocus() for w in self.inspector.findChildren(QWidget)):
+            self.inspector.set_selected_item(sel)
         self._update_context_options(sel)
         self._update_sample_preview()
         if self.scene.template:
@@ -787,7 +794,7 @@ class EditorPage(QWidget):
         self._apply_context_change(lambda it: setattr(it.element.style, "font_family", font.family()), "Change Font Family")
 
     def _on_ctx_font_size_changed(self, sz: int) -> None:
-        self._apply_context_change(lambda it: setattr(it.element.style, "font_size", sz), "Change Font Size")
+        self._apply_context_change(lambda it: setattr(it.element.style, "font_size", float(sz)), "Change Font Size")
 
     def _on_ctx_bold_toggled(self, checked: bool) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "font_bold", checked), "Toggle Bold")
@@ -836,8 +843,8 @@ class EditorPage(QWidget):
             type="static_text",
             x=60.0,
             y=60.0,
-            width=240.0,
-            height=36.0,
+            width=320.0,
+            height=48.0,
             static_content="Sample Text",
         )
         self.scene.add_element(el)
