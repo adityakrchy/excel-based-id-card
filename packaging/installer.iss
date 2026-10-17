@@ -2,7 +2,7 @@
 ; Target: Windows 10 & 11 (x64)
 
 #define MyAppName "Excel ID Card Generator"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "1.0.4"
 #define MyAppPublisher "CardForge"
 #define MyAppExeName "ExcelIDCardGenerator.exe"
 
