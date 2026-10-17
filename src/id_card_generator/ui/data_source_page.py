@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
 
 from id_card_generator.core.constants import WorkflowStep
 from id_card_generator.core.exceptions import DataSourceError
-from id_card_generator.core.models import SourceRecord
+from id_card_generator.core.models import ProjectConfiguration, SourceRecord
+from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.data_validator import DataValidator, ValidationReport
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.ui.step_nav_bar import StepNavBar
@@ -41,12 +42,22 @@ class DataSourcePage(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.project_config: Optional[ProjectConfiguration] = None
         self.current_file_path: Optional[Path] = None
         self.columns: List[str] = []
         self.records: List[SourceRecord] = []
         self.validation_report: Optional[ValidationReport] = None
 
         self._setup_ui()
+
+    def set_project_config(self, config: Optional[ProjectConfiguration]) -> None:
+        """Associate active project workspace configuration."""
+        self.project_config = config
+        if config and config.workspace_dir and config.excel_file_path:
+            p = Path(config.excel_file_path)
+            if p.exists():
+                self.lbl_workspace_badge.setText(f"✓ Stored in Workspace: data/{p.name}")
+                self.lbl_workspace_badge.setVisible(True)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -75,6 +86,12 @@ class DataSourcePage(QWidget):
         file_row.addWidget(self.lbl_path, stretch=1)
         file_row.addWidget(self.btn_refresh)
         top_layout.addLayout(file_row)
+
+        # Workspace badge row
+        self.lbl_workspace_badge = QLabel("")
+        self.lbl_workspace_badge.setStyleSheet("color: #10B981; font-weight: 600; font-size: 11px;")
+        self.lbl_workspace_badge.setVisible(False)
+        top_layout.addWidget(self.lbl_workspace_badge)
 
         # Controls row: Sheet selector & Header row
         ctrl_row = QHBoxLayout()
@@ -151,8 +168,19 @@ class DataSourcePage(QWidget):
         if file_path:
             self.load_file(Path(file_path))
 
-    def load_file(self, file_path: Path) -> None:
-        """Load spreadsheet and populate sheet names."""
+    def load_file(self, file_path: Path, copy_to_workspace: bool = True) -> None:
+        """Load spreadsheet and populate sheet names, copying to workspace data/ directory if active."""
+        file_path = Path(file_path).resolve()
+
+        if copy_to_workspace and self.project_config and self.project_config.workspace_dir:
+            try:
+                copied_path = ProjectManager.copy_excel_to_workspace(self.project_config, file_path)
+                file_path = copied_path
+                self.lbl_workspace_badge.setText(f"✓ Copied to Workspace: data/{file_path.name}")
+                self.lbl_workspace_badge.setVisible(True)
+            except Exception as e:
+                logger.warning("Could not copy spreadsheet to workspace data folder: %s", e)
+
         self.current_file_path = file_path
         self.lbl_path.setText(str(file_path))
         self.btn_refresh.setEnabled(True)

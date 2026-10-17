@@ -1,9 +1,10 @@
 """Main Application Window for Excel-Based ID Card Generator."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
@@ -39,6 +40,7 @@ from id_card_generator.resources.resource_loader import get_resource_path
 from id_card_generator.tasks.task_manager import TaskManager
 from id_card_generator.ui.dashboard_page import DashboardPage
 from id_card_generator.ui.data_source_page import DataSourcePage
+from id_card_generator.ui.dialogs.project_dialog import ProjectDialog
 from id_card_generator.ui.dialogs.relink_dialog import RelinkDialog
 from id_card_generator.ui.editor_page import EditorPage
 from id_card_generator.ui.export_page import ExportPage
@@ -62,7 +64,9 @@ class MainWindow(QMainWindow):
         self.resize(1280, 850)
 
         # Application state
+        self.current_project_config: Optional[ProjectConfiguration] = None
         self.current_project_path: Optional[Path] = None
+        self._startup_prompt_shown = False
         self.active_template: Optional[TemplateDefinition] = None
         self.records: List[SourceRecord] = []
         self.columns: List[str] = []
@@ -75,6 +79,21 @@ class MainWindow(QMainWindow):
         self._setup_menus()
         self._setup_signals()
         self.apply_theme(ThemeManager.instance().get_preference())
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._startup_prompt_shown and not os.environ.get("PYTEST_CURRENT_TEST"):
+            self._startup_prompt_shown = True
+            QTimer.singleShot(150, self._prompt_startup_project)
+
+    def _prompt_startup_project(self) -> None:
+        """Prompt user on launch to create or open a project workspace."""
+        if self.current_project_config is not None:
+            return
+        dialog = ProjectDialog(self, initial_mode="create")
+        if dialog.exec():
+            if dialog.created_config:
+                self.set_project(dialog.created_config, dialog.selected_workspace_path)
 
     def _setup_ui(self) -> None:
         # Main Top Application Toolbar
@@ -242,6 +261,8 @@ class MainWindow(QMainWindow):
         self.page_dashboard.theme_changed.connect(self.apply_theme)
         self.page_dashboard.policy_changed.connect(self._on_policy_changed)
         self.page_dashboard.dpi_changed.connect(lambda dpi: setattr(self.settings, "dpi", dpi))
+        self.page_dashboard.new_project_requested.connect(self._new_project)
+        self.page_dashboard.open_project_requested.connect(self._open_project)
 
         # Sequential step-by-step navigation signals
         self.page_data_source.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
@@ -413,12 +434,23 @@ class MainWindow(QMainWindow):
             validation_warnings=warn_count,
             validation_errors=err_count,
         )
+        self.page_dashboard.update_workspace_info(self.current_project_config, matched_photos)
 
     def _refresh_status_bar(self) -> None:
-        proj_str = self.current_project_path.name if self.current_project_path else "Unsaved Project"
+        ws_str = ""
+        if self.current_project_config and self.current_project_config.workspace_dir:
+            ws_str = f"Workspace: {Path(self.current_project_config.workspace_dir).name} • "
+        proj_str = self.current_project_config.project_name if self.current_project_config else (
+            self.current_project_path.name if self.current_project_path else "Unsaved Project"
+        )
         rec_str = f"{len(self.records)} records" if self.records else "No data"
         tmpl_str = self.active_template.name if self.active_template else "No template"
-        self.status_bar.showMessage(f"Project: {proj_str} • {rec_str} • Template: {tmpl_str}")
+        self.status_bar.showMessage(f"{ws_str}Project: {proj_str} • {rec_str} • Template: {tmpl_str}")
+
+        title_suffix = f" - {proj_str}"
+        if self.current_project_config and self.current_project_config.workspace_dir:
+            title_suffix += f" [{self.current_project_config.workspace_dir}]"
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}{title_suffix}")
 
     def apply_theme(self, theme_name: str) -> None:
         """Apply Windows 11 Fluent theme via centralized ThemeManager."""
@@ -443,87 +475,114 @@ class MainWindow(QMainWindow):
         self.apply_theme(theme_val)
 
     # --- Project Save / Load / Relink ---
-    def _new_project(self) -> None:
-        confirm = QMessageBox.question(self, "New Project", "Create a new project? Unsaved changes will be lost.")
-        if confirm == QMessageBox.Yes:
+    def set_project(self, config: ProjectConfiguration, workspace_path: Optional[Path] = None) -> None:
+        """Set active project configuration and synchronize workspace across application views."""
+        self.current_project_config = config
+        ws_path = Path(workspace_path).resolve() if workspace_path else (config.workspace_path if config.workspace_path else None)
+        if ws_path:
+            self.current_project_path = ws_path / "project.json" if ws_path.is_dir() else ws_path
+        else:
             self.current_project_path = None
-            self.records = []
-            self.columns = []
-            self.match_results = {}
-            self.column_mappings = {}
-            self.active_template = None
-            self.last_generation_summary = None
-            self.switch_page(WorkflowStep.DASHBOARD)
-            self._refresh_dashboard_metrics()
-            self._refresh_status_bar()
+
+        # Synchronize project configuration to pages
+        self.page_data_source.set_project_config(config)
+        self.page_photos.set_project_config(config)
+
+        # Load spreadsheet if exists in workspace
+        if config.excel_file_path and Path(config.excel_file_path).exists():
+            self.page_data_source.load_file(Path(config.excel_file_path), copy_to_workspace=False)
+
+        # Set photo directory if exists
+        if config.photo_dir_path and Path(config.photo_dir_path).exists():
+            self.page_photos.set_directory(Path(config.photo_dir_path))
+
+        # Restore overrides & mappings
+        if config.column_mappings:
+            self.column_mappings = dict(config.column_mappings)
+        if config.photo_overrides:
+            self.page_photos.matcher.overrides = dict(config.photo_overrides)
+        if config.template:
+            self.active_template = config.template
+
+        # Set export output directory
+        if config.exports_dir:
+            self.page_export.lbl_dest_dir.setText(str(config.exports_dir))
+            self.page_export.last_export_dir = config.exports_dir
+
+        self.switch_page(WorkflowStep.DASHBOARD)
+        self._refresh_dashboard_metrics()
+        self._refresh_status_bar()
+
+    def _new_project(self) -> None:
+        """Create a new project workspace."""
+        dialog = ProjectDialog(self, initial_mode="create")
+        if dialog.exec():
+            if dialog.created_config:
+                self.records = []
+                self.columns = []
+                self.match_results = {}
+                self.column_mappings = {}
+                self.active_template = None
+                self.last_generation_summary = None
+                self.set_project(dialog.created_config, dialog.selected_workspace_path)
+                QMessageBox.information(
+                    self,
+                    "Workspace Ready",
+                    f"Project '{dialog.created_config.project_name}' workspace created at:\n{dialog.selected_workspace_path}",
+                )
 
     def _open_project(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "Project Files (*.json)")
-        if not file_path:
-            return
-
-        p = Path(file_path)
-        try:
-            cfg = ProjectManager.load_project(p)
-
-            # Check missing references
-            missing = ProjectManager.check_missing_references(cfg)
-            if missing:
-                dialog = RelinkDialog(missing, self)
-                if dialog.exec():
-                    cfg = ProjectManager.relink_references(cfg, dialog.replacements)
-                else:
-                    return
-
-            self.current_project_path = p
-            self.active_template = cfg.template
-
-            if cfg.excel_file_path and Path(cfg.excel_file_path).exists():
-                self.page_data_source.load_file(Path(cfg.excel_file_path))
-
-            if cfg.photo_dir_path and Path(cfg.photo_dir_path).exists():
-                self.page_photos.set_directory(Path(cfg.photo_dir_path))
-
-            self.column_mappings = cfg.column_mappings
-            self.settings.missing_photo_policy = cfg.missing_photo_policy
-
-            self.switch_page(WorkflowStep.DASHBOARD)
-            self._refresh_dashboard_metrics()
-            self._refresh_status_bar()
-            QMessageBox.information(self, "Project Loaded", f"Project '{cfg.project_name}' loaded successfully.")
-
-        except Exception as e:
-            logger.error("Failed to load project: %s", e)
-            QMessageBox.critical(self, "Project Error", f"Could not load project: {e}")
+        """Open an existing workspace or project.json."""
+        dialog = ProjectDialog(self, initial_mode="open")
+        if dialog.exec():
+            if dialog.created_config:
+                cfg = dialog.created_config
+                missing = ProjectManager.check_missing_references(cfg)
+                if missing:
+                    relink_dialog = RelinkDialog(missing, self)
+                    if relink_dialog.exec():
+                        cfg = ProjectManager.relink_references(cfg, relink_dialog.replacements)
+                    else:
+                        return
+                self.set_project(cfg, dialog.selected_workspace_path)
+                QMessageBox.information(self, "Project Loaded", f"Project '{cfg.project_name}' loaded successfully.")
 
     def _save_project(self) -> None:
         if self.current_project_path:
             self._save_to_path(self.current_project_path)
+        elif self.current_project_config and self.current_project_config.project_file_path:
+            self._save_to_path(self.current_project_config.project_file_path)
         else:
             self._save_project_as()
 
     def _save_project_as(self) -> None:
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save Project", "id_cards_project.json", "Project Files (*.json)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Project", "project.json", "Project Files (*.json)")
         if file_path:
             self.current_project_path = Path(file_path)
             self._save_to_path(self.current_project_path)
 
     def _save_to_path(self, path: Path) -> None:
         try:
-            cfg = ProjectConfiguration(
-                project_name=path.stem,
-                excel_file_path=str(self.page_data_source.current_file_path) if self.page_data_source.current_file_path else None,
-                sheet_name=self.page_data_source.cmb_sheets.currentText() or None,
-                header_row=self.page_data_source.spin_header.value(),
-                photo_dir_path=str(self.page_photos.matcher.photo_dir) if self.page_photos.matcher.photo_dir else None,
-                template=self.active_template or self.page_templates.active_template,
-                column_mappings=self.column_mappings,
-                photo_overrides=self.page_photos.matcher.overrides,
-                missing_photo_policy=self.settings.missing_photo_policy,
-                review_states={r.record_id: r.status for r in self.page_review.manager.records},
-            )
+            cfg = self.current_project_config or ProjectConfiguration()
+            if cfg.project_name == "Untitled Project":
+                cfg.project_name = path.stem
+            cfg.excel_file_path = str(self.page_data_source.current_file_path) if self.page_data_source.current_file_path else cfg.excel_file_path
+            cfg.sheet_name = self.page_data_source.cmb_sheets.currentText() or cfg.sheet_name
+            cfg.header_row = self.page_data_source.spin_header.value()
+            cfg.photo_dir_path = str(self.page_photos.matcher.photo_dir) if self.page_photos.matcher.photo_dir else cfg.photo_dir_path
+            cfg.template = self.active_template or self.page_templates.active_template or cfg.template
+            cfg.column_mappings = self.column_mappings
+            cfg.photo_overrides = self.page_photos.matcher.overrides
+            cfg.missing_photo_policy = self.settings.missing_photo_policy
+            cfg.review_states = {r.record_id: r.status for r in self.page_review.manager.records}
+            if not cfg.workspace_dir and path.name == "project.json":
+                cfg.workspace_dir = str(path.parent.resolve())
+
             ProjectManager.save_project(cfg, path)
+            self.current_project_config = cfg
+            self.current_project_path = path
             self._refresh_status_bar()
+            self._refresh_dashboard_metrics()
             QMessageBox.information(self, "Project Saved", f"Project successfully saved to {path.name}.")
         except Exception as e:
             logger.error("Failed to save project: %s", e)

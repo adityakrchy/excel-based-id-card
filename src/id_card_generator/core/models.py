@@ -1,5 +1,6 @@
 """Domain data models and schemas using Pydantic."""
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import uuid
@@ -47,6 +48,7 @@ class PhotoMatchResult(BaseModel):
     record_id: Optional[str] = None
     status: MatchStatus = MatchStatus.MISSING
     photo_path: Optional[str] = None
+    matched_filename: Optional[str] = None
     candidate_paths: List[str] = Field(default_factory=list)
     is_overridden: bool = False
     details: str = ""
@@ -176,6 +178,7 @@ class ProjectConfiguration(BaseModel):
     """Serializable application project file model."""
     project_name: str = "Untitled Project"
     version: str = "1.0.0"
+    workspace_dir: Optional[str] = None
     excel_file_path: Optional[str] = None
     sheet_name: Optional[str] = None
     header_row: int = 0
@@ -190,3 +193,23 @@ class ProjectConfiguration(BaseModel):
     missing_photo_policy: MissingPhotoPolicy = MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER
     review_states: Dict[str, ReviewStatus] = Field(default_factory=dict)  # record_id -> ReviewStatus
     last_export_dir: Optional[str] = None
+
+    @property
+    def workspace_path(self) -> Optional[Path]:
+        return Path(self.workspace_dir).resolve() if self.workspace_dir else None
+
+    @property
+    def data_dir(self) -> Optional[Path]:
+        return (Path(self.workspace_dir) / "data").resolve() if self.workspace_dir else None
+
+    @property
+    def photos_dir(self) -> Optional[Path]:
+        return (Path(self.workspace_dir) / "photos").resolve() if self.workspace_dir else None
+
+    @property
+    def exports_dir(self) -> Optional[Path]:
+        return (Path(self.workspace_dir) / "exports").resolve() if self.workspace_dir else None
+
+    @property
+    def project_file_path(self) -> Optional[Path]:
+        return (Path(self.workspace_dir) / "project.json").resolve() if self.workspace_dir else None

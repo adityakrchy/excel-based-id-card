@@ -2,7 +2,8 @@
 
 from typing import Callable, Optional
 from pathlib import Path
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from id_card_generator.core.constants import APP_NAME, APP_VERSION, MissingPhotoPolicy, WorkflowStep
 from id_card_generator.core.logging_config import export_diagnostic_logs, get_current_log_path
+from id_card_generator.core.models import ProjectConfiguration
 
 
 class DashboardPage(QWidget):
@@ -29,9 +31,12 @@ class DashboardPage(QWidget):
     theme_changed = Signal(str)  # "black", "white", "system"
     policy_changed = Signal(object)  # MissingPhotoPolicy
     dpi_changed = Signal(int)
+    new_project_requested = Signal()
+    open_project_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.current_project_config: Optional[ProjectConfiguration] = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -50,6 +55,43 @@ class DashboardPage(QWidget):
         title_box.addWidget(lbl_heading)
         title_box.addWidget(lbl_sub)
         layout.addLayout(title_box)
+
+        # 1.5. Workspace Overview Card
+        self.workspace_card = QFrame()
+        self.workspace_card.setObjectName("card_panel")
+        ws_layout = QVBoxLayout(self.workspace_card)
+        ws_layout.setContentsMargins(18, 16, 18, 16)
+        ws_layout.setSpacing(8)
+
+        ws_header_row = QHBoxLayout()
+        self.lbl_ws_title = QLabel("<b>📁 Project Workspace:</b> <i>No active workspace</i>")
+        self.lbl_ws_title.setStyleSheet("font-size: 14px; font-weight: 600;")
+        ws_header_row.addWidget(self.lbl_ws_title, stretch=1)
+
+        self.btn_ws_open_folder = QPushButton("Reveal in Finder/Explorer")
+        self.btn_ws_open_folder.setVisible(False)
+        self.btn_ws_open_folder.clicked.connect(self._open_workspace_folder)
+        ws_header_row.addWidget(self.btn_ws_open_folder)
+
+        self.btn_ws_new = QPushButton("New Project...")
+        self.btn_ws_new.clicked.connect(lambda: self.new_project_requested.emit())
+        ws_header_row.addWidget(self.btn_ws_new)
+
+        self.btn_ws_open = QPushButton("Open Workspace...")
+        self.btn_ws_open.clicked.connect(lambda: self.open_project_requested.emit())
+        ws_header_row.addWidget(self.btn_ws_open)
+
+        ws_layout.addLayout(ws_header_row)
+
+        self.lbl_ws_details = QLabel(
+            "Create a project workspace to automatically store imported spreadsheets in <code>data/</code> "
+            "and copy matched photographs into <code>photos/</code>."
+        )
+        self.lbl_ws_details.setStyleSheet("color: #64748B; font-size: 12px;")
+        self.lbl_ws_details.setWordWrap(True)
+        ws_layout.addWidget(self.lbl_ws_details)
+
+        layout.addWidget(self.workspace_card)
 
         # 2. Workflow Launcher Hero Card
         hero_card = QFrame()
@@ -210,6 +252,50 @@ class DashboardPage(QWidget):
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.addWidget(scroll)
+
+    def _open_workspace_folder(self) -> None:
+        if self.current_project_config and self.current_project_config.workspace_dir:
+            p = Path(self.current_project_config.workspace_dir)
+            if p.exists():
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+
+    def update_workspace_info(self, config: Optional[ProjectConfiguration], matched_count: int = 0) -> None:
+        """Update workspace banner information."""
+        self.current_project_config = config
+        if not config or not config.workspace_dir:
+            self.lbl_ws_title.setText("<b>📁 Project Workspace:</b> <i>No active workspace</i>")
+            self.lbl_ws_details.setText(
+                "Create a project workspace to automatically store imported spreadsheets in <code>data/</code> "
+                "and copy matched photographs into <code>photos/</code>."
+            )
+            self.btn_ws_open_folder.setVisible(False)
+            return
+
+        ws_path = Path(config.workspace_dir)
+        self.lbl_ws_title.setText(
+            f"<b>📁 Project Workspace:</b> {config.project_name} "
+            f"<span style='color: #64748B; font-size: 11px;'>({ws_path.name})</span>"
+        )
+
+        excel_status = (
+            f"Spreadsheet active in <code>data/{Path(config.excel_file_path).name}</code>"
+            if config.excel_file_path and Path(config.excel_file_path).exists()
+            else "No spreadsheet imported yet"
+        )
+
+        photo_count = matched_count
+        if ws_path.exists() and (ws_path / "photos").exists():
+            local_photos = [f for f in (ws_path / "photos").iterdir() if f.is_file() and not f.name.startswith(".")]
+            if local_photos:
+                photo_count = max(photo_count, len(local_photos))
+
+        self.lbl_ws_details.setText(
+            f"<b>Workspace Location:</b> <code>{ws_path}</code><br>"
+            f"• <b>Data:</b> {excel_status}<br>"
+            f"• <b>Matched Photos:</b> {photo_count} stored in <code>photos/</code><br>"
+            f"• <b>Exports:</b> Output configured to <code>exports/</code>"
+        )
+        self.btn_ws_open_folder.setVisible(ws_path.exists())
 
     def _create_kpi_card(self, title: str, main_val: str, subtitle: str, color_hex: str) -> QFrame:
         card = QFrame()

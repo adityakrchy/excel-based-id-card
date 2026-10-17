@@ -1,23 +1,180 @@
-"""Project persistence: save, load, and relink missing external assets."""
+"""Project persistence: save, load, and relink missing external assets, with workspace support."""
 
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from id_card_generator.core.constants import MatchStatus
 from id_card_generator.core.exceptions import ProjectError
-from id_card_generator.core.models import ProjectConfiguration
+from id_card_generator.core.models import PhotoMatchResult, ProjectConfiguration
 
 logger = logging.getLogger(__name__)
 
 
 class ProjectManager:
-    """Handles saving, loading, validating, and relinking project files."""
+    """Handles saving, loading, validating, workspace operations, and relinking project files."""
+
+    @staticmethod
+    def create_workspace(project_name: str, workspace_path: Path) -> ProjectConfiguration:
+        """Initialize a new project workspace directory with standard subdirectories and project.json."""
+        try:
+            workspace_path = Path(workspace_path).resolve()
+            workspace_path.mkdir(parents=True, exist_ok=True)
+
+            data_dir = workspace_path / "data"
+            data_dir.mkdir(parents=True, exist_ok=True)
+
+            photos_dir = workspace_path / "photos"
+            photos_dir.mkdir(parents=True, exist_ok=True)
+
+            exports_dir = workspace_path / "exports"
+            exports_dir.mkdir(parents=True, exist_ok=True)
+
+            config = ProjectConfiguration(
+                project_name=project_name.strip() or "Untitled Project",
+                workspace_dir=str(workspace_path),
+                last_export_dir=str(exports_dir),
+            )
+
+            project_file = workspace_path / "project.json"
+            ProjectManager.save_project(config, project_file)
+            logger.info("Workspace successfully created at %s", workspace_path)
+            return config
+        except Exception as e:
+            logger.error("Failed to create workspace at %s: %s", workspace_path, e)
+            raise ProjectError(f"Could not create workspace: {e}") from e
+
+    @staticmethod
+    def copy_excel_to_workspace(config: ProjectConfiguration, source_excel: Path) -> Path:
+        """Copy imported spreadsheet into workspace data/ directory for self-contained reuse."""
+        source_path = Path(source_excel).resolve()
+        if not source_path.exists():
+            raise ProjectError(f"Source spreadsheet not found: {source_path}")
+
+        if not config.workspace_dir:
+            return source_path
+
+        data_dir = config.data_dir
+        if not data_dir:
+            return source_path
+
+        data_dir.mkdir(parents=True, exist_ok=True)
+        target_path = (data_dir / source_path.name).resolve()
+
+        if source_path != target_path:
+            try:
+                shutil.copy2(source_path, target_path)
+                logger.info("Copied spreadsheet from %s to workspace data %s", source_path, target_path)
+            except shutil.SameFileError:
+                pass
+            except Exception as e:
+                logger.error("Failed to copy spreadsheet to workspace: %s", e)
+                raise ProjectError(f"Could not copy spreadsheet to workspace: {e}") from e
+
+        config.excel_file_path = str(target_path)
+        if config.project_file_path and config.project_file_path.exists():
+            try:
+                ProjectManager.save_project(config, config.project_file_path)
+            except Exception as e:
+                logger.warning("Could not auto-save project after copying excel: %s", e)
+
+        return target_path
+
+    @staticmethod
+    def copy_single_photo_to_workspace(config: ProjectConfiguration, source_photo: Path, pin: str = "") -> Path:
+        """Copy a single photograph into workspace photos/ folder."""
+        source_path = Path(source_photo).resolve()
+        if not source_path.exists() or not config.photos_dir:
+            return source_path
+
+        photos_dir = config.photos_dir
+        photos_dir.mkdir(parents=True, exist_ok=True)
+        target_path = (photos_dir / source_path.name).resolve()
+
+        if target_path.exists():
+            try:
+                if not source_path.samefile(target_path):
+                    target_path = (photos_dir / f"{source_path.stem}_{pin or 'override'}{source_path.suffix}").resolve()
+            except OSError:
+                pass
+
+        if source_path != target_path:
+            try:
+                shutil.copy2(source_path, target_path)
+                logger.info("Copied photo %s to workspace photos %s", source_path.name, target_path)
+            except shutil.SameFileError:
+                pass
+            except Exception as e:
+                logger.warning("Failed to copy photo to workspace: %s", e)
+                return source_path
+
+        return target_path
+
+    @staticmethod
+    def copy_matched_photos_to_workspace(
+        config: ProjectConfiguration,
+        match_results: Dict[str, PhotoMatchResult],
+    ) -> Tuple[Dict[str, PhotoMatchResult], int]:
+        """Copy ONLY matched (and manually overridden) photographs into workspace photos/ directory.
+        
+        Leaves unmatched photos untouched and updates match_results with workspace paths.
+        """
+        if not config.photos_dir:
+            return match_results, 0
+
+        photos_dir = config.photos_dir
+        photos_dir.mkdir(parents=True, exist_ok=True)
+
+        copied_count = 0
+        for record_id, result in match_results.items():
+            # Only matched or manually overridden photos are copied
+            is_matched = result.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN) or (
+                hasattr(result.status, "value") and result.status.value in ("matched", "overridden")
+            )
+            if not is_matched or not result.photo_path:
+                continue
+
+            src = Path(result.photo_path).resolve()
+            if not src.exists():
+                continue
+
+            target = (photos_dir / src.name).resolve()
+            if target.exists():
+                try:
+                    if not src.samefile(target):
+                        target = (photos_dir / f"{src.stem}_{result.pin or record_id}{src.suffix}").resolve()
+                except OSError:
+                    pass
+
+            if src != target:
+                try:
+                    shutil.copy2(src, target)
+                    copied_count += 1
+                except shutil.SameFileError:
+                    pass
+                except Exception as e:
+                    logger.warning("Failed to copy matched photo %s: %s", src, e)
+                    continue
+
+            # Update match result with workspace copy path
+            result.photo_path = str(target)
+            result.matched_filename = target.name
+
+        if config.project_file_path and config.project_file_path.exists():
+            try:
+                ProjectManager.save_project(config, config.project_file_path)
+            except Exception as e:
+                logger.warning("Could not auto-save project after copying matched photos: %s", e)
+
+        return match_results, copied_count
 
     @staticmethod
     def save_project(config: ProjectConfiguration, file_path: Path) -> None:
         """Save project configuration to a JSON file."""
         try:
+            file_path = Path(file_path).resolve()
             file_path.parent.mkdir(parents=True, exist_ok=True)
             data = config.model_dump(mode="json")
             with open(file_path, "w", encoding="utf-8") as f:
@@ -29,7 +186,15 @@ class ProjectManager:
 
     @staticmethod
     def load_project(file_path: Path) -> ProjectConfiguration:
-        """Load and parse project configuration from a JSON file."""
+        """Load and parse project configuration from a JSON file (or workspace directory)."""
+        file_path = Path(file_path).resolve()
+        if file_path.is_dir():
+            candidate = file_path / "project.json"
+            if candidate.exists():
+                file_path = candidate
+            else:
+                raise ProjectError(f"No project.json found in workspace directory: {file_path}")
+
         if not file_path.exists():
             raise ProjectError(f"Project file does not exist: {file_path}")
 
@@ -37,6 +202,29 @@ class ProjectManager:
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             config = ProjectConfiguration.model_validate(data)
+
+            # Auto-assign or heal workspace directory if project file is in a folder
+            if not config.workspace_dir or not Path(config.workspace_dir).exists():
+                config.workspace_dir = str(file_path.parent.resolve())
+
+            # Heal relative/moved paths within workspace
+            if config.workspace_dir:
+                ws = Path(config.workspace_dir)
+                if config.excel_file_path and not Path(config.excel_file_path).exists():
+                    candidate_excel = ws / "data" / Path(config.excel_file_path).name
+                    if candidate_excel.exists():
+                        config.excel_file_path = str(candidate_excel)
+
+                if config.photo_dir_path and not Path(config.photo_dir_path).exists():
+                    candidate_photos = ws / "photos"
+                    if candidate_photos.exists():
+                        config.photo_dir_path = str(candidate_photos)
+
+                if not config.last_export_dir or not Path(config.last_export_dir).exists():
+                    candidate_exports = ws / "exports"
+                    if candidate_exports.exists():
+                        config.last_export_dir = str(candidate_exports)
+
             logger.info("Project successfully loaded from %s", file_path)
             return config
         except Exception as e:
@@ -45,10 +233,7 @@ class ProjectManager:
 
     @staticmethod
     def check_missing_references(config: ProjectConfiguration) -> List[Tuple[str, str]]:
-        """Return list of (key, missing_path) for external files referenced in the project.
-        
-        Keys: 'excel_file', 'photo_dir', 'background_image'
-        """
+        """Return list of (key, missing_path) for external files referenced in the project."""
         missing = []
 
         if config.excel_file_path:
@@ -70,10 +255,7 @@ class ProjectManager:
 
     @staticmethod
     def relink_references(config: ProjectConfiguration, replacements: Dict[str, str]) -> ProjectConfiguration:
-        """Update file references in project configuration.
-        
-        replacements mapping: key ('excel_file', 'photo_dir', 'background_image') -> new_path
-        """
+        """Update file references in project configuration."""
         if "excel_file" in replacements:
             config.excel_file_path = replacements["excel_file"]
         if "photo_dir" in replacements:
@@ -81,3 +263,4 @@ class ProjectManager:
         if "background_image" in replacements and config.template:
             config.template.background_image_path = replacements["background_image"]
         return config
+

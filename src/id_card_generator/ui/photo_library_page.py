@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from id_card_generator.core.constants import MatchStatus, WorkflowStep
-from id_card_generator.core.models import PhotoMatchResult, SourceRecord
+from id_card_generator.core.models import PhotoMatchResult, ProjectConfiguration, SourceRecord
+from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.photo_matcher import MatchSummary, PhotoMatcher
 from id_card_generator.tasks.photo_indexing_worker import PhotoIndexingWorker
 from id_card_generator.ui.step_nav_bar import StepNavBar
@@ -39,6 +40,7 @@ class PhotoLibraryPage(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.project_config: Optional[ProjectConfiguration] = None
         self.matcher = PhotoMatcher()
         self.records: List[SourceRecord] = []
         self.columns: List[str] = []
@@ -49,6 +51,10 @@ class PhotoLibraryPage(QWidget):
 
         self._setup_ui()
 
+    def set_project_config(self, config: Optional[ProjectConfiguration]) -> None:
+        """Associate active project workspace configuration."""
+        self.project_config = config
+
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -57,7 +63,9 @@ class PhotoLibraryPage(QWidget):
         # 1. Directory Selection Card
         top_card = QFrame()
         top_card.setObjectName("card_panel")
-        top_layout = QHBoxLayout(top_card)
+        top_vlayout = QVBoxLayout(top_card)
+
+        top_layout = QHBoxLayout()
 
         self.btn_select_dir = QPushButton("Select Photo Folder...")
         self.btn_select_dir.setObjectName("btn_primary")
@@ -73,6 +81,14 @@ class PhotoLibraryPage(QWidget):
         top_layout.addWidget(self.btn_select_dir)
         top_layout.addWidget(self.lbl_photo_dir, stretch=1)
         top_layout.addWidget(self.btn_rescan)
+        top_vlayout.addLayout(top_layout)
+
+        # Workspace copied photos badge
+        self.lbl_workspace_photos = QLabel("")
+        self.lbl_workspace_photos.setStyleSheet("color: #10B981; font-weight: 600; font-size: 11px;")
+        self.lbl_workspace_photos.setVisible(False)
+        top_vlayout.addWidget(self.lbl_workspace_photos)
+
         layout.addWidget(top_card)
 
         # 2. Live Background Queue & Indexing Banner (Visible during scanning)
@@ -370,6 +386,29 @@ class PhotoLibraryPage(QWidget):
 
         self.match_results, self.match_summary = self.matcher.match_all(self.records)
 
+        # Copy ONLY matched photographs into the workspace/photos directory
+        if self.project_config and self.project_config.workspace_dir:
+            try:
+                self.match_results, copied_count = ProjectManager.copy_matched_photos_to_workspace(
+                    self.project_config, self.match_results
+                )
+                if copied_count > 0:
+                    self.lbl_workspace_photos.setText(
+                        f"✓ Copied {copied_count} matched photo(s) into workspace: photos/"
+                    )
+                    self.lbl_workspace_photos.setVisible(True)
+                elif any(
+                    m.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN)
+                    or (hasattr(m.status, "value") and m.status.value in ("matched", "overridden"))
+                    for m in self.match_results.values()
+                ):
+                    self.lbl_workspace_photos.setText(
+                        "✓ Matched photographs stored in workspace: photos/"
+                    )
+                    self.lbl_workspace_photos.setVisible(True)
+            except Exception as e:
+                logger.warning("Error copying matched photos to workspace: %s", e)
+
         s = self.match_summary
         self.lbl_metrics.setText(
             f"{s.matched_count} matched • {s.missing_count} missing • "
@@ -482,6 +521,14 @@ class PhotoLibraryPage(QWidget):
             "Images (*.jpg *.jpeg *.png *.bmp *.webp *.tiff)",
         )
         if file_path:
+            p = Path(file_path).resolve()
+            if self.project_config and self.project_config.workspace_dir:
+                try:
+                    p = ProjectManager.copy_single_photo_to_workspace(self.project_config, p, pin=pin or key_val)
+                    file_path = str(p)
+                except Exception as e:
+                    logger.warning("Could not copy override photo to workspace: %s", e)
+
             logger.info("Setting manual photo override for record_id=%s, file=%s", record_id, file_path)
             self.matcher.set_override(record_id, file_path)
             if key_val:
