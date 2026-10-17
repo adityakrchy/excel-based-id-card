@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
@@ -278,7 +279,7 @@ class EditorPage(QWidget):
         self.lbl_ctx_doc_dims = QLabel("CR80 Standard")
         layout.addWidget(self.lbl_ctx_doc_dims)
 
-        layout.addSpacing(12)
+        layout.addSpacing(8)
         btn_zoom_in = QPushButton("+ Zoom")
         btn_zoom_in.clicked.connect(self.view.zoom_in)
         layout.addWidget(btn_zoom_in)
@@ -287,8 +288,103 @@ class EditorPage(QWidget):
         btn_zoom_out.clicked.connect(self.view.zoom_out)
         layout.addWidget(btn_zoom_out)
 
+        layout.addSpacing(10)
+        # Snapping and Smart Guides Controls
+        self._setup_snapping_ui(layout)
+
         layout.addStretch()
         return widget
+
+    def _setup_snapping_ui(self, layout: QHBoxLayout) -> None:
+        """Add Smart Guides and Magnetic Snapping controls to document context bar."""
+        # 1. Quick toggle button: Guides
+        self.btn_guides_toggle = QToolButton()
+        self.btn_guides_toggle.setText("⚡ Guides")
+        self.btn_guides_toggle.setCheckable(True)
+        self.btn_guides_toggle.setChecked(self.scene.snap_settings.smart_guides_enabled)
+        self.btn_guides_toggle.setToolTip("Toggle Smart Alignment Guides (Magenta Lines)")
+        self.btn_guides_toggle.toggled.connect(self._on_guides_toggled)
+        layout.addWidget(self.btn_guides_toggle)
+
+        # 2. Quick toggle button: Snap
+        self.btn_snap_toggle = QToolButton()
+        self.btn_snap_toggle.setText("🧲 Snap")
+        self.btn_snap_toggle.setCheckable(True)
+        self.btn_snap_toggle.setChecked(self.scene.snap_settings.object_snapping_enabled)
+        self.btn_snap_toggle.setToolTip("Toggle Magnetic Object Snapping (Hold Alt while dragging to bypass)")
+        self.btn_snap_toggle.toggled.connect(self._on_snap_toggled)
+        layout.addWidget(self.btn_snap_toggle)
+
+        # 3. Settings dropdown menu
+        self.btn_snap_menu = QToolButton()
+        self.btn_snap_menu.setText("Snapping ▾")
+        self.btn_snap_menu.setPopupMode(QToolButton.InstantPopup)
+        self.btn_snap_menu.setToolTip("Smart Alignment, Spacing, and Grid Snapping Options")
+
+        menu = QMenu(self.btn_snap_menu)
+        menu.setStyleSheet("font-size: 13px; padding: 4px;")
+
+        self.act_guides = menu.addAction("Smart Guides (Magenta)")
+        self.act_guides.setCheckable(True)
+        self.act_guides.setChecked(self.scene.snap_settings.smart_guides_enabled)
+        self.act_guides.toggled.connect(self._on_guides_toggled)
+
+        self.act_snap = menu.addAction("Magnetic Object Snapping")
+        self.act_snap.setCheckable(True)
+        self.act_snap.setChecked(self.scene.snap_settings.object_snapping_enabled)
+        self.act_snap.toggled.connect(self._on_snap_toggled)
+
+        self.act_spacing = menu.addAction("Smart Spacing & Distribution")
+        self.act_spacing.setCheckable(True)
+        self.act_spacing.setChecked(self.scene.snap_settings.smart_spacing_enabled)
+        self.act_spacing.toggled.connect(self.scene.set_smart_spacing_enabled)
+
+        self.act_canvas = menu.addAction("Snap to Canvas Bounds & Center")
+        self.act_canvas.setCheckable(True)
+        self.act_canvas.setChecked(self.scene.snap_settings.snap_to_canvas_enabled)
+        self.act_canvas.toggled.connect(self.scene.set_snap_to_canvas_enabled)
+
+        self.act_grid = menu.addAction("Snap to Grid Lines")
+        self.act_grid.setCheckable(True)
+        self.act_grid.setChecked(self.scene.snap_to_grid)
+        self.act_grid.toggled.connect(self._on_grid_snap_toggled)
+
+        menu.addSeparator()
+
+        # Threshold submenu
+        thresh_menu = menu.addMenu("Snapping Threshold")
+        for label, val in [("Fine (4 px)", 4.0), ("Standard (8 px)", 8.0), ("Magnetic (14 px)", 14.0)]:
+            act = thresh_menu.addAction(label)
+            act.setCheckable(True)
+            if self.scene.snap_settings.snap_threshold_screen == val:
+                act.setChecked(True)
+            act.triggered.connect(lambda chk=False, v=val: self.scene.set_snap_threshold(v))
+
+        menu.addSeparator()
+        info_act = menu.addAction("Tip: Hold Alt/Option while dragging to bypass snap")
+        info_act.setEnabled(False)
+
+        self.btn_snap_menu.setMenu(menu)
+        layout.addWidget(self.btn_snap_menu)
+
+    def _on_guides_toggled(self, checked: bool) -> None:
+        self.scene.set_smart_guides_enabled(checked)
+        if hasattr(self, "btn_guides_toggle") and self.btn_guides_toggle.isChecked() != checked:
+            self.btn_guides_toggle.setChecked(checked)
+        if hasattr(self, "act_guides") and self.act_guides.isChecked() != checked:
+            self.act_guides.setChecked(checked)
+
+    def _on_snap_toggled(self, checked: bool) -> None:
+        self.scene.set_object_snapping_enabled(checked)
+        if hasattr(self, "btn_snap_toggle") and self.btn_snap_toggle.isChecked() != checked:
+            self.btn_snap_toggle.setChecked(checked)
+        if hasattr(self, "act_snap") and self.act_snap.isChecked() != checked:
+            self.act_snap.setChecked(checked)
+
+    def _on_grid_snap_toggled(self, checked: bool) -> None:
+        self.scene.set_snap_to_grid_enabled(checked)
+        if hasattr(self, "act_grid") and self.act_grid.isChecked() != checked:
+            self.act_grid.setChecked(checked)
 
     def _create_text_context_page(self) -> QWidget:
         widget = QWidget()

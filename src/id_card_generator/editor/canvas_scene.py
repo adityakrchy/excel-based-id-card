@@ -1,8 +1,8 @@
 """QGraphicsScene managing the card canvas, background, grid snapping, and items."""
 
 import logging
-from typing import Dict, List, Optional
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from typing import Dict, List, Optional, Set
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -16,6 +16,13 @@ from PySide6.QtWidgets import QGraphicsScene
 
 from id_card_generator.core.models import CanvasElement, SourceRecord, TemplateDefinition
 from id_card_generator.editor.canvas_items import CanvasItem
+from id_card_generator.editor.smart_alignment import (
+    GuideLine,
+    GuideRenderer,
+    SmartAlignmentEngine,
+    SnapSettings,
+    SpacingBadge,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +39,14 @@ class CanvasScene(QGraphicsScene):
         self._items_by_id: Dict[str, CanvasItem] = {}
         self.undo_stack = QUndoStack(self)
 
-        self.snap_to_grid = True
-        self.grid_size = 10.0
+        # Smart Alignment and Snapping Subsystem
+        self._snap_settings = SnapSettings()
+        self.smart_alignment_engine = SmartAlignmentEngine(self._snap_settings)
+        self._active_guides: List[GuideLine] = []
+        self._active_spacing_badges: List[SpacingBadge] = []
+        self._in_smart_drag: bool = False
+        self._nudge_timer: Optional[QTimer] = None
+
         self.show_grid = True
         self.show_safe_area = True
 
@@ -42,6 +55,91 @@ class CanvasScene(QGraphicsScene):
         self._background_pixmap: Optional[QPixmap] = None
 
         self.selectionChanged.connect(self._on_selection_changed)
+
+    @property
+    def snap_settings(self) -> SnapSettings:
+        return self._snap_settings
+
+    @property
+    def snap_to_grid(self) -> bool:
+        return self._snap_settings.snap_to_grid_enabled
+
+    @snap_to_grid.setter
+    def snap_to_grid(self, val: bool) -> None:
+        self._snap_settings.snap_to_grid_enabled = val
+
+    @property
+    def grid_size(self) -> float:
+        return self._snap_settings.grid_size
+
+    @grid_size.setter
+    def grid_size(self, val: float) -> None:
+        self._snap_settings.grid_size = val
+
+    def set_active_guides(self, guides: List[GuideLine], spacing_badges: List[SpacingBadge]) -> None:
+        """Update active smart alignment and spacing guides for overlay rendering."""
+        self._active_guides = guides
+        self._active_spacing_badges = spacing_badges
+
+    def clear_guides(self) -> None:
+        """Clear all active smart guide lines and spacing indicators."""
+        self._active_guides = []
+        self._active_spacing_badges = []
+
+    def get_reference_targets(self, exclude_items: Optional[Set[CanvasItem]] = None) -> List[QRectF]:
+        """Return scene bounding rectangles of all visible canvas elements excluding specified items.
+        
+        Locked elements are included as alignment references, but cannot be dragged.
+        Hidden elements are excluded.
+        """
+        exclude = exclude_items or set()
+        targets = []
+        for it in self.items():
+            if isinstance(it, CanvasItem) and it not in exclude:
+                if it.element.visible:
+                    targets.append(it.scene_element_rect())
+        return targets
+
+    def get_zoom_factor(self) -> float:
+        """Return current view zoom factor for screen-space threshold conversion."""
+        views = self.views()
+        if views:
+            v = views[0]
+            if hasattr(v, "_zoom_factor"):
+                return float(v._zoom_factor)
+            return float(v.transform().m11())
+        return 1.0
+
+    def set_smart_guides_enabled(self, enabled: bool) -> None:
+        self._snap_settings.smart_guides_enabled = enabled
+        if not enabled:
+            self.clear_guides()
+            self.update()
+
+    def set_object_snapping_enabled(self, enabled: bool) -> None:
+        self._snap_settings.object_snapping_enabled = enabled
+        if not enabled:
+            self.clear_guides()
+            self.update()
+
+    def set_smart_spacing_enabled(self, enabled: bool) -> None:
+        self._snap_settings.smart_spacing_enabled = enabled
+
+    def set_snap_to_canvas_enabled(self, enabled: bool) -> None:
+        self._snap_settings.snap_to_canvas_enabled = enabled
+
+    def set_snap_to_grid_enabled(self, enabled: bool) -> None:
+        self._snap_settings.snap_to_grid_enabled = enabled
+
+    def set_snap_threshold(self, threshold_screen: float) -> None:
+        self._snap_settings.snap_threshold_screen = threshold_screen
+
+    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
+        """Render temporary smart guides and spacing indicators on top of all canvas items."""
+        super().drawForeground(painter, rect)
+        if self._active_guides or self._active_spacing_badges:
+            zoom = self.get_zoom_factor()
+            GuideRenderer.render(painter, self._active_guides, self._active_spacing_badges, zoom)
 
     def undo(self) -> None:
         """Undo last canvas action."""
@@ -273,6 +371,9 @@ class CanvasScene(QGraphicsScene):
                 self._mouse_press_positions[it] = QPointF(it.pos())
 
     def mouseReleaseEvent(self, event):
+        self.clear_guides()
+        self._in_smart_drag = False
+        self.update()
         super().mouseReleaseEvent(event)
         if hasattr(self, "_mouse_press_positions") and self._mouse_press_positions:
             moved = []
@@ -290,6 +391,20 @@ class CanvasScene(QGraphicsScene):
                     self.undo_stack.push(MoveElementCommand(it, old_p, new_p))
                 else:
                     self.undo_stack.push(MoveMultipleElementsCommand(moved))
+
+    def _start_nudge_guide_timer(self, msec: int = 700) -> None:
+        """Start a one-shot timer to clear temporary guide lines after keyboard nudge."""
+        if self._nudge_timer is not None:
+            self._nudge_timer.stop()
+        else:
+            self._nudge_timer = QTimer(self)
+            self._nudge_timer.setSingleShot(True)
+            self._nudge_timer.timeout.connect(self._clear_nudge_guides)
+        self._nudge_timer.start(msec)
+
+    def _clear_nudge_guides(self) -> None:
+        self.clear_guides()
+        self.update()
 
     def keyPressEvent(self, event: QKeyEvent):
         """Keyboard navigation: nudge with arrows, delete with Del/Backspace, undo/redo shortcuts."""
@@ -317,13 +432,35 @@ class CanvasScene(QGraphicsScene):
         if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
             old_pos = QPointF(item.pos())
             if event.key() == Qt.Key_Left:
-                new_pos = QPointF(old_pos.x() - step, old_pos.y())
+                raw_pos = QPointF(old_pos.x() - step, old_pos.y())
             elif event.key() == Qt.Key_Right:
-                new_pos = QPointF(old_pos.x() + step, old_pos.y())
+                raw_pos = QPointF(old_pos.x() + step, old_pos.y())
             elif event.key() == Qt.Key_Up:
-                new_pos = QPointF(old_pos.x(), old_pos.y() - step)
+                raw_pos = QPointF(old_pos.x(), old_pos.y() - step)
             else:
-                new_pos = QPointF(old_pos.x(), old_pos.y() + step)
+                raw_pos = QPointF(old_pos.x(), old_pos.y() + step)
+
+            bypass = bool(event.modifiers() & Qt.AltModifier)
+            if not bypass and self._snap_settings.object_snapping_enabled:
+                moving_rect = QRectF(raw_pos.x(), raw_pos.y(), item.element.width, item.element.height)
+                targets = self.get_reference_targets(exclude_items={item})
+                snap_res = self.smart_alignment_engine.snap_move(
+                    moving_rect=moving_rect,
+                    targets=targets,
+                    canvas_rect=self.sceneRect(),
+                    zoom_factor=self.get_zoom_factor(),
+                    bypass_snap=False,
+                )
+                new_pos = QPointF(snap_res.snapped_x, snap_res.snapped_y)
+                if snap_res.guides or snap_res.spacing_badges:
+                    self.set_active_guides(snap_res.guides, snap_res.spacing_badges)
+                    self.update()
+                    self._start_nudge_guide_timer()
+                else:
+                    self.clear_guides()
+            else:
+                new_pos = raw_pos
+                self.clear_guides()
 
             item.setPos(new_pos)
             item.update_model_position()
@@ -338,12 +475,14 @@ class CanvasScene(QGraphicsScene):
             super().keyPressEvent(event)
 
     def _on_selection_changed(self):
+        self.clear_guides()
+        self.update()
         item = self.get_selected_item()
         self.element_selected.emit(item)
 
     def _on_item_geometry_changed(self, item: CanvasItem):
-        # Snap to grid if active
-        if self.snap_to_grid and self.grid_size > 0:
+        # Snap to grid if active and not in an interactive smart drag session
+        if not getattr(self, "_in_smart_drag", False) and self.snap_to_grid and self.grid_size > 0:
             gs = self.grid_size
             snapped_x = round(item.pos().x() / gs) * gs
             snapped_y = round(item.pos().y() / gs) * gs

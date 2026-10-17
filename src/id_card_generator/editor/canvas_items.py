@@ -88,6 +88,15 @@ class CanvasItem(QGraphicsObject):
                 path.addRect(handle_rect)
         return path
 
+    def scene_element_rect(self) -> QRectF:
+        """Return the exact element bounding rectangle in scene coordinates."""
+        return QRectF(
+            self.pos().x() + self._rect.x(),
+            self.pos().y() + self._rect.y(),
+            self._rect.width(),
+            self._rect.height(),
+        )
+
     def set_rect(self, rect: QRectF) -> None:
         """Update rectangle dimensions."""
         self.prepareGeometryChange()
@@ -99,8 +108,11 @@ class CanvasItem(QGraphicsObject):
 
     def update_model_position(self) -> None:
         """Sync Qt item position to model coordinates."""
-        self.element.x = self.pos().x()
-        self.element.y = self.pos().y()
+        r = self.scene_element_rect()
+        self.element.x = r.x()
+        self.element.y = r.y()
+        self.element.width = r.width()
+        self.element.height = r.height()
         self.geometry_changed.emit(self)
 
     def set_sample_data(self, record: Optional[SourceRecord], photo_path: Optional[str]) -> None:
@@ -168,6 +180,7 @@ class CanvasItem(QGraphicsObject):
         self.selected_changed.emit(self)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
+        # 1. Handling Handle Resizing with Smart Edge Snapping
         if self._active_handle is not None and self._drag_start_rect is not None:
             delta = event.pos() - self._drag_start_pos
             new_rect = QRectF(self._drag_start_rect)
@@ -191,9 +204,110 @@ class CanvasItem(QGraphicsObject):
             elif handle == 7:  # L
                 new_rect.setLeft(new_rect.left() + delta.x())
 
+            scene = self.scene()
+            if scene and hasattr(scene, "smart_alignment_engine"):
+                pos_offset = self.pos()
+                start_scene = QRectF(
+                    pos_offset.x() + self._drag_start_rect.x(),
+                    pos_offset.y() + self._drag_start_rect.y(),
+                    self._drag_start_rect.width(),
+                    self._drag_start_rect.height(),
+                )
+                prop_scene = QRectF(
+                    pos_offset.x() + new_rect.x(),
+                    pos_offset.y() + new_rect.y(),
+                    new_rect.width(),
+                    new_rect.height(),
+                )
+                targets = scene.get_reference_targets(exclude_items={self}) if hasattr(scene, "get_reference_targets") else []
+                zoom = scene.get_zoom_factor() if hasattr(scene, "get_zoom_factor") else 1.0
+                bypass = bool(event.modifiers() & Qt.AltModifier)
+                keep_aspect = bool(event.modifiers() & Qt.ShiftModifier)
+
+                snapped_scene, snap_res = scene.smart_alignment_engine.snap_resize(
+                    handle=handle,
+                    start_rect_scene=start_scene,
+                    proposed_rect_scene=prop_scene,
+                    targets=targets,
+                    canvas_rect=scene.sceneRect(),
+                    zoom_factor=zoom,
+                    keep_aspect=keep_aspect,
+                    bypass_snap=bypass,
+                )
+                new_rect = QRectF(
+                    snapped_scene.x() - pos_offset.x(),
+                    snapped_scene.y() - pos_offset.y(),
+                    snapped_scene.width(),
+                    snapped_scene.height(),
+                )
+                if hasattr(scene, "set_active_guides"):
+                    scene.set_active_guides(snap_res.guides, snap_res.spacing_badges)
+                scene.update()
+
             # Enforce minimum size
             if new_rect.width() >= 10.0 and new_rect.height() >= 10.0:
                 self.set_rect(new_rect)
+            event.accept()
+            return
+
+        # 2. Handling Dragging Movement with Magnetic Snapping
+        scene = self.scene()
+        if (
+            scene
+            and hasattr(scene, "smart_alignment_engine")
+            and hasattr(scene, "_mouse_press_positions")
+            and scene._mouse_press_positions
+        ):
+            scene._in_smart_drag = True
+            selected_items = [it for it in scene.selectedItems() if isinstance(it, CanvasItem)]
+            if self not in selected_items:
+                selected_items.append(self)
+
+            for it in selected_items:
+                if it not in scene._mouse_press_positions:
+                    scene._mouse_press_positions[it] = QPointF(it.pos())
+
+            button_down_scene = event.buttonDownScenePos(Qt.LeftButton)
+            mouse_disp = event.scenePos() - button_down_scene
+
+            start_positions = scene._mouse_press_positions
+            lefts = [start_positions[it].x() + it._rect.x() for it in selected_items]
+            rights = [start_positions[it].x() + it._rect.x() + it._rect.width() for it in selected_items]
+            tops = [start_positions[it].y() + it._rect.y() for it in selected_items]
+            bottoms = [start_positions[it].y() + it._rect.y() + it._rect.height() for it in selected_items]
+
+            group_start_rect = QRectF(
+                min(lefts),
+                min(tops),
+                max(rights) - min(lefts),
+                max(bottoms) - min(tops),
+            )
+            proposed_group_rect = group_start_rect.translated(mouse_disp.x(), mouse_disp.y())
+
+            targets = scene.get_reference_targets(exclude_items=set(selected_items)) if hasattr(scene, "get_reference_targets") else []
+            zoom = scene.get_zoom_factor() if hasattr(scene, "get_zoom_factor") else 1.0
+            bypass = bool(event.modifiers() & Qt.AltModifier)
+
+            snap_res = scene.smart_alignment_engine.snap_move(
+                moving_rect=proposed_group_rect,
+                targets=targets,
+                canvas_rect=scene.sceneRect(),
+                zoom_factor=zoom,
+                bypass_snap=bypass,
+            )
+
+            final_disp_x = mouse_disp.x() + snap_res.delta_x
+            final_disp_y = mouse_disp.y() + snap_res.delta_y
+
+            for it in selected_items:
+                it_start = start_positions[it]
+                new_p = QPointF(it_start.x() + final_disp_x, it_start.y() + final_disp_y)
+                it.setPos(new_p)
+                it.update_model_position()
+
+            if hasattr(scene, "set_active_guides"):
+                scene.set_active_guides(snap_res.guides, snap_res.spacing_badges)
+            scene.update()
             event.accept()
             return
 
@@ -201,12 +315,17 @@ class CanvasItem(QGraphicsObject):
         self.update_model_position()
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
+        scene = self.scene()
+        if scene and hasattr(scene, "clear_guides"):
+            scene.clear_guides()
+            scene._in_smart_drag = False
+            scene.update()
+
         if self._drag_start_rect is not None and (
             self._rect.width() != self._drag_start_rect.width()
             or self._rect.height() != self._drag_start_rect.height()
             or self._rect.topLeft() != self._drag_start_rect.topLeft()
         ):
-            scene = self.scene()
             if scene and hasattr(scene, "undo_stack"):
                 from id_card_generator.editor.undo_manager import ResizeElementCommand
                 scene.undo_stack.push(ResizeElementCommand(self, self._drag_start_rect, QRectF(self._rect)))
