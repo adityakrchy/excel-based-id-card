@@ -101,20 +101,75 @@ class ElementInspector(QWidget):
         """)
 
     def _setup_ui(self) -> None:
+        self.setStyleSheet("""
+            QWidget {
+                font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            }
+            QGroupBox {
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+                text-transform: uppercase;
+                color: #b6c4ff;
+                border: 1px solid #383d47;
+                border-radius: 4px;
+                margin-top: 8px;
+                padding-top: 12px;
+                background-color: #1a1c20;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 8px;
+                padding: 0 4px;
+                background: #1a1c20;
+            }
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QFontComboBox {
+                background-color: #0c0e12;
+                border: 1px solid #383d47;
+                border-radius: 4px;
+                color: #e2e2e8;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                padding: 3px 6px;
+            }
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QFontComboBox:focus {
+                border: 1px solid #6c8cff;
+            }
+            QPushButton {
+                background-color: #282a2e;
+                border: 1px solid #383d47;
+                border-radius: 4px;
+                color: #e2e2e8;
+                font-size: 11px;
+                font-weight: 500;
+                padding: 3px 8px;
+            }
+            QPushButton:hover {
+                background-color: #333539;
+                border-color: #6c8cff;
+            }
+            QLabel {
+                color: #c4c5d5;
+                font-size: 11px;
+            }
+        """)
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setContentsMargins(6, 6, 6, 6)
 
         # Header
-        self.lbl_title = QLabel("<b>Element Properties</b>")
+        self.lbl_title = QLabel("<b>ELEMENT PROPERTIES</b>")
+        self.lbl_title.setStyleSheet("color: #ffffff; font-size: 11px; letter-spacing: 0.5px;")
         main_layout.addWidget(self.lbl_title)
 
         # Scroll Area for properties
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         container = QWidget()
+        container.setStyleSheet("background: transparent;")
         self.form_layout = QVBoxLayout(container)
-        self.form_layout.setContentsMargins(4, 4, 4, 4)
-        self.form_layout.setSpacing(10)
+        self.form_layout.setContentsMargins(2, 2, 2, 2)
+        self.form_layout.setSpacing(8)
 
         # 1. Identity & Geometry Group
         geom_group = QGroupBox("Transform && Position")

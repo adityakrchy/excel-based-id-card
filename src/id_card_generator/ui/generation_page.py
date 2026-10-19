@@ -1,8 +1,15 @@
-"""Batch card generation workspace with pre-flight checklist and live progress."""
+"""Batch card generation workspace with pre-flight checklist and live telemetry.
+
+Revamped per Stitch screen f3c87d2721a2:
+- High-density KPI cards for Cards Rendered, Elapsed Time, Rate, and Engine Status.
+- Pre-flight verification checklist.
+- Glowing progress bar and real-time telemetry console with colored log streams.
+"""
 
 import logging
+import time
 from typing import Dict, List, Optional
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -25,7 +32,26 @@ from id_card_generator.core.models import (
 )
 from id_card_generator.generation.batch_generator import GenerationSummary
 from id_card_generator.generation.generation_worker import GenerationWorker
+from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui.studio_tokens import (
+    BORDER_DEFAULT,
+    BORDER_SUBTLE,
+    FONT_FAMILY_MONO,
+    FONT_FAMILY_UI,
+    PRIMARY,
+    PRIMARY_LIGHT,
+    SEMANTIC_ERROR,
+    SEMANTIC_SUCCESS,
+    SEMANTIC_WARNING,
+    SURFACE,
+    SURFACE_HIGH,
+    SURFACE_LOW,
+    SURFACE_LOWEST,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,29 +72,93 @@ class GenerationPage(QWidget):
         self.settings = RenderSettings()
 
         self._worker: Optional[GenerationWorker] = None
+        self._start_time: float = 0.0
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._update_elapsed_time)
+
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
 
-        # Header
-        layout.addWidget(QLabel("<h2>Batch Card Generation</h2>"))
+        # Header Title Row
+        hdr_row = QHBoxLayout()
+        lbl_title = QLabel("<h2>Batch Card Generation Engine</h2>")
+        lbl_title.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        hdr_row.addWidget(lbl_title)
+        hdr_row.addStretch()
 
-        # Pre-Flight Checklist Panel
+        self.pill_engine_state = StatusPill("ENGINE READY", color=SEMANTIC_SUCCESS)
+        hdr_row.addWidget(self.pill_engine_state)
+        layout.addLayout(hdr_row)
+
+        # ---------------------------------------------------------
+        # 1. KPI Telemetry Grid (Cards Rendered, Time, Rate, Workers)
+        # ---------------------------------------------------------
+        kpi_row = QHBoxLayout()
+        kpi_row.setSpacing(10)
+
+        def create_kpi_card(title: str, value: str, color: str = TEXT_PRIMARY):
+            card = QFrame()
+            card.setStyleSheet(
+                f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 6px;"
+            )
+            c_layout = QVBoxLayout(card)
+            c_layout.setContentsMargins(8, 6, 8, 6)
+            c_layout.setSpacing(2)
+
+            t_lbl = QLabel(title.upper())
+            t_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-weight: bold; letter-spacing: 0.5px;")
+            c_layout.addWidget(t_lbl)
+
+            v_lbl = QLabel(value)
+            v_lbl.setStyleSheet(
+                f"color: {color}; font-size: 18px; font-weight: bold; font-family: {FONT_FAMILY_MONO};"
+            )
+            c_layout.addWidget(v_lbl)
+            return card, v_lbl
+
+        self.card_rendered, self.lbl_kpi_rendered = create_kpi_card("Cards Rendered", "0 / 0", PRIMARY_LIGHT)
+        self.card_time, self.lbl_kpi_time = create_kpi_card("Elapsed Time", "00:00", TEXT_PRIMARY)
+        self.card_rate, self.lbl_kpi_rate = create_kpi_card("Render Speed", "0.0 /sec", SEMANTIC_SUCCESS)
+        self.card_workers, self.lbl_kpi_workers = create_kpi_card("Worker Threads", "4 Threads", SEMANTIC_WARNING)
+
+        kpi_row.addWidget(self.card_rendered)
+        kpi_row.addWidget(self.card_time)
+        kpi_row.addWidget(self.card_rate)
+        kpi_row.addWidget(self.card_workers)
+        layout.addLayout(kpi_row)
+
+        # ---------------------------------------------------------
+        # 2. Pre-Flight Checklist Panel
+        # ---------------------------------------------------------
         self.checklist_frame = QFrame()
         self.checklist_frame.setObjectName("card_panel")
+        self.checklist_frame.setStyleSheet(
+            f"QFrame#card_panel {{ background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 6px; }}"
+        )
         chk_layout = QVBoxLayout(self.checklist_frame)
-        chk_layout.addWidget(QLabel("<b>Pre-Flight Verification Checklist:</b>"))
+        chk_layout.setContentsMargins(10, 8, 10, 8)
+        chk_layout.setSpacing(6)
+
+        lbl_chk_title = QLabel("<b>PRE-FLIGHT VERIFICATION CHECKLIST</b>")
+        lbl_chk_title.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; letter-spacing: 0.5px;")
+        chk_layout.addWidget(lbl_chk_title)
 
         self.grid_checklist = QGridLayout()
-        self.grid_checklist.setSpacing(10)
+        self.grid_checklist.setSpacing(8)
 
         self.lbl_chk_records = QLabel("Records: 0 loaded (0 valid)")
+        self.lbl_chk_records.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
         self.lbl_chk_photos = QLabel("Photos: 0 matched (0 missing)")
+        self.lbl_chk_photos.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
         self.lbl_chk_template = QLabel("Template: None selected")
+        self.lbl_chk_template.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
         self.lbl_chk_output = QLabel("Output: PNG @ 300 DPI ({PIN_NUMBER}_{NAME}.png)")
+        self.lbl_chk_output.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
 
         self.grid_checklist.addWidget(self.lbl_chk_records, 0, 0)
         self.grid_checklist.addWidget(self.lbl_chk_photos, 0, 1)
@@ -78,21 +168,27 @@ class GenerationPage(QWidget):
         chk_layout.addLayout(self.grid_checklist)
         layout.addWidget(self.checklist_frame)
 
-        # Action Buttons Row
+        # ---------------------------------------------------------
+        # 3. Action Buttons Row
+        # ---------------------------------------------------------
         action_row = QHBoxLayout()
-        self.btn_generate = QPushButton("Generate All ID Cards")
+        action_row.setSpacing(8)
+
+        self.btn_generate = QPushButton("▶ Launch Batch Generation")
         self.btn_generate.setObjectName("btn_primary")
-        self.btn_generate.setStyleSheet("font-size: 15px; padding: 12px 24px;")
+        self.btn_generate.setStyleSheet(f"font-size: 13px; font-weight: bold; padding: 8px 20px;")
         self.btn_generate.clicked.connect(self._start_generation)
 
-        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel = QPushButton("⏹ Cancel Run")
         self.btn_cancel.setObjectName("btn_danger")
         self.btn_cancel.setEnabled(False)
+        self.btn_cancel.setStyleSheet(f"font-size: 13px; padding: 8px 16px;")
         self.btn_cancel.clicked.connect(self._cancel_generation)
 
         self.btn_goto_review = QPushButton("Proceed to Sequential Review ▶")
         self.btn_goto_review.setObjectName("btn_success")
         self.btn_goto_review.setEnabled(False)
+        self.btn_goto_review.setStyleSheet(f"font-size: 13px; font-weight: bold; padding: 8px 20px;")
         self.btn_goto_review.clicked.connect(lambda: self.goto_review_requested.emit())
 
         action_row.addWidget(self.btn_generate)
@@ -101,35 +197,51 @@ class GenerationPage(QWidget):
         action_row.addWidget(self.btn_goto_review)
         layout.addLayout(action_row)
 
-        # Progress Section
+        # ---------------------------------------------------------
+        # 4. Progress & Telemetry Terminal Console
+        # ---------------------------------------------------------
         prog_frame = QFrame()
         prog_frame.setObjectName("card_panel")
+        prog_frame.setStyleSheet(
+            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
+        )
         prog_layout = QVBoxLayout(prog_frame)
+        prog_layout.setContentsMargins(10, 10, 10, 10)
+        prog_layout.setSpacing(8)
 
+        # Status and Progress Bar
         self.lbl_status = QLabel("Ready to generate.")
-        self.lbl_status.setStyleSheet("font-weight: 600; color: #94A3B8;")
+        self.lbl_status.setStyleSheet(f"font-weight: 600; color: {TEXT_PRIMARY}; font-size: 12px;")
         prog_layout.addWidget(self.lbl_status)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFixedHeight(24)
+        self.progress_bar.setFixedHeight(18)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setStyleSheet(
+            f"QProgressBar {{ background-color: {SURFACE_LOWEST}; border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; text-align: center; color: #FFFFFF; font-family: {FONT_FAMILY_MONO}; font-size: 11px; }}"
+            f"QProgressBar::chunk {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0052cc, stop:1 #6c8cff); border-radius: 3px; }}"
+        )
         prog_layout.addWidget(self.progress_bar)
 
+        # Telemetry Log
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
-        self.log_output.setFixedHeight(160)
-        self.log_output.setStyleSheet("font-family: monospace; font-size: 11px;")
+        self.log_output.setStyleSheet(
+            f"QTextEdit {{ background-color: {SURFACE_LOWEST}; color: #8ED0FF; font-family: {FONT_FAMILY_MONO}; font-size: 11px; border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; padding: 6px; }}"
+        )
         prog_layout.addWidget(self.log_output)
 
-        layout.addWidget(prog_frame)
-        layout.addStretch()
+        layout.addWidget(prog_frame, stretch=1)
 
-        # Bottom Step Navigation Bar
+        # ---------------------------------------------------------
+        # 5. Bottom Step Navigation Bar (Preserved for compatibility)
+        # ---------------------------------------------------------
         self.nav_bar = StepNavBar(
             prev_label="Canvas Editor",
             next_label="Review Generated Cards",
-            step_badge="Step 5 of 7: Batch Generate",
+            step_badge="Step 5 of 7: Batch Generation",
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.CANVAS_EDITOR.value))
@@ -142,38 +254,38 @@ class GenerationPage(QWidget):
         records: List[SourceRecord],
         match_results: Dict[str, PhotoMatchResult],
         column_mappings: Dict[str, str],
-        settings: Optional[RenderSettings] = None,
+        settings: RenderSettings,
     ) -> None:
-        """Update pre-flight checklist details."""
+        """Update active project context and pre-flight checklist verification."""
         self.template = template
         self.records = records
         self.match_results = match_results
         self.column_mappings = column_mappings
-        if settings:
-            self.settings = settings
+        self.settings = settings
 
+        # Update checklist labels
         valid_count = sum(1 for r in records if r.is_valid)
-        missing_photos = sum(1 for m in match_results.values() if m.status.value == "missing")
-        matched_photos = len(records) - missing_photos
-
         self.lbl_chk_records.setText(f"Records: {len(records):,} loaded ({valid_count:,} valid)")
-        self.lbl_chk_photos.setText(f"Photos: {matched_photos:,} matched ({missing_photos:,} missing)")
+        self.lbl_kpi_rendered.setText(f"0 / {len(records):,}")
 
-        if template:
-            self.lbl_chk_template.setText(f"Template: {template.name} ({template.width_px}x{template.height_px} px)")
-        else:
-            self.lbl_chk_template.setText("Template: ⚠ None selected")
+        matched_count = sum(1 for m in match_results.values() if m.matched)
+        missing_count = len(records) - matched_count
+        self.lbl_chk_photos.setText(f"Photos: {matched_count:,} matched ({missing_count:,} missing)")
 
-        self.lbl_chk_output.setText(
-            f"Output: {self.settings.output_format.value} @ {self.settings.dpi} DPI (Staging Area)"
-        )
+        tmpl_name = template.name if template else "None selected"
+        self.lbl_chk_template.setText(f"Template: {tmpl_name}")
 
-        can_start = bool(self.template and self.records)
-        self.btn_generate.setEnabled(can_start)
+        fmt = settings.output_format.value.upper()
+        pat = getattr(settings, "filename_pattern", "{PIN_NUMBER}_{NAME}")
+        self.lbl_chk_output.setText(f"Output: {fmt} @ {settings.dpi} DPI ({pat})")
 
     def _start_generation(self) -> None:
-        if not self.template or not self.records:
-            QMessageBox.warning(self, "Incomplete Setup", "Please load a spreadsheet and select a template first.")
+        if not self.template:
+            QMessageBox.warning(self, "No Template", "Please select or create an ID card template first.")
+            return
+
+        if not self.records:
+            QMessageBox.warning(self, "No Records", "Please import an Excel spreadsheet with records.")
             return
 
         self.btn_generate.setEnabled(False)
@@ -181,7 +293,11 @@ class GenerationPage(QWidget):
         self.btn_goto_review.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_output.clear()
-        self.lbl_status.setText("Generation in progress...")
+        self.lbl_status.setText("Initializing worker threads...")
+        self.pill_engine_state.set_status("RUNNING", color=PRIMARY)
+
+        self._start_time = time.time()
+        self._timer.start()
 
         self._worker = GenerationWorker(
             template=self.template,
@@ -191,42 +307,62 @@ class GenerationPage(QWidget):
             settings=self.settings,
         )
         self._worker.progress_updated.connect(self._on_progress)
-        self._worker.batch_finished.connect(self._on_finished)
-        self._worker.error_occurred.connect(self._on_error)
+        self._worker.status_message.connect(self._on_status)
+        self._worker.card_generated.connect(self._on_card_generated)
+        self._worker.generation_finished.connect(self._on_finished)
         self._worker.start()
 
-    def _cancel_generation(self) -> None:
-        if self._worker:
-            self._worker.cancel()
-            self.lbl_status.setText("Cancelling generation...")
-            self.btn_cancel.setEnabled(False)
+    def _update_elapsed_time(self) -> None:
+        if self._start_time > 0:
+            elapsed = int(time.time() - self._start_time)
+            mins = elapsed // 60
+            secs = elapsed % 60
+            self.lbl_kpi_time.setText(f"{mins:02d}:{secs:02d}")
 
-    def _on_progress(self, completed: int, total: int, pin: str, msg: str) -> None:
-        pct = int((completed / total) * 100) if total > 0 else 0
-        self.progress_bar.setValue(pct)
-        self.lbl_status.setText(f"Processing record {completed} of {total}: PIN {pin} ({msg})")
-        self.log_output.append(f"[{completed}/{total}] PIN {pin}: {msg}")
+    def _cancel_generation(self) -> None:
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+            self.lbl_status.setText("Cancelling run...")
+            self.pill_engine_state.set_status("CANCELLED", color=SEMANTIC_WARNING)
+            self._timer.stop()
+
+    def _on_progress(self, current: int, total: int) -> None:
+        if total > 0:
+            pct = int((current / total) * 100)
+            self.progress_bar.setValue(pct)
+            self.lbl_status.setText(f"Generating: {current} of {total} cards completed ({pct}%)")
+            self.lbl_kpi_rendered.setText(f"{current:,} / {total:,}")
+
+            elapsed = max(0.1, time.time() - self._start_time)
+            rate = current / elapsed
+            self.lbl_kpi_rate.setText(f"{rate:.1f} /sec")
+
+    def _on_status(self, msg: str) -> None:
+        self.log_output.append(msg)
+        # Auto-scroll log to bottom
+        sb = self.log_output.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _on_card_generated(self, result) -> None:
+        if result.success:
+            self._on_status(f"[OK] Rendered PIN: {result.pin} -> {result.output_path}")
+        else:
+            self._on_status(f"[ERROR] Failed PIN: {result.pin} - {result.error_message}")
 
     def _on_finished(self, summary: GenerationSummary) -> None:
+        self._timer.stop()
         self.btn_generate.setEnabled(True)
         self.btn_cancel.setEnabled(False)
-        self.btn_goto_review.setEnabled(summary.completed_count > 0)
+        self.btn_goto_review.setEnabled(True)
+        self.nav_bar.btn_next.setEnabled(True)
 
-        status_text = "Generation Completed!" if not summary.cancelled else "Generation Cancelled."
-        self.lbl_status.setText(
-            f"{status_text} {summary.completed_count} generated, {summary.skipped_count} skipped, {summary.failed_count} failed."
+        status_text = (
+            f"Finished in {summary.elapsed_seconds:.1f}s: "
+            f"{summary.completed_count} generated, {summary.error_count} errors, {summary.skipped_count} skipped."
         )
-        self.log_output.append(
-            f"\n--- {status_text} ---\n"
-            f"Successfully generated: {summary.completed_count}\n"
-            f"Skipped: {summary.skipped_count}\n"
-            f"Failed: {summary.failed_count}\n"
-        )
+        self.lbl_status.setText(status_text)
+        self.pill_engine_state.set_status("COMPLETED", color=SEMANTIC_SUCCESS)
+        self._on_status("\n" + "=" * 50)
+        self._on_status(status_text)
 
         self.generation_completed.emit(summary)
-
-    def _on_error(self, err_msg: str) -> None:
-        self.btn_generate.setEnabled(True)
-        self.btn_cancel.setEnabled(False)
-        self.lbl_status.setText(f"Error: {err_msg}")
-        QMessageBox.critical(self, "Generation Error", f"An error occurred: {err_msg}")

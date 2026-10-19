@@ -38,6 +38,7 @@ from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.generation.batch_generator import GenerationSummary
 from id_card_generator.resources.resource_loader import get_resource_path
 from id_card_generator.tasks.task_manager import TaskManager
+from id_card_generator.ui.components import StudioHeaderBar, StudioNavBar, StudioTab
 from id_card_generator.ui.dashboard_page import DashboardPage
 from id_card_generator.ui.data_source_page import DataSourcePage
 from id_card_generator.ui.dialogs.project_dialog import ProjectDialog
@@ -46,8 +47,10 @@ from id_card_generator.ui.editor_page import EditorPage
 from id_card_generator.ui.export_page import ExportPage
 from id_card_generator.ui.generation_page import GenerationPage
 from id_card_generator.ui.photo_library_page import PhotoLibraryPage
+from id_card_generator.ui.project_hub_view import ProjectHubView
 from id_card_generator.ui.review_page import ReviewPage
 from id_card_generator.ui.settings_page import SettingsPage
+from id_card_generator.ui.studio_tokens import COLORS
 from id_card_generator.ui.template_page import TemplatePage
 from id_card_generator.ui.theme_manager import ThemeManager
 from id_card_generator.ui.workflow_nav import WorkflowNav
@@ -96,9 +99,34 @@ class MainWindow(QMainWindow):
                 self.set_project(dialog.created_config, dialog.selected_workspace_path)
 
     def _setup_ui(self) -> None:
-        # Main Top Application Toolbar
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # 1. Studio Top Command Bar (Level 1 Header)
+        self.header_bar = StudioHeaderBar(self)
+        self.header_bar.new_requested.connect(self._new_project)
+        self.header_bar.open_requested.connect(self._open_project)
+        self.header_bar.save_requested.connect(self._save_project)
+        self.header_bar.undo_requested.connect(self._on_undo_requested)
+        self.header_bar.redo_requested.connect(self._on_redo_requested)
+        self.header_bar.theme_requested.connect(self.apply_theme)
+        main_layout.addWidget(self.header_bar)
+
+        # 2. Studio Workspace Navigation Ribbon (Level 1.5 Sub-header)
+        self.studio_nav = StudioNavBar(self)
+        self.studio_nav.tab_selected.connect(self._on_studio_tab_selected)
+        self.studio_nav.grid_toggled.connect(self._on_studio_grid_toggled)
+        self.studio_nav.preview_toggled.connect(self._on_studio_preview_toggled)
+        self.studio_nav.help_requested.connect(self._show_help)
+        main_layout.addWidget(self.studio_nav)
+
+        # Retain legacy toolbar & workflow stepper in memory (hidden) for test compatibility
         self.top_toolbar = self.addToolBar("Main Controls")
         self.top_toolbar.setMovable(False)
+        self.top_toolbar.setVisible(False)
 
         btn_tb_new = QPushButton("New Project")
         btn_tb_new.clicked.connect(self._new_project)
@@ -112,12 +140,6 @@ class MainWindow(QMainWindow):
         btn_tb_save.clicked.connect(self._save_project)
         self.top_toolbar.addWidget(btn_tb_save)
 
-        self.top_toolbar.addSeparator()
-
-        lbl_theme = QLabel(" Theme: ")
-        lbl_theme.setStyleSheet("font-weight: 500;")
-        self.top_toolbar.addWidget(lbl_theme)
-
         self.cmb_toolbar_theme = QComboBox()
         self.cmb_toolbar_theme.addItem("Black (Fluent Dark)", "black")
         self.cmb_toolbar_theme.addItem("White (Fluent Light)", "white")
@@ -129,14 +151,6 @@ class MainWindow(QMainWindow):
         self.cmb_toolbar_theme.currentIndexChanged.connect(self._on_toolbar_theme_changed)
         self.top_toolbar.addWidget(self.cmb_toolbar_theme)
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        # Retain nav_buttons dictionary in memory for compatibility,
-        # but remove the left sidebar completely from the visual layout.
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
         self.nav_buttons: Dict[WorkflowStep, QPushButton] = {}
@@ -158,12 +172,12 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda ch=False, s=step: self.switch_page(s))
             self.nav_buttons[step] = btn
 
-        # 1. Top Persistent Workflow Stepper (includes Dashboard & Settings)
         self.workflow_nav = WorkflowNav()
+        self.workflow_nav.setVisible(False)
         self.workflow_nav.step_clicked.connect(lambda s: self.switch_page(WorkflowStep(s)))
         main_layout.addWidget(self.workflow_nav)
 
-        # 2. Main Stacked Workspace (fills entire width)
+        # 3. Main Stacked Workspace (fills entire width)
         self.stack = QStackedWidget()
         self.page_dashboard = DashboardPage()
         self.page_data_source = DataSourcePage()
@@ -330,6 +344,19 @@ class MainWindow(QMainWindow):
 
         # Update top stepper
         self.workflow_nav.set_active_step(step)
+
+        # Update studio nav bar active tab
+        if hasattr(self, "studio_nav"):
+            if step in (WorkflowStep.DASHBOARD, WorkflowStep.TEMPLATES):
+                self.studio_nav.set_active_tab(StudioTab.TEMPLATES)
+            elif step == WorkflowStep.CANVAS_EDITOR:
+                self.studio_nav.set_active_tab(StudioTab.DESIGNER)
+            elif step in (WorkflowStep.DATA_SOURCE, WorkflowStep.PHOTOS):
+                self.studio_nav.set_active_tab(StudioTab.DATA_MAPPING)
+            elif step in (WorkflowStep.GENERATE, WorkflowStep.REVIEW):
+                self.studio_nav.set_active_tab(StudioTab.GENERATE_PREVIEW)
+            elif step == WorkflowStep.EXPORT:
+                self.studio_nav.set_active_tab(StudioTab.EXPORT_PRINT)
 
         # Context updates on page entry
         if step == WorkflowStep.CANVAS_EDITOR:
@@ -509,9 +536,68 @@ class MainWindow(QMainWindow):
             self.page_export.lbl_dest_dir.setText(str(config.exports_dir))
             self.page_export.last_export_dir = config.exports_dir
 
+        if hasattr(self, "header_bar"):
+            self.header_bar.set_project_title(f"{config.project_name}.idproj", False)
+            self.header_bar.set_sync_status("Auto-saved (Local)", COLORS.TERTIARY)
+
         self.switch_page(WorkflowStep.DASHBOARD)
         self._refresh_dashboard_metrics()
         self._refresh_status_bar()
+
+    def _on_undo_requested(self) -> None:
+        if hasattr(self.page_editor, "scene") and hasattr(self.page_editor.scene, "undo_manager"):
+            self.page_editor.scene.undo_manager.undo()
+
+    def _on_redo_requested(self) -> None:
+        if hasattr(self.page_editor, "scene") and hasattr(self.page_editor.scene, "undo_manager"):
+            self.page_editor.scene.undo_manager.redo()
+
+    def _on_studio_tab_selected(self, tab_str: str) -> None:
+        if tab_str == StudioTab.TEMPLATES.value:
+            self.switch_page(WorkflowStep.TEMPLATES)
+        elif tab_str == StudioTab.DESIGNER.value:
+            self.switch_page(WorkflowStep.CANVAS_EDITOR)
+        elif tab_str == StudioTab.DATA_MAPPING.value:
+            self.switch_page(WorkflowStep.DATA_SOURCE)
+        elif tab_str == StudioTab.GENERATE_PREVIEW.value:
+            self.switch_page(WorkflowStep.GENERATE)
+        elif tab_str == StudioTab.EXPORT_PRINT.value:
+            self.switch_page(WorkflowStep.EXPORT)
+
+    def _on_studio_grid_toggled(self, checked: bool) -> None:
+        if hasattr(self.page_editor, "view"):
+            if hasattr(self.page_editor.view, "setShowGrid"):
+                self.page_editor.view.setShowGrid(checked)
+            elif hasattr(self.page_editor.view, "show_grid"):
+                self.page_editor.view.show_grid = checked
+                self.page_editor.view.viewport().update()
+
+    def _on_studio_preview_toggled(self, checked: bool) -> None:
+        if hasattr(self.page_editor, "toggle_live_preview"):
+            self.page_editor.toggle_live_preview(checked)
+        elif hasattr(self.page_editor, "act_preview"):
+            self.page_editor.act_preview.setChecked(checked)
+
+    def _show_help(self) -> None:
+        QMessageBox.information(
+            self,
+            "ID Studio Documentation",
+            f"<b>{APP_NAME} v{APP_VERSION}</b><br><br>"
+            "<b>Studio Workspaces:</b><br>"
+            "• <b>Templates:</b> Credential catalog, CR80 presets, and built-in layouts.<br>"
+            "• <b>Template Designer:</b> Precision visual canvas, smart alignment, and layer hierarchy.<br>"
+            "• <b>Data Mapping:</b> Multi-sheet Excel/CSV connector, Hindi font transliteration, and photo matching.<br>"
+            "• <b>Generate & Preview:</b> Batch multi-threaded card generation and live validation inspector.<br>"
+            "• <b>Export & Print:</b> A4 sheet imposition engine, crop marks, duplex alignment, and manifest packaging.<br><br>"
+            "<b>Keyboard Shortcuts:</b><br>"
+            "• <b>V:</b> Move / Select Tool<br>"
+            "• <b>T:</b> Text Element Tool<br>"
+            "• <b>I:</b> Photo Frame Tool<br>"
+            "• <b>R:</b> Vector Rectangle Tool<br>"
+            "• <b>G:</b> Toggle Metric Grid<br>"
+            "• <b>Ctrl+Z / Ctrl+Y:</b> Undo / Redo<br>"
+            "• <b>Ctrl+S:</b> Save Project Workspace"
+        )
 
     def _new_project(self) -> None:
         """Create a new project workspace."""

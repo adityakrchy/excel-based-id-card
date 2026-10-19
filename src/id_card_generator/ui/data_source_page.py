@@ -1,11 +1,19 @@
-"""Data source import and interactive record preview page."""
+"""Data source import and interactive record preview page.
+
+Revamped into a 3-column workstation suite per Stitch screen bd2f3aebf3bb:
+- Top Ribbon: connection pill, action toolbar, live metric pills.
+- Left Column: Template Placeholders & schema token registry.
+- Center Column: Spreadsheet controls, search filter, and live preview data table.
+- Right Column: Field Mapping & Rule Inspector + Selected Record Inspector.
+"""
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -13,10 +21,13 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -25,12 +36,31 @@ from PySide6.QtWidgets import (
 
 from id_card_generator.core.constants import WorkflowStep
 from id_card_generator.core.exceptions import DataSourceError
-from id_card_generator.core.models import ProjectConfiguration, SourceRecord
+from id_card_generator.core.models import ProjectConfiguration, SourceRecord, TemplateDefinition
 from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.data_validator import DataValidator, ValidationReport
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.data.hindi_converter import HindiConverter
+from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui.studio_tokens import (
+    BORDER_DEFAULT,
+    BORDER_SUBTLE,
+    FONT_FAMILY_MONO,
+    FONT_FAMILY_UI,
+    PRIMARY,
+    SEMANTIC_ERROR,
+    SEMANTIC_SUCCESS,
+    SEMANTIC_WARNING,
+    SURFACE,
+    SURFACE_HIGH,
+    SURFACE_HIGHER,
+    SURFACE_LOW,
+    SURFACE_LOWEST,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +70,7 @@ class DataSourcePage(QWidget):
 
     data_loaded = Signal(object, object, object)  # (columns, records, validation_report)
     navigate_requested = Signal(str)  # WorkflowStep value
+    mappings_changed = Signal(dict)  # token -> column mapping dict
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -48,6 +79,8 @@ class DataSourcePage(QWidget):
         self.columns: List[str] = []
         self.records: List[SourceRecord] = []
         self.validation_report: Optional[ValidationReport] = None
+        self.field_mappings: Dict[str, str] = {}
+        self.template_tokens: List[str] = ["pin_number", "employee_name", "department", "designation", "photo"]
 
         self._setup_ui()
 
@@ -60,112 +93,312 @@ class DataSourcePage(QWidget):
                 self.lbl_workspace_badge.setText(f"✓ Stored in Workspace: data/{p.name}")
                 self.lbl_workspace_badge.setVisible(True)
 
-    def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+    def set_template(self, template: Optional[TemplateDefinition]) -> None:
+        """Extract placeholder tokens from active template elements."""
+        if not template:
+            return
+        tokens = set()
+        for elem in template.elements:
+            if getattr(elem, "field_name", None):
+                tokens.add(elem.field_name.strip("{}"))
+            if getattr(elem, "text", None):
+                # Search for {{token}} in text
+                import re
+                found = re.findall(r"\{\{([^}]+)\}\}", elem.text)
+                for f in found:
+                    tokens.add(f.strip())
+        if tokens:
+            self.template_tokens = sorted(list(tokens))
+            self._refresh_placeholders_list()
 
-        # 1. Top File Selection Card
+    def _setup_ui(self) -> None:
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(10)
+
+        # ---------------------------------------------------------
+        # 1. Top Ribbon Bar (File Connection + Global Actions)
+        # ---------------------------------------------------------
         top_card = QFrame()
         top_card.setObjectName("card_panel")
+        top_card.setStyleSheet(
+            f"QFrame#card_panel {{ background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 4px; }}"
+        )
         top_layout = QVBoxLayout(top_card)
+        top_layout.setContentsMargins(8, 8, 8, 8)
+        top_layout.setSpacing(6)
 
-        # File browse row
+        # Primary Action Row
         file_row = QHBoxLayout()
-        self.lbl_path = QLabel("<i>No file selected</i>")
-        self.lbl_path.setStyleSheet("color: #94A3B8; font-weight: 500;")
+        file_row.setSpacing(8)
 
-        self.btn_browse = QPushButton("Browse Spreadsheet...")
+        # Icon and Connection Pill
+        lbl_icon = QLabel("📊")
+        lbl_icon.setStyleSheet("font-size: 16px;")
+        file_row.addWidget(lbl_icon)
+
+        self.pill_connection = StatusPill("NO DATA", color=TEXT_MUTED)
+        file_row.addWidget(self.pill_connection)
+
+        self.lbl_path = QLabel("<i>No spreadsheet connected</i>")
+        self.lbl_path.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
+        file_row.addWidget(self.lbl_path, stretch=1)
+
+        self.btn_browse = QPushButton("Import Spreadsheet...")
         self.btn_browse.setObjectName("btn_primary")
         self.btn_browse.clicked.connect(self._browse_file)
+        file_row.addWidget(self.btn_browse)
 
-        self.btn_refresh = QPushButton("Re-import")
+        self.btn_refresh = QPushButton("Refresh")
         self.btn_refresh.setEnabled(False)
         self.btn_refresh.clicked.connect(self._reimport_data)
-
-        file_row.addWidget(self.btn_browse)
-        file_row.addWidget(self.lbl_path, stretch=1)
         file_row.addWidget(self.btn_refresh)
+
+        self.btn_automap = QPushButton("✨ Auto-Map")
+        self.btn_automap.setToolTip("Automatically map spreadsheet columns to template placeholders by name similarity")
+        self.btn_automap.clicked.connect(self._auto_map_columns)
+        file_row.addWidget(self.btn_automap)
+
+        self.btn_validate = QPushButton("✓ Validate All")
+        self.btn_validate.setToolTip("Run strict validation checks across all records")
+        self.btn_validate.clicked.connect(self._validate_all_records)
+        file_row.addWidget(self.btn_validate)
+
         top_layout.addLayout(file_row)
 
-        # Workspace badge row
+        # Metrics & Badges Strip
+        metrics_row = QHBoxLayout()
+        metrics_row.setSpacing(8)
+
+        self.pill_placeholders = StatusPill("TOKENS: 0", color=PRIMARY)
+        self.pill_mapped = StatusPill("MAPPED: 0", color=SEMANTIC_SUCCESS)
+        self.pill_unmapped = StatusPill("UNMAPPED: 0", color=SEMANTIC_WARNING)
+        self.pill_records = StatusPill("RECORDS: 0", color=TEXT_SECONDARY)
+        self.pill_errors = StatusPill("ERRORS: 0", color=SEMANTIC_ERROR)
+
+        metrics_row.addWidget(self.pill_placeholders)
+        metrics_row.addWidget(self.pill_mapped)
+        metrics_row.addWidget(self.pill_unmapped)
+        metrics_row.addWidget(self.pill_records)
+        metrics_row.addWidget(self.pill_errors)
+
         self.lbl_workspace_badge = QLabel("")
-        self.lbl_workspace_badge.setStyleSheet("color: #10B981; font-weight: 600; font-size: 11px;")
+        self.lbl_workspace_badge.setStyleSheet(f"color: {SEMANTIC_SUCCESS}; font-weight: 600; font-size: 11px;")
         self.lbl_workspace_badge.setVisible(False)
+        metrics_row.addWidget(self.lbl_workspace_badge)
 
         self.lbl_hindi_badge = QLabel("")
-        self.lbl_hindi_badge.setStyleSheet("color: #0284C7; font-weight: 600; font-size: 11px;")
+        self.lbl_hindi_badge.setStyleSheet(f"color: {PRIMARY}; font-weight: 600; font-size: 11px;")
         self.lbl_hindi_badge.setVisible(False)
+        metrics_row.addWidget(self.lbl_hindi_badge)
 
-        badge_row = QHBoxLayout()
-        badge_row.addWidget(self.lbl_workspace_badge)
-        badge_row.addWidget(self.lbl_hindi_badge)
-        badge_row.addStretch()
-        top_layout.addLayout(badge_row)
+        metrics_row.addStretch()
+        top_layout.addLayout(metrics_row)
 
-        # Controls row: Sheet selector, Header row & Hindi font mode
-        ctrl_row = QHBoxLayout()
-        ctrl_row.addWidget(QLabel("Worksheet:"))
+        main_layout.addWidget(top_card)
+
+        # ---------------------------------------------------------
+        # 2. Main 3-Column Workstation Splitter
+        # ---------------------------------------------------------
+        self.main_splitter = QSplitter(Qt.Horizontal)
+
+        # --- LEFT COLUMN: Template Placeholders List ---
+        left_panel = QFrame()
+        left_panel.setStyleSheet(
+            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
+        )
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(8, 8, 8, 8)
+        left_layout.setSpacing(6)
+
+        lbl_tokens_title = QLabel("<b>TEMPLATE PLACEHOLDERS</b>")
+        lbl_tokens_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px; letter-spacing: 0.5px;")
+        left_layout.addWidget(lbl_tokens_title)
+
+        lbl_tokens_sub = QLabel("Select token to inspect or map")
+        lbl_tokens_sub.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        left_layout.addWidget(lbl_tokens_sub)
+
+        self.list_placeholders = QListWidget()
+        self.list_placeholders.setStyleSheet(
+            f"QListWidget {{ background: {SURFACE_LOWEST}; border: 1px solid {BORDER_SUBTLE}; color: {TEXT_PRIMARY}; font-size: 11px; }}"
+            f"QListWidget::item {{ padding: 6px; border-bottom: 1px solid {BORDER_SUBTLE}; }}"
+            f"QListWidget::item:selected {{ background-color: {SURFACE_HIGH}; color: {PRIMARY}; border-left: 2px solid {PRIMARY}; }}"
+        )
+        self.list_placeholders.itemClicked.connect(self._on_placeholder_clicked)
+        left_layout.addWidget(self.list_placeholders)
+
+        self.main_splitter.addWidget(left_panel)
+
+        # --- CENTER COLUMN: Spreadsheet Controls & Data Preview Table ---
+        center_panel = QFrame()
+        center_panel.setStyleSheet(
+            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
+        )
+        center_layout = QVBoxLayout(center_panel)
+        center_layout.setContentsMargins(8, 8, 8, 8)
+        center_layout.setSpacing(8)
+
+        # Controls sub-bar (Worksheet, Header row, Hindi mode, Search)
+        ctrl_bar = QHBoxLayout()
+        ctrl_bar.setSpacing(6)
+
+        lbl_sheet = QLabel("Sheet:")
+        lbl_sheet.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        ctrl_bar.addWidget(lbl_sheet)
+
         self.cmb_sheets = QComboBox()
         self.cmb_sheets.currentIndexChanged.connect(self._on_sheet_changed)
-        ctrl_row.addWidget(self.cmb_sheets, stretch=1)
+        ctrl_bar.addWidget(self.cmb_sheets, stretch=1)
 
-        ctrl_row.addWidget(QLabel("Header Row:"))
+        lbl_hdr = QLabel("Header:")
+        lbl_hdr.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        ctrl_bar.addWidget(lbl_hdr)
+
         self.spin_header = QSpinBox()
         self.spin_header.setRange(0, 100)
         self.spin_header.setValue(0)
         self.spin_header.valueChanged.connect(self._on_header_changed)
-        ctrl_row.addWidget(self.spin_header)
+        ctrl_bar.addWidget(self.spin_header)
 
-        ctrl_row.addWidget(QLabel("Hindi Font Mode:"))
+        lbl_hindi = QLabel("Hindi:")
+        lbl_hindi.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        ctrl_bar.addWidget(lbl_hindi)
+
         self.cmb_hindi_mode = QComboBox()
-        self.cmb_hindi_mode.addItem("Auto-Detect Hindi (Kruti Dev / DevLys → Unicode)", "auto")
-        self.cmb_hindi_mode.addItem("Force Kruti Dev / DevLys → Unicode", "kruti_to_unicode")
-        self.cmb_hindi_mode.addItem("Unicode / Standard (Mangal / UTF-8)", "none")
+        self.cmb_hindi_mode.addItem("Auto-Detect Hindi", "auto")
+        self.cmb_hindi_mode.addItem("Force Kruti Dev → Unicode", "kruti_to_unicode")
+        self.cmb_hindi_mode.addItem("Unicode / Standard (Mangal)", "none")
         self.cmb_hindi_mode.currentIndexChanged.connect(self._on_hindi_mode_changed)
-        ctrl_row.addWidget(self.cmb_hindi_mode, stretch=1)
+        ctrl_bar.addWidget(self.cmb_hindi_mode, stretch=1)
 
-        top_layout.addLayout(ctrl_row)
-        layout.addWidget(top_card)
+        center_layout.addLayout(ctrl_bar)
 
-        # 2. Search & Filter Bar
-        search_row = QHBoxLayout()
+        # Search & Summary Bar
+        search_bar = QHBoxLayout()
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("Search records by name, PIN, designation, office...")
+        self.txt_search.setPlaceholderText("Filter records (name, PIN, designation, dept)...")
         self.txt_search.textChanged.connect(self._filter_table)
-        search_row.addWidget(self.txt_search)
+        search_bar.addWidget(self.txt_search, stretch=1)
 
         self.lbl_summary = QLabel("0 records loaded")
-        self.lbl_summary.setStyleSheet("font-weight: 600; color: #64748B;")
-        search_row.addWidget(self.lbl_summary)
-        layout.addLayout(search_row)
+        self.lbl_summary.setStyleSheet(f"font-weight: 600; color: {TEXT_SECONDARY}; font-size: 11px;")
+        search_bar.addWidget(self.lbl_summary)
+        center_layout.addLayout(search_bar)
 
-        # 3. Main Data Preview Splitter (Table on left, Record Inspector on right)
-        splitter = QSplitter(Qt.Horizontal)
-
+        # Data Table
         self.table = QTableWidget()
         self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.itemSelectionChanged.connect(self._on_row_selected)
-        splitter.addWidget(self.table)
+        self.table.setStyleSheet(
+            f"QTableWidget {{ background-color: {SURFACE_LOWEST}; alternate-background-color: {SURFACE_LOW};"
+            f" gridline-color: {BORDER_SUBTLE}; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_SUBTLE}; }}"
+            f"QHeaderView::section {{ background-color: {SURFACE_HIGH}; color: {TEXT_SECONDARY}; border: 1px solid {BORDER_SUBTLE};"
+            f" padding: 4px; font-weight: 600; font-size: 11px; }}"
+        )
+        center_layout.addWidget(self.table)
 
-        # Inspector Panel
+        self.main_splitter.addWidget(center_panel)
+
+        # --- RIGHT COLUMN: Field Mapping & Selected Record Inspector ---
+        right_panel = QFrame()
+        right_panel.setStyleSheet(
+            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
+        )
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(6, 6, 6, 6)
+        right_layout.setSpacing(6)
+
+        self.right_tabs = QTabWidget()
+        self.right_tabs.setStyleSheet(
+            f"QTabWidget::pane {{ border: 1px solid {BORDER_SUBTLE}; background-color: {SURFACE_LOW}; }}"
+            f"QTabBar::tab {{ background: {SURFACE_LOWEST}; color: {TEXT_SECONDARY}; padding: 6px 10px; font-size: 11px; border: 1px solid {BORDER_SUBTLE}; }}"
+            f"QTabBar::tab:selected {{ background: {SURFACE_HIGH}; color: {PRIMARY}; border-bottom: 2px solid {PRIMARY}; }}"
+        )
+
+        # Tab 1: Field Mapping & Rules Inspector
+        tab_mapping = QWidget()
+        mapping_layout = QVBoxLayout(tab_mapping)
+        mapping_layout.setContentsMargins(8, 8, 8, 8)
+        mapping_layout.setSpacing(8)
+
+        lbl_map_head = QLabel("<b>FIELD MAPPING INSPECTOR</b>")
+        lbl_map_head.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px;")
+        mapping_layout.addWidget(lbl_map_head)
+
+        mapping_layout.addWidget(QLabel("Target Placeholder:"))
+        self.lbl_active_token = QLabel("{{pin_number}}")
+        self.lbl_active_token.setStyleSheet(
+            f"background: {SURFACE_LOWEST}; border: 1px solid {BORDER_SUBTLE}; color: {PRIMARY}; font-family: {FONT_FAMILY_MONO}; font-weight: 600; padding: 6px; border-radius: 4px;"
+        )
+        mapping_layout.addWidget(self.lbl_active_token)
+
+        mapping_layout.addWidget(QLabel("Source Spreadsheet Column:"))
+        self.cmb_source_column = QComboBox()
+        self.cmb_source_column.currentIndexChanged.connect(self._on_source_column_changed)
+        mapping_layout.addWidget(self.cmb_source_column)
+
+        mapping_layout.addWidget(QLabel("Fallback / Default Value:"))
+        self.txt_fallback = QLineEdit()
+        self.txt_fallback.setPlaceholderText("N/A")
+        mapping_layout.addWidget(self.txt_fallback)
+
+        mapping_layout.addWidget(QLabel("Text Overflow Strategy:"))
+        self.cmb_overflow = QComboBox()
+        self.cmb_overflow.addItem("Auto-Shrink Font Size")
+        self.cmb_overflow.addItem("Truncate with Ellipsis (...)")
+        self.cmb_overflow.addItem("Multi-Line Wrap")
+        mapping_layout.addWidget(self.cmb_overflow)
+
+        self.chk_required = QCheckBox("Required Field (Flag Missing)")
+        self.chk_required.setChecked(True)
+        mapping_layout.addWidget(self.chk_required)
+
+        self.chk_convert_hindi = QCheckBox("Auto-Convert KrutiDev/DevLys")
+        self.chk_convert_hindi.setChecked(True)
+        mapping_layout.addWidget(self.chk_convert_hindi)
+
+        self.btn_apply_mapping = QPushButton("Apply Mapping Rule")
+        self.btn_apply_mapping.setObjectName("btn_primary")
+        self.btn_apply_mapping.clicked.connect(self._apply_current_mapping)
+        mapping_layout.addWidget(self.btn_apply_mapping)
+
+        mapping_layout.addStretch()
+        self.right_tabs.addTab(tab_mapping, "Mapping")
+
+        # Tab 2: Selected Record Inspector (preserves self.inspector & self.lbl_inspect_details)
         self.inspector = QFrame()
         self.inspector.setObjectName("card_panel")
-        self.inspector.setMinimumWidth(280)
         insp_layout = QVBoxLayout(self.inspector)
-        insp_layout.addWidget(QLabel("<b>Selected Record Inspector</b>"))
+        insp_layout.setContentsMargins(8, 8, 8, 8)
+        insp_layout.setSpacing(6)
+
+        lbl_rec_title = QLabel("<b>RECORD ATTRIBUTES</b>")
+        lbl_rec_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px;")
+        insp_layout.addWidget(lbl_rec_title)
+
         self.lbl_inspect_details = QLabel("<i>Select a row in the table to inspect all attributes.</i>")
         self.lbl_inspect_details.setWordWrap(True)
+        self.lbl_inspect_details.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; line-height: 1.4;")
         insp_layout.addWidget(self.lbl_inspect_details)
         insp_layout.addStretch()
-        splitter.addWidget(self.inspector)
 
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter)
+        self.right_tabs.addTab(self.inspector, "Record")
+        right_layout.addWidget(self.right_tabs)
 
-        # 4. Bottom Step Navigation Bar
+        self.main_splitter.addWidget(right_panel)
+
+        # Set Splitter Initial Proportions: Left ~240, Center ~600, Right ~280
+        self.main_splitter.setSizes([240, 620, 280])
+        self.main_splitter.setStretchFactor(0, 0)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setStretchFactor(2, 0)
+        main_layout.addWidget(self.main_splitter, stretch=1)
+
+        # ---------------------------------------------------------
+        # 3. Bottom Step Navigation Bar (Preserved for compatibility)
+        # ---------------------------------------------------------
         self.nav_bar = StepNavBar(
             prev_label="Dashboard & Settings",
             next_label="Photo Library",
@@ -174,7 +407,41 @@ class DataSourcePage(QWidget):
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.DASHBOARD.value))
         self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.PHOTOS.value))
-        layout.addWidget(self.nav_bar)
+        main_layout.addWidget(self.nav_bar)
+
+        self._refresh_placeholders_list()
+
+    def _refresh_placeholders_list(self) -> None:
+        """Populate left placeholder list."""
+        self.list_placeholders.clear()
+        mapped_count = 0
+        for token in self.template_tokens:
+            is_mapped = token in self.field_mappings and bool(self.field_mappings[token])
+            if is_mapped:
+                mapped_count += 1
+                status = f"✓ {self.field_mappings[token]}"
+            else:
+                status = "⚠ unmapped"
+
+            item = QListWidgetItem(f"{{{{{token}}}}}\n   {status}")
+            item.setData(Qt.UserRole, token)
+            self.list_placeholders.addItem(item)
+
+        self.pill_placeholders.set_status(f"TOKENS: {len(self.template_tokens)}", color=PRIMARY)
+        self.pill_mapped.set_status(f"MAPPED: {mapped_count}", color=SEMANTIC_SUCCESS if mapped_count > 0 else TEXT_MUTED)
+        unmapped = len(self.template_tokens) - mapped_count
+        self.pill_unmapped.set_status(f"UNMAPPED: {unmapped}", color=SEMANTIC_WARNING if unmapped > 0 else SEMANTIC_SUCCESS)
+
+    def _on_placeholder_clicked(self, item: QListWidgetItem) -> None:
+        token = item.data(Qt.UserRole)
+        if token:
+            self.lbl_active_token.setText(f"{{{{{token}}}}}")
+            self.right_tabs.setCurrentIndex(0)
+            # Pre-select mapped column if existing
+            mapped_col = self.field_mappings.get(token, "")
+            idx = self.cmb_source_column.findText(mapped_col)
+            if idx >= 0:
+                self.cmb_source_column.setCurrentIndex(idx)
 
     def _browse_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -202,6 +469,7 @@ class DataSourcePage(QWidget):
         self.current_file_path = file_path
         self.lbl_path.setText(str(file_path))
         self.btn_refresh.setEnabled(True)
+        self.pill_connection.set_status("CONNECTED", color=SEMANTIC_SUCCESS)
 
         try:
             sheets = ExcelImporter.get_sheet_names(file_path)
@@ -212,6 +480,7 @@ class DataSourcePage(QWidget):
             self._import_current()
         except Exception as e:
             logger.error("Failed to inspect sheets in %s: %s", file_path, e)
+            self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
             QMessageBox.critical(self, "Import Error", f"Could not inspect spreadsheet: {e}")
 
     def _on_sheet_changed(self) -> None:
@@ -248,6 +517,15 @@ class DataSourcePage(QWidget):
             self.records = records
             self.validation_report = report
 
+            # Update Source Column dropdown in Mapping Inspector
+            self.cmb_source_column.clear()
+            self.cmb_source_column.addItem("(None / Ignore)", "")
+            for col in cols:
+                self.cmb_source_column.addItem(col, col)
+
+            # Auto-map initial common tokens if not already mapped
+            self._auto_map_columns(silent=True)
+
             # Check if Hindi/Devanagari text is present in columns or data
             has_hindi = (
                 any(HindiConverter.is_unicode_devanagari(c) for c in cols)
@@ -257,7 +535,7 @@ class DataSourcePage(QWidget):
                 )
             )
             if has_hindi and hindi_mode != "none":
-                self.lbl_hindi_badge.setText("✓ Hindi font detected & converted to Unicode Devanagari (Mangal compatible)")
+                self.lbl_hindi_badge.setText("✓ Hindi font detected & converted to Unicode Devanagari")
                 self.lbl_hindi_badge.setVisible(True)
             else:
                 self.lbl_hindi_badge.setVisible(False)
@@ -267,12 +545,75 @@ class DataSourcePage(QWidget):
                 f"{len(records):,} records • {report.valid_records} valid • "
                 f"{report.missing_pins} missing PINs • {len(report.duplicate_pins)} duplicate PINs"
             )
+            self.pill_records.set_status(f"RECORDS: {len(records):,}", color=TEXT_SECONDARY)
+            self.pill_errors.set_status(
+                f"ERRORS: {report.missing_pins + len(report.duplicate_pins)}",
+                color=SEMANTIC_ERROR if (report.missing_pins + len(report.duplicate_pins)) > 0 else SEMANTIC_SUCCESS,
+            )
 
             self.data_loaded.emit(cols, records, report)
 
         except Exception as e:
             logger.error("Import failed: %s", e)
+            self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
             QMessageBox.critical(self, "Data Import Error", f"Failed to import records: {e}")
+
+    def _auto_map_columns(self, silent: bool = False) -> None:
+        """Heuristic auto-mapping between template tokens and spreadsheet column names."""
+        if not self.columns:
+            if not silent:
+                QMessageBox.information(self, "Auto-Map", "No spreadsheet columns available to map.")
+            return
+
+        mapped_new = 0
+        for token in self.template_tokens:
+            clean_tok = token.lower().replace("_", "").replace(" ", "").replace("-", "")
+            for col in self.columns:
+                clean_col = col.lower().replace("_", "").replace(" ", "").replace("-", "")
+                if clean_tok in clean_col or clean_col in clean_tok:
+                    self.field_mappings[token] = col
+                    mapped_new += 1
+                    break
+
+        self._refresh_placeholders_list()
+        self.mappings_changed.emit(self.field_mappings)
+        if not silent:
+            QMessageBox.information(
+                self,
+                "Auto-Map Complete",
+                f"Successfully mapped {len(self.field_mappings)} placeholders to columns.",
+            )
+
+    def _validate_all_records(self) -> None:
+        if not self.records:
+            QMessageBox.information(self, "Validation", "No records loaded to validate.")
+            return
+        report = DataValidator.validate_records(self.records)
+        self.validation_report = report
+        self.pill_errors.set_status(
+            f"ERRORS: {report.missing_pins + len(report.duplicate_pins)}",
+            color=SEMANTIC_ERROR if (report.missing_pins + len(report.duplicate_pins)) > 0 else SEMANTIC_SUCCESS,
+        )
+        msg = (
+            f"Validation Completed:\n\n"
+            f"• Total Records: {len(self.records):,}\n"
+            f"• Valid Records: {report.valid_records:,}\n"
+            f"• Missing PINs: {report.missing_pins}\n"
+            f"• Duplicate PINs: {len(report.duplicate_pins)}\n"
+        )
+        QMessageBox.information(self, "Validation Report", msg)
+
+    def _on_source_column_changed(self) -> None:
+        pass
+
+    def _apply_current_mapping(self) -> None:
+        raw_token = self.lbl_active_token.text().strip("{}")
+        col = self.cmb_source_column.currentText()
+        if col.startswith("(None"):
+            col = ""
+        self.field_mappings[raw_token] = col
+        self._refresh_placeholders_list()
+        self.mappings_changed.emit(self.field_mappings)
 
     def _populate_table(self, records_to_show: List[SourceRecord]) -> None:
         self.table.clear()
@@ -300,14 +641,14 @@ class DataSourcePage(QWidget):
             if not rec.pin:
                 status_item = QTableWidgetItem("MISSING PIN")
                 status_item.setBackground(QColor(239, 68, 68, 60))
-                status_item.setForeground(QColor("#DC2626"))
+                status_item.setForeground(QColor(SEMANTIC_ERROR))
             elif any("Duplicate" in w for w in rec.validation_warnings):
                 status_item = QTableWidgetItem("DUPLICATE")
                 status_item.setBackground(QColor(245, 158, 11, 60))
-                status_item.setForeground(QColor("#D97706"))
+                status_item.setForeground(QColor(SEMANTIC_WARNING))
             else:
                 status_item = QTableWidgetItem("VALID")
-                status_item.setForeground(QColor("#059669"))
+                status_item.setForeground(QColor(SEMANTIC_SUCCESS))
             status_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 1, status_item)
 
@@ -324,7 +665,7 @@ class DataSourcePage(QWidget):
                 item = QTableWidgetItem(val)
                 if not val:
                     # Empty cell highlight
-                    item.setBackground(QColor(241, 245, 249, 100))
+                    item.setBackground(QColor(40, 44, 52, 100))
                 self.table.setItem(row_idx, col_offset + c_idx, item)
 
     def _filter_table(self, query: str) -> None:
@@ -362,8 +703,8 @@ class DataSourcePage(QWidget):
                 lines.append(f"<b>{k}:</b> {v or '<i>empty</i>'}")
 
             if rec.validation_errors:
-                lines.append("<hr><font color='#DC2626'><b>Errors:</b><br>" + "<br>".join(rec.validation_errors) + "</font>")
+                lines.append(f"<hr><font color='{SEMANTIC_ERROR}'><b>Errors:</b><br>" + "<br>".join(rec.validation_errors) + "</font>")
             if rec.validation_warnings:
-                lines.append("<hr><font color='#D97706'><b>Warnings:</b><br>" + "<br>".join(rec.validation_warnings) + "</font>")
+                lines.append(f"<hr><font color='{SEMANTIC_WARNING}'><b>Warnings:</b><br>" + "<br>".join(rec.validation_warnings) + "</font>")
 
             self.lbl_inspect_details.setText("<br>".join(lines))

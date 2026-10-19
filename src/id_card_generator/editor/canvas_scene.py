@@ -49,6 +49,7 @@ class CanvasScene(QGraphicsScene):
 
         self.show_grid = True
         self.show_safe_area = True
+        self.show_bleed = True
 
         self._sample_record: Optional[SourceRecord] = None
         self._sample_photo_path: Optional[str] = None
@@ -365,6 +366,16 @@ class CanvasScene(QGraphicsScene):
             painter.setPen(safe_pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(safe_rect)
+
+        # Bleed guideline indicator (3.0mm = ~35.4px at 300 DPI)
+        if getattr(self, "show_bleed", False):
+            dpi = self.template.dpi if self.template and self.template.dpi else 300
+            bleed_px = 3.0 * dpi / 25.4
+            bleed_rect = scene_rect.adjusted(-bleed_px, -bleed_px, bleed_px, bleed_px)
+            bleed_pen = QPen(QColor("#6EDBA3"), 1.0, Qt.DashLine)
+            painter.setPen(bleed_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(bleed_rect)
 
         # Outer card boundary shadow outline
         painter.setPen(QPen(QColor(148, 163, 184), 1.5))
