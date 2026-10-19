@@ -330,16 +330,31 @@ class PillowRenderer:
             painter = QPainter(qimg)
             painter.setRenderHint(QPainter.TextAntialiasing)
 
-            font = QFont(family)
-            font.setFamilies([
-                family,
-                "Mangal",
-                "Nirmala UI",
-                "Devanagari Sangam MN",
-                "Kohinoor Devanagari",
-                "Noto Sans Devanagari",
-                "Arial",
-            ])
+            has_devanagari = any(0x0900 <= ord(c) <= 0x097F for c in text)
+            is_latin_default = family.lower() in (
+                "arial", "segoe ui", "helvetica", "helvetica neue", "sans-serif", "times new roman", "roboto", "inter"
+            )
+            if has_devanagari and is_latin_default:
+                families = [
+                    "Devanagari Sangam MN",
+                    "Mangal",
+                    "Nirmala UI",
+                    "Kohinoor Devanagari",
+                    "Noto Sans Devanagari",
+                    family,
+                ]
+            else:
+                families = [
+                    family,
+                    "Devanagari Sangam MN",
+                    "Mangal",
+                    "Nirmala UI",
+                    "Kohinoor Devanagari",
+                    "Noto Sans Devanagari",
+                    "Arial",
+                ]
+            font = QFont(families[0])
+            font.setFamilies(families)
             font.setBold(bold)
             font.setItalic(italic)
             font.setStyleStrategy(QFont.PreferAntialias)

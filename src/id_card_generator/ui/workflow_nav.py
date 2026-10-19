@@ -21,7 +21,7 @@ class WorkflowNav(QFrame):
         (WorkflowStep.DATA_SOURCE, "1. Data Source"),
         (WorkflowStep.PHOTOS, "2. Photos"),
         (WorkflowStep.TEMPLATES, "3. Template"),
-        (WorkflowStep.CANVAS_EDITOR, "4. Mapping & Editor"),
+        (WorkflowStep.CANVAS_EDITOR, "4. Mapping && Editor"),
         (WorkflowStep.GENERATE, "5. Generate"),
         (WorkflowStep.REVIEW, "6. Review"),
         (WorkflowStep.EXPORT, "7. Export"),
@@ -38,7 +38,7 @@ class WorkflowNav(QFrame):
         layout.setSpacing(8)
 
         # 0. Dashboard & Settings Button
-        self.btn_dashboard = QPushButton("⌂ Dashboard & Settings")
+        self.btn_dashboard = QPushButton("⌂ Dashboard && Settings")
         self.btn_dashboard.setFlat(True)
         self.btn_dashboard.setCursor(Qt.PointingHandCursor)
         self.btn_dashboard.clicked.connect(lambda: self.step_clicked.emit(WorkflowStep.DASHBOARD.value))

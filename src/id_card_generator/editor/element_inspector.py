@@ -2,8 +2,8 @@
 
 import logging
 from typing import List, Optional
-from PySide6.QtCore import QPointF, QRectF, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -50,6 +50,56 @@ class ElementInspector(QWidget):
         self._available_columns = columns
         self._refresh_binding_combo()
 
+    @staticmethod
+    def _create_color_swatch_icon(color_hex: Optional[str], size: int = 16) -> QIcon:
+        pix = QPixmap(size, size)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        if not color_hex or color_hex.lower() in ("transparent", "none"):
+            p.setPen(QPen(QColor("#52525B"), 1))
+            p.setBrush(QColor("#18181B"))
+            p.drawRoundedRect(1, 1, size - 2, size - 2, 2.5, 2.5)
+            p.setPen(QPen(QColor("#EF4444"), 1.5))
+            p.drawLine(3, size - 4, size - 4, 3)
+        else:
+            c = QColor(color_hex)
+            p.setBrush(c)
+            p.setPen(QPen(QColor("#52525B"), 1))
+            p.drawRoundedRect(1, 1, size - 2, size - 2, 2.5, 2.5)
+        p.end()
+        return QIcon(pix)
+
+    def _set_color_button_state(self, btn: QPushButton, color_hex: Optional[str], default_label: str = "None") -> None:
+        btn.setIcon(self._create_color_swatch_icon(color_hex))
+        btn.setIconSize(QSize(16, 16))
+        if color_hex and color_hex.lower() not in ("transparent", "none"):
+            btn.setText(f" {color_hex.upper()}")
+        else:
+            btn.setText(f" {default_label}")
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #202023;
+                color: #F4F4F5;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+                padding: 2px 8px;
+                text-align: left;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #2A2A2E;
+                border-color: #52525B;
+            }
+            QPushButton:pressed {
+                background-color: #18181B;
+                border-color: #0078D4;
+            }
+        """)
+
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(8, 8, 8, 8)
@@ -67,8 +117,11 @@ class ElementInspector(QWidget):
         self.form_layout.setSpacing(10)
 
         # 1. Identity & Geometry Group
-        geom_group = QGroupBox("Transform & Position")
+        geom_group = QGroupBox("Transform && Position")
         geom_layout = QFormLayout(geom_group)
+        geom_layout.setContentsMargins(8, 12, 8, 8)
+        geom_layout.setHorizontalSpacing(8)
+        geom_layout.setVerticalSpacing(6)
 
         self.txt_name = QLineEdit()
         self.txt_name.textChanged.connect(self._on_name_changed)
@@ -76,21 +129,25 @@ class ElementInspector(QWidget):
 
         self.spin_x = QDoubleSpinBox()
         self.spin_x.setRange(-5000, 5000)
+        self.spin_x.setSuffix(" px")
         self.spin_x.valueChanged.connect(self._on_pos_changed)
-        geom_layout.addRow("X (px):", self.spin_x)
+        geom_layout.addRow("X:", self.spin_x)
 
         self.spin_y = QDoubleSpinBox()
         self.spin_y.setRange(-5000, 5000)
+        self.spin_y.setSuffix(" px")
         self.spin_y.valueChanged.connect(self._on_pos_changed)
-        geom_layout.addRow("Y (px):", self.spin_y)
+        geom_layout.addRow("Y:", self.spin_y)
 
         self.spin_w = QDoubleSpinBox()
         self.spin_w.setRange(5, 5000)
+        self.spin_w.setSuffix(" px")
         self.spin_w.valueChanged.connect(self._on_size_changed)
         geom_layout.addRow("Width:", self.spin_w)
 
         self.spin_h = QDoubleSpinBox()
         self.spin_h.setRange(5, 5000)
+        self.spin_h.setSuffix(" px")
         self.spin_h.valueChanged.connect(self._on_size_changed)
         geom_layout.addRow("Height:", self.spin_h)
 
@@ -101,27 +158,31 @@ class ElementInspector(QWidget):
         self.form_layout.addWidget(geom_group)
 
         # Layer Arrangement Group (Bring to top, send to bottom, step forward/backward)
-        arrange_group = QGroupBox("Layer Order & Stacking")
+        arrange_group = QGroupBox("Layer Order && Stacking")
         arrange_layout = QHBoxLayout(arrange_group)
-        arrange_layout.setContentsMargins(4, 6, 4, 6)
+        arrange_layout.setContentsMargins(6, 12, 6, 8)
         arrange_layout.setSpacing(4)
 
-        self.btn_prop_to_front = QPushButton("To Front ⏫")
+        self.btn_prop_to_front = QPushButton("Top ⏫")
+        self.btn_prop_to_front.setFixedHeight(26)
         self.btn_prop_to_front.setToolTip("Bring element on top of every other element")
         self.btn_prop_to_front.clicked.connect(self._bring_to_front)
         arrange_layout.addWidget(self.btn_prop_to_front)
 
-        self.btn_prop_forward = QPushButton("Forward ▲")
+        self.btn_prop_forward = QPushButton("Up ▲")
+        self.btn_prop_forward.setFixedHeight(26)
         self.btn_prop_forward.setToolTip("Bring element one step forward")
         self.btn_prop_forward.clicked.connect(self._bring_forward)
         arrange_layout.addWidget(self.btn_prop_forward)
 
-        self.btn_prop_backward = QPushButton("Backward ▼")
+        self.btn_prop_backward = QPushButton("Down ▼")
+        self.btn_prop_backward.setFixedHeight(26)
         self.btn_prop_backward.setToolTip("Send element one step backward")
         self.btn_prop_backward.clicked.connect(self._send_backward)
         arrange_layout.addWidget(self.btn_prop_backward)
 
-        self.btn_prop_to_back = QPushButton("To Back ⏬")
+        self.btn_prop_to_back = QPushButton("Bottom ⏬")
+        self.btn_prop_to_back.setFixedHeight(26)
         self.btn_prop_to_back.setToolTip("Send element back to bottom of all elements")
         self.btn_prop_to_back.clicked.connect(self._send_to_back)
         arrange_layout.addWidget(self.btn_prop_to_back)
@@ -131,6 +192,9 @@ class ElementInspector(QWidget):
         # 2. Data Binding Group
         binding_group = QGroupBox("Data Binding")
         binding_layout = QFormLayout(binding_group)
+        binding_layout.setContentsMargins(8, 12, 8, 8)
+        binding_layout.setHorizontalSpacing(8)
+        binding_layout.setVerticalSpacing(6)
 
         self.cmb_binding = QComboBox()
         self.cmb_binding.currentIndexChanged.connect(self._on_binding_changed)
@@ -145,6 +209,9 @@ class ElementInspector(QWidget):
         # 3. Typography Group
         self.type_group = QGroupBox("Typography")
         type_layout = QFormLayout(self.type_group)
+        type_layout.setContentsMargins(8, 12, 8, 8)
+        type_layout.setHorizontalSpacing(8)
+        type_layout.setVerticalSpacing(6)
 
         from id_card_generator.rendering.font_manager import FontManager
         FontManager.register_system_fonts_with_qt()
@@ -163,15 +230,19 @@ class ElementInspector(QWidget):
         type_layout.addRow("Size:", self.spin_font_size)
 
         style_row = QHBoxLayout()
+        style_row.setSpacing(6)
         self.chk_bold = QCheckBox("Bold")
         self.chk_bold.toggled.connect(self._on_bold_toggled)
         self.chk_italic = QCheckBox("Italic")
         self.chk_italic.toggled.connect(self._on_italic_toggled)
         style_row.addWidget(self.chk_bold)
         style_row.addWidget(self.chk_italic)
+        style_row.addStretch()
         type_layout.addRow("Style:", style_row)
 
-        self.btn_font_color = QPushButton("Pick Color")
+        self.btn_font_color = QPushButton()
+        self.btn_font_color.setFixedHeight(28)
+        self._set_color_button_state(self.btn_font_color, "#1A1A1A")
         self.btn_font_color.clicked.connect(self._pick_font_color)
         type_layout.addRow("Text Color:", self.btn_font_color)
 
@@ -268,24 +339,33 @@ class ElementInspector(QWidget):
         self.form_layout.addWidget(self.type_group)
 
         # 4. Appearance & Borders Group
-        self.app_group = QGroupBox("Appearance & Borders")
+        self.app_group = QGroupBox("Appearance && Borders")
         app_layout = QFormLayout(self.app_group)
+        app_layout.setContentsMargins(8, 12, 8, 8)
+        app_layout.setHorizontalSpacing(8)
+        app_layout.setVerticalSpacing(6)
 
-        self.btn_bg_color = QPushButton("Pick Fill Color")
+        self.btn_bg_color = QPushButton()
+        self.btn_bg_color.setFixedHeight(28)
+        self._set_color_button_state(self.btn_bg_color, "transparent", "None (Transparent)")
         self.btn_bg_color.clicked.connect(self._pick_bg_color)
         app_layout.addRow("Background:", self.btn_bg_color)
 
-        self.btn_border_color = QPushButton("Pick Border Color")
+        self.btn_border_color = QPushButton()
+        self.btn_border_color.setFixedHeight(28)
+        self._set_color_button_state(self.btn_border_color, "transparent", "None (Transparent)")
         self.btn_border_color.clicked.connect(self._pick_border_color)
         app_layout.addRow("Border Color:", self.btn_border_color)
 
         self.spin_border_width = QSpinBox()
         self.spin_border_width.setRange(0, 50)
+        self.spin_border_width.setSuffix(" px")
         self.spin_border_width.valueChanged.connect(self._on_border_width_changed)
         app_layout.addRow("Border Width:", self.spin_border_width)
 
         self.spin_border_radius = QSpinBox()
         self.spin_border_radius.setRange(0, 500)
+        self.spin_border_radius.setSuffix(" px")
         self.spin_border_radius.valueChanged.connect(self._on_border_radius_changed)
         app_layout.addRow("Corner Radius:", self.spin_border_radius)
 
@@ -294,6 +374,9 @@ class ElementInspector(QWidget):
         # 5. Image & Masking Group
         self.img_group = QGroupBox("Photo / Image Options")
         img_layout = QFormLayout(self.img_group)
+        img_layout.setContentsMargins(8, 12, 8, 8)
+        img_layout.setHorizontalSpacing(8)
+        img_layout.setVerticalSpacing(6)
 
         self.cmb_mask = QComboBox()
         self.cmb_mask.addItems(["rect", "circle", "rounded"])
@@ -361,15 +444,11 @@ class ElementInspector(QWidget):
         self.chk_bold.setChecked(elem.style.font_bold)
         self.chk_italic.setChecked(elem.style.font_italic)
         self._set_align_ui(elem.style.text_align)
-        self.btn_font_color.setStyleSheet(f"background-color: {elem.style.font_color}; color: #FFFFFF;")
+        self._set_color_button_state(self.btn_font_color, elem.style.font_color, "#1A1A1A")
 
         # Appearance
-        self.btn_bg_color.setStyleSheet(
-            f"background-color: {elem.style.background_color};" if elem.style.background_color != 'transparent' else ""
-        )
-        self.btn_border_color.setStyleSheet(
-            f"background-color: {elem.style.border_color};" if elem.style.border_color != 'transparent' else ""
-        )
+        self._set_color_button_state(self.btn_bg_color, elem.style.background_color, "None (Transparent)")
+        self._set_color_button_state(self.btn_border_color, elem.style.border_color, "None (Transparent)")
         self.spin_border_width.setValue(elem.style.border_width)
         self.spin_border_radius.setValue(elem.style.border_radius)
 
@@ -535,32 +614,39 @@ class ElementInspector(QWidget):
 
     def _pick_font_color(self):
         if self._current_item:
-            c = QColorDialog.getColor(QColor(self._current_item.element.style.font_color), self)
+            initial = self._current_item.element.style.font_color or "#1A1A1A"
+            c = QColorDialog.getColor(QColor(initial), self, "Select Text Color")
             if c.isValid():
                 hex_c = c.name().upper()
                 def _update():
                     self._current_item.element.style.font_color = hex_c
-                    self.btn_font_color.setStyleSheet(f"background-color: {hex_c}; color: #FFFFFF;")
+                    self._set_color_button_state(self.btn_font_color, hex_c)
                 self._apply_change(_update, "Change Font Color")
 
     def _pick_bg_color(self):
         if self._current_item:
-            c = QColorDialog.getColor(QColor("#FFFFFF"), self)
+            initial = self._current_item.element.style.background_color
+            if not initial or initial.lower() == "transparent":
+                initial = "#FFFFFF"
+            c = QColorDialog.getColor(QColor(initial), self, "Select Background Fill Color")
             if c.isValid():
                 hex_c = c.name().upper()
                 def _update():
                     self._current_item.element.style.background_color = hex_c
-                    self.btn_bg_color.setStyleSheet(f"background-color: {hex_c};")
+                    self._set_color_button_state(self.btn_bg_color, hex_c, "None (Transparent)")
                 self._apply_change(_update, "Change Fill Color")
 
     def _pick_border_color(self):
         if self._current_item:
-            c = QColorDialog.getColor(QColor("#000000"), self)
+            initial = self._current_item.element.style.border_color
+            if not initial or initial.lower() == "transparent":
+                initial = "#000000"
+            c = QColorDialog.getColor(QColor(initial), self, "Select Border Color")
             if c.isValid():
                 hex_c = c.name().upper()
                 def _update():
                     self._current_item.element.style.border_color = hex_c
-                    self.btn_border_color.setStyleSheet(f"background-color: {hex_c};")
+                    self._set_color_button_state(self.btn_border_color, hex_c, "None (Transparent)")
                 self._apply_change(_update, "Change Border Color")
 
     def _on_border_width_changed(self, val: int):
