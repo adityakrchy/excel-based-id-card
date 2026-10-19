@@ -3,8 +3,8 @@
 import logging
 from pathlib import Path
 from typing import Optional
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
 )
 
@@ -143,18 +144,25 @@ class BlankCanvasDialog(QDialog):
         layout.addWidget(form_group)
 
         # Background properties
-        bg_group = QGroupBox("Card Surface & Background")
+        bg_group = QGroupBox("Card Surface && Background")
         bg_layout = QFormLayout(bg_group)
 
         # Color picker
         color_box = QHBoxLayout()
-        self.btn_bg_color = QPushButton()
-        self.btn_bg_color.setFixedSize(36, 24)
-        self._update_color_btn()
+        color_box.setSpacing(8)
+        self.btn_bg_color = QToolButton()
+        self.btn_bg_color.setFixedSize(28, 28)
+        self.btn_bg_color.setToolTip("Select Card Background Color")
         self.btn_bg_color.clicked.connect(self._pick_color)
+        self._update_color_btn()
         color_box.addWidget(self.btn_bg_color)
         self.lbl_color_hex = QLabel(self._bg_color)
+        self.lbl_color_hex.setStyleSheet("font-family: monospace; font-size: 12px; color: #E4E4E7;")
         color_box.addWidget(self.lbl_color_hex)
+        btn_change = QPushButton("Change Color...")
+        btn_change.setFixedHeight(28)
+        btn_change.clicked.connect(self._pick_color)
+        color_box.addWidget(btn_change)
         color_box.addStretch()
         bg_layout.addRow("Background Color:", color_box)
 
@@ -307,7 +315,28 @@ class BlankCanvasDialog(QDialog):
             self._update_color_btn()
 
     def _update_color_btn(self) -> None:
-        self.btn_bg_color.setStyleSheet(f"background-color: {self._bg_color}; border: 1px solid #64748B; border-radius: 4px;")
+        c = QColor(self._bg_color) if self._bg_color else QColor("#FFFFFF")
+        pix = QPixmap(22, 22)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(c)
+        p.setPen(QPen(QColor("#52525B"), 1))
+        p.drawRoundedRect(1, 1, 20, 20, 3, 3)
+        p.end()
+        self.btn_bg_color.setIcon(QIcon(pix))
+        self.btn_bg_color.setIconSize(QSize(22, 22))
+        self.btn_bg_color.setStyleSheet("""
+            QToolButton {
+                background-color: #202023;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+            }
+            QToolButton:hover {
+                border-color: #52525B;
+                background-color: #2A2A2E;
+            }
+        """)
         if hasattr(self, "lbl_color_hex"):
             self.lbl_color_hex.setText(self._bg_color)
 

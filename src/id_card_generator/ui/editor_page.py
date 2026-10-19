@@ -156,20 +156,31 @@ class EditorPage(QWidget):
 
         self.opt_layout.addWidget(self.stack_context, stretch=1)
 
+        # Separator before action buttons
+        sep_act = QFrame()
+        sep_act.setFrameShape(QFrame.Shape.VLine)
+        sep_act.setFrameShadow(QFrame.Shadow.Sunken)
+        sep_act.setStyleSheet("color: #3F3F46; max-height: 20px;")
+        self.opt_layout.addWidget(sep_act)
+
         # Common action buttons on far right of options bar
         self.btn_undo = QPushButton("↶ Undo")
+        self.btn_undo.setFixedHeight(28)
         self.btn_undo.setToolTip("Undo last action (Ctrl+Z / Cmd+Z)")
         self.opt_layout.addWidget(self.btn_undo)
 
         self.btn_redo = QPushButton("↷ Redo")
+        self.btn_redo.setFixedHeight(28)
         self.btn_redo.setToolTip("Redo last action (Ctrl+Y / Cmd+Y)")
         self.opt_layout.addWidget(self.btn_redo)
 
         self.btn_dup = QPushButton("⧉ Duplicate")
+        self.btn_dup.setFixedHeight(28)
         self.btn_dup.clicked.connect(self.scene.duplicate_selected)
         self.opt_layout.addWidget(self.btn_dup)
 
         self.btn_del = QPushButton("🗑 Delete")
+        self.btn_del.setFixedHeight(28)
         self.btn_del.setObjectName("btn_danger")
         self.btn_del.clicked.connect(self.scene.delete_selected)
         self.opt_layout.addWidget(self.btn_del)
@@ -320,23 +331,29 @@ class EditorPage(QWidget):
     def _create_doc_context_page(self) -> QWidget:
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        layout.addWidget(QLabel("<b>Document:</b>"))
+        lbl_doc = QLabel("<b>Document:</b>")
+        lbl_doc.setStyleSheet("color: #E4E4E7; font-size: 12px; margin-right: 2px;")
+        layout.addWidget(lbl_doc)
         self.lbl_ctx_doc_dims = QLabel("CR80 Standard")
+        self.lbl_ctx_doc_dims.setStyleSheet("color: #A1A1AA; font-size: 12px;")
         layout.addWidget(self.lbl_ctx_doc_dims)
 
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         btn_zoom_in = QPushButton("+ Zoom")
+        btn_zoom_in.setFixedHeight(28)
         btn_zoom_in.clicked.connect(self.view.zoom_in)
         layout.addWidget(btn_zoom_in)
 
         btn_zoom_out = QPushButton("- Zoom")
+        btn_zoom_out.setFixedHeight(28)
         btn_zoom_out.clicked.connect(self.view.zoom_out)
         layout.addWidget(btn_zoom_out)
 
-        layout.addSpacing(10)
+        layout.addSpacing(6)
         # Snapping and Smart Guides Controls
         self._setup_snapping_ui(layout)
 
@@ -350,6 +367,7 @@ class EditorPage(QWidget):
         self.btn_guides_toggle.setText("⚡ Guides")
         self.btn_guides_toggle.setCheckable(True)
         self.btn_guides_toggle.setChecked(self.scene.snap_settings.smart_guides_enabled)
+        self.btn_guides_toggle.setFixedHeight(28)
         self.btn_guides_toggle.setToolTip("Toggle Smart Alignment Guides (Magenta Lines)")
         self.btn_guides_toggle.toggled.connect(self._on_guides_toggled)
         layout.addWidget(self.btn_guides_toggle)
@@ -359,6 +377,7 @@ class EditorPage(QWidget):
         self.btn_snap_toggle.setText("🧲 Snap")
         self.btn_snap_toggle.setCheckable(True)
         self.btn_snap_toggle.setChecked(self.scene.snap_settings.object_snapping_enabled)
+        self.btn_snap_toggle.setFixedHeight(28)
         self.btn_snap_toggle.setToolTip("Toggle Magnetic Object Snapping (Hold Alt while dragging to bypass)")
         self.btn_snap_toggle.toggled.connect(self._on_snap_toggled)
         layout.addWidget(self.btn_snap_toggle)
@@ -366,6 +385,7 @@ class EditorPage(QWidget):
         # 3. Settings dropdown menu
         self.btn_snap_menu = QToolButton()
         self.btn_snap_menu.setText("Snapping ▾")
+        self.btn_snap_menu.setFixedHeight(28)
         self.btn_snap_menu.setPopupMode(QToolButton.InstantPopup)
         self.btn_snap_menu.setToolTip("Smart Alignment, Spacing, and Grid Snapping Options")
 
@@ -382,12 +402,12 @@ class EditorPage(QWidget):
         self.act_snap.setChecked(self.scene.snap_settings.object_snapping_enabled)
         self.act_snap.toggled.connect(self._on_snap_toggled)
 
-        self.act_spacing = menu.addAction("Smart Spacing & Distribution")
+        self.act_spacing = menu.addAction("Smart Spacing && Distribution")
         self.act_spacing.setCheckable(True)
         self.act_spacing.setChecked(self.scene.snap_settings.smart_spacing_enabled)
         self.act_spacing.toggled.connect(self.scene.set_smart_spacing_enabled)
 
-        self.act_canvas = menu.addAction("Snap to Canvas Bounds & Center")
+        self.act_canvas = menu.addAction("Snap to Canvas Bounds && Center")
         self.act_canvas.setCheckable(True)
         self.act_canvas.setChecked(self.scene.snap_settings.snap_to_canvas_enabled)
         self.act_canvas.toggled.connect(self.scene.set_snap_to_canvas_enabled)
@@ -668,28 +688,83 @@ class EditorPage(QWidget):
     def _create_shape_context_page(self) -> QWidget:
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        layout.addWidget(QLabel("<b>Shape:</b>"))
+        lbl_shape = QLabel("<b>Shape:</b>")
+        lbl_shape.setStyleSheet("color: #E4E4E7; font-size: 12px; margin-right: 2px;")
+        layout.addWidget(lbl_shape)
 
-        self.ctx_btn_fill = QPushButton("Fill")
+        self.ctx_btn_fill = QToolButton()
+        self.ctx_btn_fill.setObjectName("ctx_fill_btn")
+        self.ctx_btn_fill.setFixedSize(28, 28)
+        self.ctx_btn_fill.setToolTip("Shape Fill Color")
+        self.ctx_btn_fill.setIcon(self._create_shape_fill_icon("#E2E8F0"))
+        self.ctx_btn_fill.setIconSize(QSize(22, 22))
+        self.ctx_btn_fill.setStyleSheet("""
+            QToolButton#ctx_fill_btn {
+                background-color: #262629;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+            }
+            QToolButton#ctx_fill_btn:hover {
+                background-color: #333338;
+                border-color: #52525B;
+            }
+            QToolButton#ctx_fill_btn:pressed {
+                background-color: #202023;
+            }
+        """)
         self.ctx_btn_fill.clicked.connect(self._on_ctx_fill_clicked)
         layout.addWidget(self.ctx_btn_fill)
 
-        self.ctx_btn_stroke = QPushButton("Stroke")
+        self.ctx_btn_stroke = QToolButton()
+        self.ctx_btn_stroke.setObjectName("ctx_stroke_btn")
+        self.ctx_btn_stroke.setFixedSize(28, 28)
+        self.ctx_btn_stroke.setToolTip("Shape Stroke Color")
+        self.ctx_btn_stroke.setIcon(self._create_shape_stroke_icon("#0078D4"))
+        self.ctx_btn_stroke.setIconSize(QSize(22, 22))
+        self.ctx_btn_stroke.setStyleSheet("""
+            QToolButton#ctx_stroke_btn {
+                background-color: #262629;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+            }
+            QToolButton#ctx_stroke_btn:hover {
+                background-color: #333338;
+                border-color: #52525B;
+            }
+            QToolButton#ctx_stroke_btn:pressed {
+                background-color: #202023;
+            }
+        """)
         self.ctx_btn_stroke.clicked.connect(self._on_ctx_stroke_clicked)
         layout.addWidget(self.ctx_btn_stroke)
 
-        layout.addWidget(QLabel("Width:"))
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        sep.setStyleSheet("color: #3F3F46; max-height: 20px;")
+        layout.addWidget(sep)
+
+        lbl_w = QLabel("Width:")
+        lbl_w.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        layout.addWidget(lbl_w)
         self.ctx_spin_stroke_w = QSpinBox()
         self.ctx_spin_stroke_w.setRange(0, 50)
+        self.ctx_spin_stroke_w.setSuffix(" px")
+        self.ctx_spin_stroke_w.setFixedHeight(28)
         self.ctx_spin_stroke_w.valueChanged.connect(self._on_ctx_stroke_w_changed)
         layout.addWidget(self.ctx_spin_stroke_w)
 
-        layout.addWidget(QLabel("Radius:"))
+        lbl_r = QLabel("Radius:")
+        lbl_r.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        layout.addWidget(lbl_r)
         self.ctx_spin_radius = QSpinBox()
         self.ctx_spin_radius.setRange(0, 500)
+        self.ctx_spin_radius.setSuffix(" px")
+        self.ctx_spin_radius.setFixedHeight(28)
         self.ctx_spin_radius.valueChanged.connect(self._on_ctx_radius_changed)
         layout.addWidget(self.ctx_spin_radius)
 
@@ -699,20 +774,29 @@ class EditorPage(QWidget):
     def _create_photo_context_page(self) -> QWidget:
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        layout.addWidget(QLabel("<b>Photo / Image:</b>"))
+        lbl_photo = QLabel("<b>Photo / Image:</b>")
+        lbl_photo.setStyleSheet("color: #E4E4E7; font-size: 12px; margin-right: 2px;")
+        layout.addWidget(lbl_photo)
 
-        layout.addWidget(QLabel("Fit:"))
+        lbl_fit = QLabel("Fit:")
+        lbl_fit.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        layout.addWidget(lbl_fit)
         self.ctx_cmb_fit = QComboBox()
         self.ctx_cmb_fit.addItems(["cover", "contain", "stretch", "crop"])
+        self.ctx_cmb_fit.setFixedHeight(28)
         self.ctx_cmb_fit.currentTextChanged.connect(self._on_ctx_fit_changed)
         layout.addWidget(self.ctx_cmb_fit)
 
-        layout.addWidget(QLabel("Mask:"))
+        lbl_mask = QLabel("Mask:")
+        lbl_mask.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        layout.addWidget(lbl_mask)
         self.ctx_cmb_mask = QComboBox()
         self.ctx_cmb_mask.addItems(["rect", "circle", "rounded"])
+        self.ctx_cmb_mask.setFixedHeight(28)
         self.ctx_cmb_mask.currentTextChanged.connect(self._on_ctx_mask_changed)
         layout.addWidget(self.ctx_cmb_mask)
 
@@ -919,6 +1003,10 @@ class EditorPage(QWidget):
             self.ctx_btn_color.setIcon(self._create_color_icon(elem.style.font_color))
         elif elem.type in ("rect", "round_rect", "line"):
             self.stack_context.setCurrentIndex(2)
+            self._current_fill_color = elem.style.background_color
+            self._current_stroke_color = elem.style.border_color
+            self.ctx_btn_fill.setIcon(self._create_shape_fill_icon(elem.style.background_color))
+            self.ctx_btn_stroke.setIcon(self._create_shape_stroke_icon(elem.style.border_color))
             self.ctx_spin_stroke_w.setValue(elem.style.border_width)
             self.ctx_spin_radius.setValue(elem.style.border_radius)
         elif elem.type in ("photo", "image"):
@@ -1092,17 +1180,66 @@ class EditorPage(QWidget):
     def _on_ctx_align_changed(self, align: str) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "text_align", align), "Change Alignment")
 
+    def _create_shape_fill_icon(self, color_hex: Optional[str], size: int = 22) -> QIcon:
+        pix = QPixmap(size, size)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        if not color_hex or color_hex.lower() in ("transparent", "none"):
+            p.setPen(QPen(QColor("#52525B"), 1))
+            p.setBrush(QColor("#18181B"))
+            p.drawRoundedRect(3, 3, size - 6, size - 6, 2.5, 2.5)
+            p.setPen(QPen(QColor("#EF4444"), 1.5))
+            p.drawLine(4, size - 5, size - 5, 4)
+        else:
+            c = QColor(color_hex)
+            p.setBrush(c)
+            p.setPen(QPen(QColor("#52525B"), 0.8))
+            p.drawRoundedRect(3, 3, size - 6, size - 6, 2.5, 2.5)
+        p.end()
+        return QIcon(pix)
+
+    def _create_shape_stroke_icon(self, color_hex: Optional[str], size: int = 22) -> QIcon:
+        pix = QPixmap(size, size)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        if not color_hex or color_hex.lower() in ("transparent", "none"):
+            p.setPen(QPen(QColor("#52525B"), 1))
+            p.drawRoundedRect(3, 3, size - 6, size - 6, 2.5, 2.5)
+            p.setPen(QPen(QColor("#EF4444"), 1.5))
+            p.drawLine(4, size - 5, size - 5, 4)
+        else:
+            c = QColor(color_hex)
+            p.setBrush(Qt.transparent)
+            p.setPen(QPen(c, 2.5))
+            p.drawRoundedRect(4, 4, size - 8, size - 8, 2.0, 2.0)
+        p.end()
+        return QIcon(pix)
+
     def _on_ctx_fill_clicked(self) -> None:
-        col = QColorDialog.getColor(QColor("#E2E8F0"), self, "Select Shape Fill Color")
+        initial = getattr(self, "_current_fill_color", "#E2E8F0")
+        if not initial or initial.lower() == "transparent":
+            initial = "#FFFFFF"
+        col = QColorDialog.getColor(QColor(initial), self, "Select Shape Fill Color")
         if col.isValid():
             hex_col = col.name().upper()
+            self._current_fill_color = hex_col
             self._apply_context_change(lambda it: setattr(it.element.style, "background_color", hex_col), "Change Fill Color")
+            self.ctx_btn_fill.setIcon(self._create_shape_fill_icon(hex_col))
 
     def _on_ctx_stroke_clicked(self) -> None:
-        col = QColorDialog.getColor(QColor("#0078D4"), self, "Select Shape Stroke Color")
+        initial = getattr(self, "_current_stroke_color", "#0078D4")
+        if not initial or initial.lower() == "transparent":
+            initial = "#000000"
+        col = QColorDialog.getColor(QColor(initial), self, "Select Shape Stroke Color")
         if col.isValid():
             hex_col = col.name().upper()
+            self._current_stroke_color = hex_col
             self._apply_context_change(lambda it: setattr(it.element.style, "border_color", hex_col), "Change Stroke Color")
+            self.ctx_btn_stroke.setIcon(self._create_shape_stroke_icon(hex_col))
 
     def _on_ctx_stroke_w_changed(self, val: int) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "border_width", val), "Change Stroke Width")

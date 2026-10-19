@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 from PIL import Image
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPixmap
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QColorDialog,
     QFileDialog,
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -264,7 +265,7 @@ class TemplatePage(QWidget):
         prop_layout.addWidget(grp_overview)
 
         # 2. Dimensions & Quality Specifications Group
-        grp_specs = QGroupBox("Dimensions & Specifications")
+        grp_specs = QGroupBox("Dimensions && Specifications")
         specs_layout = QVBoxLayout(grp_specs)
         self.lbl_tmpl_specs = QLabel("")
         self.lbl_tmpl_specs.setStyleSheet("font-family: monospace; color: #38BDF8; font-size: 11px; line-height: 1.4;")
@@ -272,19 +273,23 @@ class TemplatePage(QWidget):
         prop_layout.addWidget(grp_specs)
 
         # 3. Surface & Background Properties Group
-        grp_surface = QGroupBox("Card Surface & Background")
+        grp_surface = QGroupBox("Card Surface && Background")
         surface_layout = QFormLayout(grp_surface)
 
         color_row = QHBoxLayout()
-        self.btn_prop_bg_color = QPushButton()
-        self.btn_prop_bg_color.setFixedSize(36, 22)
+        color_row.setSpacing(8)
+        self.btn_prop_bg_color = QToolButton()
+        self.btn_prop_bg_color.setFixedSize(28, 28)
+        self.btn_prop_bg_color.setToolTip("Select Card Background Color")
         self.btn_prop_bg_color.clicked.connect(self._pick_prop_color)
         color_row.addWidget(self.btn_prop_bg_color)
 
         self.lbl_prop_bg_hex = QLabel("#FFFFFF")
+        self.lbl_prop_bg_hex.setStyleSheet("font-family: monospace; font-size: 12px; color: #E4E4E7;")
         color_row.addWidget(self.lbl_prop_bg_hex)
 
         btn_change_col = QPushButton("Change Color...")
+        btn_change_col.setFixedHeight(28)
         btn_change_col.clicked.connect(self._pick_prop_color)
         color_row.addWidget(btn_change_col)
         color_row.addStretch()
@@ -464,9 +469,28 @@ class TemplatePage(QWidget):
                 self._update_preview(temp_preview)
 
     def _update_prop_color_btn(self) -> None:
-        self.btn_prop_bg_color.setStyleSheet(
-            f"background-color: {self._current_bg_color}; border: 1px solid #64748B; border-radius: 4px;"
-        )
+        c = QColor(self._current_bg_color) if self._current_bg_color else QColor("#FFFFFF")
+        pix = QPixmap(22, 22)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(c)
+        p.setPen(QPen(QColor("#52525B"), 1))
+        p.drawRoundedRect(1, 1, 20, 20, 3, 3)
+        p.end()
+        self.btn_prop_bg_color.setIcon(QIcon(pix))
+        self.btn_prop_bg_color.setIconSize(QSize(22, 22))
+        self.btn_prop_bg_color.setStyleSheet("""
+            QToolButton {
+                background-color: #202023;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+            }
+            QToolButton:hover {
+                border-color: #52525B;
+                background-color: #2A2A2E;
+            }
+        """)
         self.lbl_prop_bg_hex.setText(self._current_bg_color)
 
     def _browse_prop_image(self) -> None:

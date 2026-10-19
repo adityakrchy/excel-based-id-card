@@ -506,16 +506,31 @@ class CanvasItem(QGraphicsObject):
             dpi = scene.template.dpi
 
         font_size_pt = float(elem.style.font_size)
-        font = QFont(elem.style.font_family)
-        font.setFamilies([
-            elem.style.font_family,
-            "Mangal",
-            "Nirmala UI",
-            "Devanagari Sangam MN",
-            "Kohinoor Devanagari",
-            "Noto Sans Devanagari",
-            "Arial",
-        ])
+        has_devanagari = any(0x0900 <= ord(c) <= 0x097F for c in text)
+        is_latin_default = elem.style.font_family.lower() in (
+            "arial", "segoe ui", "helvetica", "helvetica neue", "sans-serif", "times new roman", "roboto", "inter"
+        )
+        if has_devanagari and is_latin_default:
+            families = [
+                "Devanagari Sangam MN",
+                "Mangal",
+                "Nirmala UI",
+                "Kohinoor Devanagari",
+                "Noto Sans Devanagari",
+                elem.style.font_family,
+            ]
+        else:
+            families = [
+                elem.style.font_family,
+                "Devanagari Sangam MN",
+                "Mangal",
+                "Nirmala UI",
+                "Kohinoor Devanagari",
+                "Noto Sans Devanagari",
+                "Arial",
+            ]
+        font = QFont(families[0])
+        font.setFamilies(families)
         font.setBold(elem.style.font_bold)
         font.setItalic(elem.style.font_italic)
         font.setStyleStrategy(QFont.PreferAntialias)

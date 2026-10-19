@@ -494,14 +494,14 @@ QFrame#ctx_align_rect QToolButton#btn_align_right, QFrame#insp_align_rect QToolB
     border-top-right-radius: 3px;
     border-bottom-right-radius: 3px;
 }
-QToolButton#ctx_bold_btn, QToolButton#ctx_italic_btn {
+QToolButton#ctx_bold_btn, QToolButton#ctx_italic_btn, QToolButton#ctx_color_btn, QToolButton#ctx_fill_btn, QToolButton#ctx_stroke_btn {
     background-color: #262629;
     color: #E4E4E7;
     border: 1px solid #3F3F46;
     border-radius: 4px;
     font-size: 13px;
 }
-QToolButton#ctx_bold_btn:hover, QToolButton#ctx_italic_btn:hover {
+QToolButton#ctx_bold_btn:hover, QToolButton#ctx_italic_btn:hover, QToolButton#ctx_color_btn:hover, QToolButton#ctx_fill_btn:hover, QToolButton#ctx_stroke_btn:hover {
     background-color: #333338;
     border-color: #52525B;
 }
@@ -509,6 +509,9 @@ QToolButton#ctx_bold_btn:checked, QToolButton#ctx_italic_btn:checked {
     background-color: #0078D4;
     color: #FFFFFF;
     border-color: #005A9E;
+}
+QToolButton#ctx_color_btn:pressed, QToolButton#ctx_fill_btn:pressed, QToolButton#ctx_stroke_btn:pressed {
+    background-color: #202023;
 }
 """
         return stylesheet.replace("__CHEVRON_DARK_URL__", chevron_dark).replace("__CHEVRON_UP_DARK_URL__", chevron_up_dark)
@@ -894,14 +897,14 @@ QFrame#ctx_align_rect QToolButton#btn_align_right, QFrame#insp_align_rect QToolB
     border-top-right-radius: 3px;
     border-bottom-right-radius: 3px;
 }
-QToolButton#ctx_bold_btn, QToolButton#ctx_italic_btn {
+QToolButton#ctx_bold_btn, QToolButton#ctx_italic_btn, QToolButton#ctx_color_btn, QToolButton#ctx_fill_btn, QToolButton#ctx_stroke_btn {
     background-color: #F9FAFB;
     color: #1F2937;
     border: 1px solid #D1D5DB;
     border-radius: 4px;
     font-size: 13px;
 }
-QToolButton#ctx_bold_btn:hover, QToolButton#ctx_italic_btn:hover {
+QToolButton#ctx_bold_btn:hover, QToolButton#ctx_italic_btn:hover, QToolButton#ctx_color_btn:hover, QToolButton#ctx_fill_btn:hover, QToolButton#ctx_stroke_btn:hover {
     background-color: #F3F4F6;
     border-color: #9CA3AF;
 }
@@ -909,6 +912,9 @@ QToolButton#ctx_bold_btn:checked, QToolButton#ctx_italic_btn:checked {
     background-color: #0067C0;
     color: #FFFFFF;
     border-color: #005A9E;
+}
+QToolButton#ctx_color_btn:pressed, QToolButton#ctx_fill_btn:pressed, QToolButton#ctx_stroke_btn:pressed {
+    background-color: #E5E7EB;
 }
 """
         return stylesheet.replace("__CHEVRON_LIGHT_URL__", chevron_light).replace("__CHEVRON_UP_LIGHT_URL__", chevron_up_light)
