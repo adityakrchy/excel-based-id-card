@@ -15,7 +15,7 @@ from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY
 
 
 class StudioHeaderBar(QFrame):
-    """Studio top header bar featuring document lockup, undo/save, and local sync badge."""
+    """Studio top header bar featuring document lockup, undo/save, and local sync badge per Stitch Screen c0960262ecc9."""
 
     undo_requested = Signal()
     redo_requested = Signal()
@@ -30,32 +30,38 @@ class StudioHeaderBar(QFrame):
         self.setFixedHeight(36)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 0, 12, 0)
+        layout.setContentsMargins(14, 0, 14, 0)
         layout.setSpacing(10)
 
-        # Left Group: Brand + Project File + Dirty Dot + Quick Tools
+        # -------------------------------------------------------------
+        # Left Group: ID STUDIO brand + Version Pill + Repository Path
+        # -------------------------------------------------------------
         left_layout = QHBoxLayout()
-        left_layout.setSpacing(6)
+        left_layout.setSpacing(8)
 
-        self.lbl_logo = QLabel("🪪")
-        self.lbl_logo.setStyleSheet("font-size: 14px;")
-        left_layout.addWidget(self.lbl_logo)
-
-        self.lbl_brand = QLabel("ID Studio")
+        self.lbl_brand = QLabel("ID STUDIO")
         self.lbl_brand.setStyleSheet(
-            f"color: {COLORS.ON_SURFACE}; font-family: {TYPOGRAPHY.FONT_FAMILY_UI}; "
-            f"font-size: 13px; font-weight: 700; letter-spacing: -0.01em;"
+            f"color: #FFFFFF; font-family: {TYPOGRAPHY.FONT_FAMILY_UI}; "
+            f"font-size: 12px; font-weight: 800; letter-spacing: 0.08em;"
         )
         left_layout.addWidget(self.lbl_brand)
 
-        lbl_slash = QLabel("/")
-        lbl_slash.setStyleSheet(f"color: {COLORS.BORDER_HAIRLINE}; font-size: 12px;")
-        left_layout.addWidget(lbl_slash)
+        self.lbl_version_badge = QLabel("v2.4.1 Enterprise")
+        self.lbl_version_badge.setStyleSheet(
+            f"background-color: {COLORS.SURFACE_CONTAINER}; color: #8E909F; "
+            f"border: 1px solid {COLORS.BORDER_HAIRLINE}; border-radius: 3px; "
+            f"font-family: {TYPOGRAPHY.FONT_FAMILY_MONO}; font-size: 10px; font-weight: 600; "
+            f"padding: 1px 6px;"
+        )
+        left_layout.addWidget(self.lbl_version_badge)
 
-        self.lbl_project_name = QLabel("Untitled.idproj")
+        self.lbl_slash = QLabel("/")
+        self.lbl_slash.setStyleSheet("color: #4A4D57; font-size: 11px;")
+        left_layout.addWidget(self.lbl_slash)
+
+        self.lbl_project_name = QLabel("Workspace Root :: Central Secure Credential Repository")
         self.lbl_project_name.setStyleSheet(
-            f"color: {COLORS.ON_SURFACE_VARIANT}; font-family: {TYPOGRAPHY.FONT_FAMILY_MONO}; "
-            f"font-size: 11px;"
+            f"color: #8E909F; font-family: {TYPOGRAPHY.FONT_FAMILY_MONO}; font-size: 11px;"
         )
         left_layout.addWidget(self.lbl_project_name)
 
@@ -66,59 +72,66 @@ class StudioHeaderBar(QFrame):
         self.lbl_dirty_dot.setVisible(False)
         left_layout.addWidget(self.lbl_dirty_dot)
 
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.VLine)
-        sep1.setFixedHeight(14)
-        sep1.setStyleSheet(f"background-color: {COLORS.BORDER_HAIRLINE};")
-        left_layout.addWidget(sep1)
-
-        # Quick action buttons
+        # Hidden/Compact action buttons kept for compatibility
         self.btn_new = self._create_icon_btn("📄", "New Project (Ctrl+N)")
         self.btn_new.clicked.connect(self.new_requested.emit)
+        self.btn_new.setVisible(False)
         left_layout.addWidget(self.btn_new)
 
         self.btn_open = self._create_icon_btn("📁", "Open Project (Ctrl+O)")
         self.btn_open.clicked.connect(self.open_requested.emit)
+        self.btn_open.setVisible(False)
         left_layout.addWidget(self.btn_open)
 
         self.btn_save = self._create_icon_btn("💾", "Save Project (Ctrl+S)")
         self.btn_save.clicked.connect(self.save_requested.emit)
+        self.btn_save.setVisible(False)
         left_layout.addWidget(self.btn_save)
 
         self.btn_undo = self._create_icon_btn("↶", "Undo (Ctrl+Z)")
         self.btn_undo.clicked.connect(self.undo_requested.emit)
+        self.btn_undo.setVisible(False)
         left_layout.addWidget(self.btn_undo)
 
         self.btn_redo = self._create_icon_btn("↷", "Redo (Ctrl+Y)")
         self.btn_redo.clicked.connect(self.redo_requested.emit)
+        self.btn_redo.setVisible(False)
         left_layout.addWidget(self.btn_redo)
 
         layout.addLayout(left_layout)
         layout.addStretch()
 
-        # Center Group: Auto-Saved Status Pill
-        self.status_pill = StatusPill(text="Auto-saved (Local)", dot_color=COLORS.TERTIARY)
-        layout.addWidget(self.status_pill)
-        layout.addStretch()
-
-        # Right Group: Theme & Options
+        # -------------------------------------------------------------
+        # Right Group: CLUSTER ONLINE Status Pill + Window Controls
+        # -------------------------------------------------------------
         right_layout = QHBoxLayout()
-        right_layout.setSpacing(6)
+        right_layout.setSpacing(10)
 
+        self.status_pill = StatusPill(text="CLUSTER ONLINE", dot_color=COLORS.TERTIARY)
+        self.status_pill.setStyleSheet(
+            f"QFrame#status_pill {{ background-color: transparent; border: none; }}"
+        )
+        right_layout.addWidget(self.status_pill)
+
+        # Window Controls Mock (per design screenshot)
+        win_controls = QHBoxLayout()
+        win_controls.setSpacing(6)
+        btn_min = QLabel("—")
+        btn_min.setStyleSheet("color: #8E909F; font-size: 11px; padding: 0 4px;")
+        btn_max = QLabel("□")
+        btn_max.setStyleSheet("color: #8E909F; font-size: 11px; padding: 0 4px;")
+        btn_close = QLabel("✕")
+        btn_close.setStyleSheet("color: #8E909F; font-size: 11px; padding: 0 4px;")
+        win_controls.addWidget(btn_min)
+        win_controls.addWidget(btn_max)
+        win_controls.addWidget(btn_close)
+        right_layout.addLayout(win_controls)
+
+        # Hidden theme combo kept for test compatibility
         self.cmb_theme = QComboBox()
-        self.cmb_theme.setFixedHeight(22)
+        self.cmb_theme.setVisible(False)
         self.cmb_theme.addItem("Dark Workstation", "black")
         self.cmb_theme.addItem("Light Canvas", "white")
-        self.cmb_theme.setStyleSheet(
-            f"QComboBox {{"
-            f"  background-color: {COLORS.SURFACE_CONTAINER};"
-            f"  color: {COLORS.ON_SURFACE_VARIANT};"
-            f"  border: 1px solid {COLORS.BORDER_HAIRLINE};"
-            f"  border-radius: 4px;"
-            f"  font-size: 11px;"
-            f"  padding: 1px 6px;"
-            f"}}"
-        )
         self.cmb_theme.currentIndexChanged.connect(self._on_theme_changed)
         right_layout.addWidget(self.cmb_theme)
 
@@ -158,7 +171,10 @@ class StudioHeaderBar(QFrame):
             self.theme_requested.emit(theme)
 
     def set_project_title(self, name: str, is_dirty: bool = False) -> None:
-        self.lbl_project_name.setText(name)
+        if name and name.lower() not in ("untitled", "untitled.idproj"):
+            self.lbl_project_name.setText(f"Workspace Root :: {name}")
+        else:
+            self.lbl_project_name.setText("Workspace Root :: Central Secure Credential Repository")
         self.lbl_dirty_dot.setVisible(is_dirty)
 
     def set_sync_status(self, text: str, dot_color: str = COLORS.TERTIARY) -> None:

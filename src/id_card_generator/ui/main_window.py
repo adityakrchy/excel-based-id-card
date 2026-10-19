@@ -216,7 +216,12 @@ class MainWindow(QMainWindow):
         # Status Bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready. Load an Excel data source to begin.")
+        self.lbl_sb_format = QLabel("CR80 Standard (85.60 × 53.98 mm) · 300 DPI")
+        self.lbl_sb_format.setStyleSheet(
+            "color: #8E909F; font-family: 'JetBrains Mono', monospace; font-size: 11px; padding-right: 12px;"
+        )
+        self.status_bar.addPermanentWidget(self.lbl_sb_format)
+        self.status_bar.showMessage("● Ready · PySide6 Engine v2.4.1")
 
         self.switch_page(WorkflowStep.DASHBOARD)
 
@@ -347,16 +352,24 @@ class MainWindow(QMainWindow):
 
         # Update studio nav bar active tab
         if hasattr(self, "studio_nav"):
-            if step in (WorkflowStep.DASHBOARD, WorkflowStep.TEMPLATES):
+            if step == WorkflowStep.DASHBOARD:
+                self.studio_nav.set_active_tab(StudioTab.HUB)
+                self.studio_nav.set_designer_tools_visible(False)
+            elif step == WorkflowStep.TEMPLATES:
                 self.studio_nav.set_active_tab(StudioTab.TEMPLATES)
+                self.studio_nav.set_designer_tools_visible(False)
             elif step == WorkflowStep.CANVAS_EDITOR:
                 self.studio_nav.set_active_tab(StudioTab.DESIGNER)
+                self.studio_nav.set_designer_tools_visible(True)
             elif step in (WorkflowStep.DATA_SOURCE, WorkflowStep.PHOTOS):
                 self.studio_nav.set_active_tab(StudioTab.DATA_MAPPING)
+                self.studio_nav.set_designer_tools_visible(False)
             elif step in (WorkflowStep.GENERATE, WorkflowStep.REVIEW):
                 self.studio_nav.set_active_tab(StudioTab.GENERATE_PREVIEW)
+                self.studio_nav.set_designer_tools_visible(False)
             elif step == WorkflowStep.EXPORT:
                 self.studio_nav.set_active_tab(StudioTab.EXPORT_PRINT)
+                self.studio_nav.set_designer_tools_visible(False)
 
         # Context updates on page entry
         if step == WorkflowStep.CANVAS_EDITOR:
@@ -464,17 +477,34 @@ class MainWindow(QMainWindow):
         self.page_dashboard.update_workspace_info(self.current_project_config, matched_photos)
 
     def _refresh_status_bar(self) -> None:
-        ws_str = ""
-        if self.current_project_config and self.current_project_config.workspace_dir:
-            ws_str = f"Workspace: {Path(self.current_project_config.workspace_dir).name} • "
-        proj_str = self.current_project_config.project_name if self.current_project_config else (
-            self.current_project_path.name if self.current_project_path else "Unsaved Project"
-        )
-        rec_str = f"{len(self.records)} records" if self.records else "No data"
-        tmpl_str = self.active_template.name if self.active_template else "No template"
-        self.status_bar.showMessage(f"{ws_str}Project: {proj_str} • {rec_str} • Template: {tmpl_str}")
+        has_project = bool(self.current_project_config or self.current_project_path)
+        if has_project:
+            ws_str = ""
+            if self.current_project_config and self.current_project_config.workspace_dir:
+                ws_str = f"Workspace: {Path(self.current_project_config.workspace_dir).name} • "
+            proj_str = self.current_project_config.project_name if self.current_project_config else (
+                self.current_project_path.name if self.current_project_path else "Unsaved Project"
+            )
+            rec_str = f"{len(self.records)} records" if self.records else "No data"
+            tmpl_str = self.active_template.name if self.active_template else "No template"
+            self.status_bar.showMessage(f"{ws_str}Project: {proj_str} • {rec_str} • Template: {tmpl_str}")
+        else:
+            self.status_bar.showMessage("● Ready · PySide6 Engine v2.4.1")
 
-        title_suffix = f" - {proj_str}"
+        if self.active_template:
+            w_mm = getattr(self.active_template, "width_mm", 85.60)
+            h_mm = getattr(self.active_template, "height_mm", 53.98)
+            dpi = getattr(self.active_template, "dpi", 300)
+            name = getattr(self.active_template, "name", "CR80 Standard")
+            if hasattr(self, "lbl_sb_format"):
+                self.lbl_sb_format.setText(f"{name} ({w_mm:.2f} × {h_mm:.2f} mm) · {dpi} DPI")
+        elif hasattr(self, "lbl_sb_format"):
+            self.lbl_sb_format.setText("CR80 Standard (85.60 × 53.98 mm) · 300 DPI")
+
+        proj_title = self.current_project_config.project_name if self.current_project_config else (
+            self.current_project_path.name if self.current_project_path else ""
+        )
+        title_suffix = f" - {proj_title}" if proj_title else ""
         if self.current_project_config and self.current_project_config.workspace_dir:
             title_suffix += f" [{self.current_project_config.workspace_dir}]"
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}{title_suffix}")
@@ -512,6 +542,7 @@ class MainWindow(QMainWindow):
             self.current_project_path = None
 
         # Synchronize project configuration to pages
+        self.page_dashboard.set_project_config(config)
         self.page_data_source.set_project_config(config)
         self.page_photos.set_project_config(config)
 
@@ -553,7 +584,9 @@ class MainWindow(QMainWindow):
             self.page_editor.scene.undo_manager.redo()
 
     def _on_studio_tab_selected(self, tab_str: str) -> None:
-        if tab_str == StudioTab.TEMPLATES.value:
+        if tab_str == StudioTab.HUB.value:
+            self.switch_page(WorkflowStep.DASHBOARD)
+        elif tab_str == StudioTab.TEMPLATES.value:
             self.switch_page(WorkflowStep.TEMPLATES)
         elif tab_str == StudioTab.DESIGNER.value:
             self.switch_page(WorkflowStep.CANVAS_EDITOR)
