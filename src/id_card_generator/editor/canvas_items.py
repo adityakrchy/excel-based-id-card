@@ -507,6 +507,15 @@ class CanvasItem(QGraphicsObject):
 
         font_size_pt = float(elem.style.font_size)
         font = QFont(elem.style.font_family)
+        font.setFamilies([
+            elem.style.font_family,
+            "Mangal",
+            "Nirmala UI",
+            "Devanagari Sangam MN",
+            "Kohinoor Devanagari",
+            "Noto Sans Devanagari",
+            "Arial",
+        ])
         font.setBold(elem.style.font_bold)
         font.setItalic(elem.style.font_italic)
         font.setStyleStrategy(QFont.PreferAntialias)

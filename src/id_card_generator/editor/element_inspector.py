@@ -3,14 +3,16 @@
 import logging
 from typing import List, Optional
 from PySide6.QtCore import QPointF, QRectF, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QFontDatabase
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QColorDialog,
     QComboBox,
     QDoubleSpinBox,
     QFontComboBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -18,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -143,7 +146,12 @@ class ElementInspector(QWidget):
         self.type_group = QGroupBox("Typography")
         type_layout = QFormLayout(self.type_group)
 
+        from id_card_generator.rendering.font_manager import FontManager
+        FontManager.register_system_fonts_with_qt()
+
         self.cmb_font = QFontComboBox()
+        self.cmb_font.setFontFilters(QFontComboBox.FontFilter.AllFonts)
+        self.cmb_font.setWritingSystem(QFontDatabase.WritingSystem.Any)
         self.cmb_font.currentFontChanged.connect(self._on_font_changed)
         type_layout.addRow("Font:", self.cmb_font)
 
@@ -167,10 +175,95 @@ class ElementInspector(QWidget):
         self.btn_font_color.clicked.connect(self._pick_font_color)
         type_layout.addRow("Text Color:", self.btn_font_color)
 
+        # Segmented alignment buttons in a rectangle
+        self.align_frame = QFrame()
+        self.align_frame.setObjectName("insp_align_rect")
+        self.align_frame.setFixedHeight(28)
+        align_layout = QHBoxLayout(self.align_frame)
+        align_layout.setContentsMargins(0, 0, 0, 0)
+        align_layout.setSpacing(0)
+
+        self.btn_align_left = QToolButton()
+        self.btn_align_left.setObjectName("btn_align_left")
+        self.btn_align_left.setText("Left")
+        self.btn_align_left.setToolTip("Align Left")
+        self.btn_align_left.setCheckable(True)
+        self.btn_align_left.setFixedHeight(26)
+
+        self.btn_align_center = QToolButton()
+        self.btn_align_center.setObjectName("btn_align_center")
+        self.btn_align_center.setText("Center")
+        self.btn_align_center.setToolTip("Align Center")
+        self.btn_align_center.setCheckable(True)
+        self.btn_align_center.setFixedHeight(26)
+
+        self.btn_align_right = QToolButton()
+        self.btn_align_right.setObjectName("btn_align_right")
+        self.btn_align_right.setText("Right")
+        self.btn_align_right.setToolTip("Align Right")
+        self.btn_align_right.setCheckable(True)
+        self.btn_align_right.setFixedHeight(26)
+
+        self.align_group = QButtonGroup(self.type_group)
+        self.align_group.setExclusive(True)
+        self.align_group.addButton(self.btn_align_left)
+        self.align_group.addButton(self.btn_align_center)
+        self.align_group.addButton(self.btn_align_right)
+
+        self.btn_align_left.clicked.connect(lambda: self._on_align_btn_clicked("left"))
+        self.btn_align_center.clicked.connect(lambda: self._on_align_btn_clicked("center"))
+        self.btn_align_right.clicked.connect(lambda: self._on_align_btn_clicked("right"))
+
+        align_layout.addWidget(self.btn_align_left)
+        align_layout.addWidget(self.btn_align_center)
+        align_layout.addWidget(self.btn_align_right)
+
+        self.align_frame.setStyleSheet("""
+            QFrame#insp_align_rect {
+                background-color: #202023;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+            }
+            QFrame#insp_align_rect QToolButton {
+                background-color: transparent;
+                color: #A1A1AA;
+                border: none;
+                font-size: 11px;
+                font-weight: 500;
+                padding: 2px 8px;
+            }
+            QFrame#insp_align_rect QToolButton:hover {
+                background-color: #2E2E33;
+                color: #FFFFFF;
+            }
+            QFrame#insp_align_rect QToolButton:checked {
+                background-color: #0078D4;
+                color: #FFFFFF;
+                font-weight: 600;
+            }
+            QFrame#insp_align_rect QToolButton#btn_align_left {
+                border-top-left-radius: 3px;
+                border-bottom-left-radius: 3px;
+                border-right: 1px solid #3F3F46;
+            }
+            QFrame#insp_align_rect QToolButton#btn_align_center {
+                border-radius: 0px;
+                border-right: 1px solid #3F3F46;
+            }
+            QFrame#insp_align_rect QToolButton#btn_align_right {
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+            }
+        """)
+        type_layout.addRow("Align:", self.align_frame)
+
         self.cmb_align = QComboBox()
         self.cmb_align.addItems(["left", "center", "right"])
-        self.cmb_align.currentTextChanged.connect(self._on_align_changed)
-        type_layout.addRow("Align:", self.cmb_align)
+        self.cmb_align.setVisible(False)
+        self.cmb_align.currentTextChanged.connect(self._sync_align_from_combo)
+        type_layout.addRow(self.cmb_align)
+
+        self.btn_align_left.setChecked(True)
 
         self.form_layout.addWidget(self.type_group)
 
@@ -267,7 +360,7 @@ class ElementInspector(QWidget):
             self.spin_font_size.setValue(sz_val)
         self.chk_bold.setChecked(elem.style.font_bold)
         self.chk_italic.setChecked(elem.style.font_italic)
-        self.cmb_align.setCurrentText(elem.style.text_align)
+        self._set_align_ui(elem.style.text_align)
         self.btn_font_color.setStyleSheet(f"background-color: {elem.style.font_color}; color: #FFFFFF;")
 
         # Appearance
@@ -413,6 +506,26 @@ class ElementInspector(QWidget):
             def _update():
                 self._current_item.element.style.font_italic = checked
             self._apply_change(_update, "Toggle Italic")
+
+    def _on_align_btn_clicked(self, text: str):
+        self._set_align_ui(text)
+        self._on_align_changed(text)
+
+    def _sync_align_from_combo(self, text: str):
+        self._set_align_ui(text)
+        self._on_align_changed(text)
+
+    def _set_align_ui(self, align: str):
+        align = (align or "left").lower().strip()
+        if align == "center":
+            self.btn_align_center.setChecked(True)
+        elif align == "right":
+            self.btn_align_right.setChecked(True)
+        else:
+            self.btn_align_left.setChecked(True)
+        self.cmb_align.blockSignals(True)
+        self.cmb_align.setCurrentText(align)
+        self.cmb_align.blockSignals(False)
 
     def _on_align_changed(self, text: str):
         if not self._updating and self._current_item:

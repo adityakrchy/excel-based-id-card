@@ -8,12 +8,13 @@ import pandas as pd
 from id_card_generator.core.exceptions import DataSourceError, SheetNotFoundError
 from id_card_generator.core.models import SourceRecord
 from id_card_generator.data.data_normalizer import DataNormalizer
+from id_card_generator.data.hindi_converter import HindiConverter
 
 logger = logging.getLogger(__name__)
 
 
 class ExcelImporter:
-    """Imports spreadsheets and CSV files with sheet selection and header configuration."""
+    """Imports spreadsheets and CSV files with sheet selection, header configuration, and Hindi font processing."""
 
     @staticmethod
     def get_sheet_names(file_path: Path) -> List[str]:
@@ -39,6 +40,7 @@ class ExcelImporter:
         sheet_name: Optional[str] = None,
         header_row: int = 0,
         pin_column_hint: Optional[str] = None,
+        hindi_font_mode: str = "auto",
     ) -> Tuple[List[str], List[SourceRecord]]:
         """Import records from file.
         
@@ -47,6 +49,9 @@ class ExcelImporter:
             sheet_name: Specific sheet name (for Excel workbooks)
             header_row: 0-indexed row number containing column headers
             pin_column_hint: Specific column name to treat as PIN Number (optional)
+            hindi_font_mode: 'auto' (detect Kruti Dev / DevLys / Unicode),
+                             'kruti_to_unicode' (force conversion), or
+                             'none' (preserve raw strings).
 
         Returns:
             Tuple of (columns_list, source_records_list)
@@ -55,6 +60,29 @@ class ExcelImporter:
             raise DataSourceError(f"File does not exist: {file_path}")
 
         suffix = file_path.suffix.lower()
+
+        # Extract font metadata if available (for .xlsx)
+        header_fonts: Dict[int, str] = {}
+        cell_fonts: Dict[Tuple[int, int], str] = {}
+        if suffix == ".xlsx":
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(file_path, data_only=True)
+                ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.active
+                excel_header_row = header_row + 1
+                for c_idx in range(1, ws.max_column + 1):
+                    cell = ws.cell(excel_header_row, c_idx)
+                    if cell.font and cell.font.name:
+                        header_fonts[c_idx - 1] = cell.font.name
+
+                for r_idx in range(excel_header_row + 1, ws.max_row + 1):
+                    df_r = r_idx - (excel_header_row + 1)
+                    for c_idx in range(1, ws.max_column + 1):
+                        cell = ws.cell(r_idx, c_idx)
+                        if cell.font and cell.font.name:
+                            cell_fonts[(df_r, c_idx - 1)] = cell.font.name
+            except Exception as e:
+                logger.debug("Could not read openpyxl font metadata from %s: %s", file_path, e)
 
         try:
             # dtype=object preserves original representations (like leading zeros)
@@ -73,10 +101,19 @@ class ExcelImporter:
             logger.error("Failed to import spreadsheet %s: %s", file_path, e)
             raise DataSourceError(f"Failed to read file: {e}") from e
 
-        # Clean column names
-        raw_columns = [str(c).strip() for c in df.columns if not str(c).startswith("Unnamed:")]
-        # Ensure all columns are converted to clean strings
-        df.columns = [str(c).strip() for c in df.columns]
+        # Clean and convert column names
+        converted_columns: List[str] = []
+        for c_idx, raw_col in enumerate(df.columns):
+            c_str = str(raw_col).strip()
+            # If the column was auto-generated unnamed index, keep as is
+            if c_str.startswith("Unnamed:"):
+                converted_columns.append(c_str)
+            else:
+                font_name = header_fonts.get(c_idx)
+                conv_col = HindiConverter.convert_value(c_str, font_name=font_name, mode=hindi_font_mode)
+                converted_columns.append(conv_col.strip())
+
+        df.columns = converted_columns
 
         # Identify candidate PIN column
         pin_col = ExcelImporter._detect_pin_column(df.columns.tolist(), pin_column_hint)
@@ -84,13 +121,15 @@ class ExcelImporter:
         records: List[SourceRecord] = []
         for idx, row in df.iterrows():
             row_dict: Dict[str, Any] = {}
-            for col in df.columns:
+            for c_idx, col in enumerate(df.columns):
                 val = row[col]
                 # Convert NaN to empty string
                 if pd.isna(val):
                     row_dict[col] = ""
                 else:
-                    row_dict[col] = str(val)
+                    font_name = cell_fonts.get((int(idx), c_idx))
+                    conv_val = HindiConverter.convert_value(val, font_name=font_name, mode=hindi_font_mode)
+                    row_dict[col] = conv_val
 
             raw_pin_val = row_dict.get(pin_col, "") if pin_col else ""
             raw_pin, normalized_pin = DataNormalizer.normalize_pin(raw_pin_val)
@@ -104,11 +143,12 @@ class ExcelImporter:
             records.append(rec)
 
         logger.info(
-            "Imported %d records with %d columns from %s (sheet: %s)",
+            "Imported %d records with %d columns from %s (sheet: %s, hindi_mode: %s)",
             len(records),
             len(df.columns),
             file_path.name,
             sheet_name or "default",
+            hindi_font_mode,
         )
         return list(df.columns), records
 
@@ -118,7 +158,7 @@ class ExcelImporter:
         if hint and hint in columns:
             return hint
 
-        # Common variants
+        # Common variants in English and Hindi
         candidates = [
             "pin number",
             "pin_number",
@@ -129,6 +169,18 @@ class ExcelImporter:
             "roll no",
             "roll number",
             "badge number",
+            "sl.no",
+            "sl no",
+            "s.no",
+            "s no",
+            "क्रम",
+            "क्रम संख्या",
+            "क्र0सं0",
+            "क्र०सं०",
+            "क्र.सं.",
+            "आईडी",
+            "पिन",
+            "रोल नंबर",
         ]
 
         # Case-insensitive match
@@ -138,7 +190,7 @@ class ExcelImporter:
                 return col_lower_map[cand]
 
         # Partial match
-        for cand in ["pin", "id"]:
+        for cand in ["pin", "id", "क्रम"]:
             for col in columns:
                 if cand in col.lower():
                     return col

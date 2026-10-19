@@ -29,6 +29,7 @@ from id_card_generator.core.models import ProjectConfiguration, SourceRecord
 from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.data_validator import DataValidator, ValidationReport
 from id_card_generator.data.excel_importer import ExcelImporter
+from id_card_generator.data.hindi_converter import HindiConverter
 from id_card_generator.ui.step_nav_bar import StepNavBar
 
 logger = logging.getLogger(__name__)
@@ -91,21 +92,38 @@ class DataSourcePage(QWidget):
         self.lbl_workspace_badge = QLabel("")
         self.lbl_workspace_badge.setStyleSheet("color: #10B981; font-weight: 600; font-size: 11px;")
         self.lbl_workspace_badge.setVisible(False)
-        top_layout.addWidget(self.lbl_workspace_badge)
 
-        # Controls row: Sheet selector & Header row
+        self.lbl_hindi_badge = QLabel("")
+        self.lbl_hindi_badge.setStyleSheet("color: #0284C7; font-weight: 600; font-size: 11px;")
+        self.lbl_hindi_badge.setVisible(False)
+
+        badge_row = QHBoxLayout()
+        badge_row.addWidget(self.lbl_workspace_badge)
+        badge_row.addWidget(self.lbl_hindi_badge)
+        badge_row.addStretch()
+        top_layout.addLayout(badge_row)
+
+        # Controls row: Sheet selector, Header row & Hindi font mode
         ctrl_row = QHBoxLayout()
         ctrl_row.addWidget(QLabel("Worksheet:"))
         self.cmb_sheets = QComboBox()
         self.cmb_sheets.currentIndexChanged.connect(self._on_sheet_changed)
         ctrl_row.addWidget(self.cmb_sheets, stretch=1)
 
-        ctrl_row.addWidget(QLabel("Header Row (0-indexed):"))
+        ctrl_row.addWidget(QLabel("Header Row:"))
         self.spin_header = QSpinBox()
         self.spin_header.setRange(0, 100)
         self.spin_header.setValue(0)
         self.spin_header.valueChanged.connect(self._on_header_changed)
         ctrl_row.addWidget(self.spin_header)
+
+        ctrl_row.addWidget(QLabel("Hindi Font Mode:"))
+        self.cmb_hindi_mode = QComboBox()
+        self.cmb_hindi_mode.addItem("Auto-Detect Hindi (Kruti Dev / DevLys → Unicode)", "auto")
+        self.cmb_hindi_mode.addItem("Force Kruti Dev / DevLys → Unicode", "kruti_to_unicode")
+        self.cmb_hindi_mode.addItem("Unicode / Standard (Mangal / UTF-8)", "none")
+        self.cmb_hindi_mode.currentIndexChanged.connect(self._on_hindi_mode_changed)
+        ctrl_row.addWidget(self.cmb_hindi_mode, stretch=1)
 
         top_layout.addLayout(ctrl_row)
         layout.addWidget(top_card)
@@ -202,6 +220,9 @@ class DataSourcePage(QWidget):
     def _on_header_changed(self) -> None:
         self._import_current()
 
+    def _on_hindi_mode_changed(self) -> None:
+        self._import_current()
+
     def _reimport_data(self) -> None:
         self._import_current()
 
@@ -211,12 +232,14 @@ class DataSourcePage(QWidget):
 
         sheet_name = self.cmb_sheets.currentText() or None
         header_row = self.spin_header.value()
+        hindi_mode = self.cmb_hindi_mode.currentData() or "auto"
 
         try:
             cols, records = ExcelImporter.import_data(
                 self.current_file_path,
                 sheet_name=sheet_name,
                 header_row=header_row,
+                hindi_font_mode=hindi_mode,
             )
             # Run data validator
             report = DataValidator.validate_records(records)
@@ -224,6 +247,20 @@ class DataSourcePage(QWidget):
             self.columns = cols
             self.records = records
             self.validation_report = report
+
+            # Check if Hindi/Devanagari text is present in columns or data
+            has_hindi = (
+                any(HindiConverter.is_unicode_devanagari(c) for c in cols)
+                or any(
+                    any(HindiConverter.is_unicode_devanagari(str(v)) for v in r.data.values())
+                    for r in records[:50]
+                )
+            )
+            if has_hindi and hindi_mode != "none":
+                self.lbl_hindi_badge.setText("✓ Hindi font detected & converted to Unicode Devanagari (Mangal compatible)")
+                self.lbl_hindi_badge.setVisible(True)
+            else:
+                self.lbl_hindi_badge.setVisible(False)
 
             self._populate_table(records)
             self.lbl_summary.setText(
@@ -243,6 +280,10 @@ class DataSourcePage(QWidget):
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
             return
+
+        tbl_font = self.table.font()
+        tbl_font.setFamilies([tbl_font.family(), "Segoe UI", "Nirmala UI", "Mangal", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Devanagari", "Arial"])
+        self.table.setFont(tbl_font)
 
         headers = ["Row", "PIN Status", "PIN Number"] + [c for c in self.columns if c.lower() != "pin number"]
         self.table.setColumnCount(len(headers))
