@@ -4,8 +4,8 @@ import logging
 from typing import Dict, List, Optional
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QIcon, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -435,44 +435,232 @@ class EditorPage(QWidget):
             self.act_grid.setChecked(checked)
 
     def _create_text_context_page(self) -> QWidget:
+        from id_card_generator.rendering.font_manager import FontManager
+        FontManager.register_system_fonts_with_qt()
+
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        layout.addWidget(QLabel("<b>Text:</b>"))
+        lbl_text = QLabel("<b>Text:</b>")
+        lbl_text.setStyleSheet("color: #E4E4E7; font-size: 12px; margin-right: 2px;")
+        layout.addWidget(lbl_text)
 
+        # 1. Complete System Font Dropdown
         self.ctx_font_family = QFontComboBox()
-        self.ctx_font_family.setFixedWidth(140)
+        self.ctx_font_family.setFontFilters(QFontComboBox.FontFilter.AllFonts)
+        self.ctx_font_family.setWritingSystem(QFontDatabase.WritingSystem.Any)
+        self.ctx_font_family.setMinimumWidth(160)
+        self.ctx_font_family.setMaximumWidth(220)
+        self.ctx_font_family.setFixedHeight(28)
+        self.ctx_font_family.setToolTip("Font Family (complete system fonts)")
         self.ctx_font_family.currentFontChanged.connect(self._on_ctx_font_changed)
         layout.addWidget(self.ctx_font_family)
 
+        # 2. Font Size SpinBox
         self.ctx_font_size = QSpinBox()
         self.ctx_font_size.setRange(4, 144)
         self.ctx_font_size.setSuffix(" pt")
         self.ctx_font_size.setValue(10)
+        self.ctx_font_size.setFixedWidth(70)
+        self.ctx_font_size.setFixedHeight(28)
+        self.ctx_font_size.setToolTip("Font Size")
         self.ctx_font_size.valueChanged.connect(self._on_ctx_font_size_changed)
         layout.addWidget(self.ctx_font_size)
 
-        self.ctx_chk_bold = QCheckBox("B")
-        self.ctx_chk_bold.setStyleSheet("font-weight: bold;")
+        # Separator
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.VLine)
+        sep1.setFrameShadow(QFrame.Shadow.Sunken)
+        sep1.setStyleSheet("color: #3F3F46; max-height: 20px;")
+        layout.addWidget(sep1)
+
+        # 3. Bold & Italic Toggle Buttons
+        self.ctx_chk_bold = QToolButton()
+        self.ctx_chk_bold.setObjectName("ctx_bold_btn")
+        self.ctx_chk_bold.setText("B")
+        self.ctx_chk_bold.setCheckable(True)
+        self.ctx_chk_bold.setFixedSize(28, 28)
+        self.ctx_chk_bold.setToolTip("Bold")
+        bold_font = self.ctx_chk_bold.font()
+        bold_font.setBold(True)
+        self.ctx_chk_bold.setFont(bold_font)
+        self.ctx_chk_bold.setStyleSheet("""
+            QToolButton#ctx_bold_btn {
+                background-color: #262629;
+                color: #E4E4E7;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QToolButton#ctx_bold_btn:hover {
+                background-color: #333338;
+                border-color: #52525B;
+            }
+            QToolButton#ctx_bold_btn:checked {
+                background-color: #0078D4;
+                color: #FFFFFF;
+                border-color: #005A9E;
+            }
+        """)
         self.ctx_chk_bold.toggled.connect(self._on_ctx_bold_toggled)
         layout.addWidget(self.ctx_chk_bold)
 
-        self.ctx_chk_italic = QCheckBox("I")
-        self.ctx_chk_italic.setStyleSheet("font-style: italic;")
+        self.ctx_chk_italic = QToolButton()
+        self.ctx_chk_italic.setObjectName("ctx_italic_btn")
+        self.ctx_chk_italic.setText("I")
+        self.ctx_chk_italic.setCheckable(True)
+        self.ctx_chk_italic.setFixedSize(28, 28)
+        self.ctx_chk_italic.setToolTip("Italic")
+        italic_font = self.ctx_chk_italic.font()
+        italic_font.setItalic(True)
+        self.ctx_chk_italic.setFont(italic_font)
+        self.ctx_chk_italic.setStyleSheet("""
+            QToolButton#ctx_italic_btn {
+                background-color: #262629;
+                color: #E4E4E7;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+                font-style: italic;
+                font-size: 13px;
+            }
+            QToolButton#ctx_italic_btn:hover {
+                background-color: #333338;
+                border-color: #52525B;
+            }
+            QToolButton#ctx_italic_btn:checked {
+                background-color: #0078D4;
+                color: #FFFFFF;
+                border-color: #005A9E;
+            }
+        """)
         self.ctx_chk_italic.toggled.connect(self._on_ctx_italic_toggled)
         layout.addWidget(self.ctx_chk_italic)
 
-        self.ctx_btn_color = QPushButton("Color")
-        self.ctx_btn_color.setFixedWidth(60)
+        # 4. Color Button (small 28x28 square button with dynamic color bar indicator, matching B and I)
+        self.ctx_btn_color = QToolButton()
+        self.ctx_btn_color.setObjectName("ctx_color_btn")
+        self.ctx_btn_color.setFixedSize(28, 28)
+        self.ctx_btn_color.setToolTip("Text Color")
+        self.ctx_btn_color.setIcon(self._create_color_icon("#1A1A1A"))
+        self.ctx_btn_color.setIconSize(QSize(22, 22))
+        self.ctx_btn_color.setStyleSheet("""
+            QToolButton#ctx_color_btn {
+                background-color: #262629;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+            }
+            QToolButton#ctx_color_btn:hover {
+                background-color: #333338;
+                border-color: #52525B;
+            }
+            QToolButton#ctx_color_btn:pressed {
+                background-color: #202023;
+            }
+        """)
         self.ctx_btn_color.clicked.connect(self._on_ctx_color_clicked)
         layout.addWidget(self.ctx_btn_color)
 
+        # Separator
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.VLine)
+        sep2.setFrameShadow(QFrame.Shadow.Sunken)
+        sep2.setStyleSheet("color: #3F3F46; max-height: 20px;")
+        layout.addWidget(sep2)
+
+        # 5. Segmented Alignment Buttons in a Clean Rectangle (Left | Center | Right)
+        self.ctx_align_frame = QFrame()
+        self.ctx_align_frame.setObjectName("ctx_align_rect")
+        self.ctx_align_frame.setFixedHeight(28)
+        align_layout = QHBoxLayout(self.ctx_align_frame)
+        align_layout.setContentsMargins(0, 0, 0, 0)
+        align_layout.setSpacing(0)
+
+        self.ctx_btn_align_left = QToolButton()
+        self.ctx_btn_align_left.setObjectName("btn_align_left")
+        self.ctx_btn_align_left.setText("Left")
+        self.ctx_btn_align_left.setToolTip("Align Left")
+        self.ctx_btn_align_left.setCheckable(True)
+        self.ctx_btn_align_left.setFixedSize(46, 26)
+
+        self.ctx_btn_align_center = QToolButton()
+        self.ctx_btn_align_center.setObjectName("btn_align_center")
+        self.ctx_btn_align_center.setText("Center")
+        self.ctx_btn_align_center.setToolTip("Align Center")
+        self.ctx_btn_align_center.setCheckable(True)
+        self.ctx_btn_align_center.setFixedSize(54, 26)
+
+        self.ctx_btn_align_right = QToolButton()
+        self.ctx_btn_align_right.setObjectName("btn_align_right")
+        self.ctx_btn_align_right.setText("Right")
+        self.ctx_btn_align_right.setToolTip("Align Right")
+        self.ctx_btn_align_right.setCheckable(True)
+        self.ctx_btn_align_right.setFixedSize(46, 26)
+
+        self.ctx_align_group = QButtonGroup(widget)
+        self.ctx_align_group.setExclusive(True)
+        self.ctx_align_group.addButton(self.ctx_btn_align_left)
+        self.ctx_align_group.addButton(self.ctx_btn_align_center)
+        self.ctx_align_group.addButton(self.ctx_btn_align_right)
+
+        self.ctx_btn_align_left.clicked.connect(lambda: self._on_align_btn_clicked("left"))
+        self.ctx_btn_align_center.clicked.connect(lambda: self._on_align_btn_clicked("center"))
+        self.ctx_btn_align_right.clicked.connect(lambda: self._on_align_btn_clicked("right"))
+
+        align_layout.addWidget(self.ctx_btn_align_left)
+        align_layout.addWidget(self.ctx_btn_align_center)
+        align_layout.addWidget(self.ctx_btn_align_right)
+
+        self.ctx_align_frame.setStyleSheet("""
+            QFrame#ctx_align_rect {
+                background-color: #202023;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+            }
+            QFrame#ctx_align_rect QToolButton {
+                background-color: transparent;
+                color: #A1A1AA;
+                border: none;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QFrame#ctx_align_rect QToolButton:hover {
+                background-color: #2E2E33;
+                color: #FFFFFF;
+            }
+            QFrame#ctx_align_rect QToolButton:checked {
+                background-color: #0078D4;
+                color: #FFFFFF;
+                font-weight: 600;
+            }
+            QFrame#ctx_align_rect QToolButton#btn_align_left {
+                border-top-left-radius: 3px;
+                border-bottom-left-radius: 3px;
+                border-right: 1px solid #3F3F46;
+            }
+            QFrame#ctx_align_rect QToolButton#btn_align_center {
+                border-radius: 0px;
+                border-right: 1px solid #3F3F46;
+            }
+            QFrame#ctx_align_rect QToolButton#btn_align_right {
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+            }
+        """)
+        layout.addWidget(self.ctx_align_frame)
+
+        # Backwards compatibility dummy / synced combo
         self.ctx_cmb_align = QComboBox()
         self.ctx_cmb_align.addItems(["left", "center", "right"])
-        self.ctx_cmb_align.currentTextChanged.connect(self._on_ctx_align_changed)
+        self.ctx_cmb_align.setVisible(False)
+        self.ctx_cmb_align.currentTextChanged.connect(self._sync_align_buttons_from_combo)
         layout.addWidget(self.ctx_cmb_align)
+
+        # Default to Left
+        self.ctx_btn_align_left.setChecked(True)
 
         layout.addStretch()
         return widget
@@ -726,8 +914,9 @@ class EditorPage(QWidget):
                 self.ctx_font_size.setValue(sz_val)
             self.ctx_chk_bold.setChecked(elem.style.font_bold)
             self.ctx_chk_italic.setChecked(elem.style.font_italic)
-            self.ctx_cmb_align.setCurrentText(elem.style.text_align)
-            self.ctx_btn_color.setStyleSheet(f"background-color: {elem.style.font_color}; color: #FFFFFF;")
+            self._set_ctx_align_ui(elem.style.text_align)
+            self._current_font_color = elem.style.font_color
+            self.ctx_btn_color.setIcon(self._create_color_icon(elem.style.font_color))
         elif elem.type in ("rect", "round_rect", "line"):
             self.stack_context.setCurrentIndex(2)
             self.ctx_spin_stroke_w.setValue(elem.style.border_width)
@@ -851,12 +1040,54 @@ class EditorPage(QWidget):
     def _on_ctx_italic_toggled(self, checked: bool) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "font_italic", checked), "Toggle Italic")
 
+    def _create_color_icon(self, color_hex: str, size: int = 22) -> QIcon:
+        pix = QPixmap(size, size)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        font = QFont()
+        font.setPointSize(10)
+        font.setBold(True)
+        p.setFont(font)
+        p.setPen(QColor("#E4E4E7"))
+        p.drawText(QRect(0, 0, size, size - 5), Qt.AlignmentFlag.AlignCenter, "A")
+
+        bar_color = QColor(color_hex) if color_hex and QColor(color_hex).isValid() else QColor("#1A1A1A")
+        p.setBrush(bar_color)
+        p.setPen(QPen(QColor("#3F3F46"), 0.5))
+        p.drawRoundedRect(2, size - 4, size - 4, 3, 1.0, 1.0)
+        p.end()
+        return QIcon(pix)
+
     def _on_ctx_color_clicked(self) -> None:
-        col = QColorDialog.getColor(QColor("#1A1A1A"), self, "Select Text Color")
+        initial = getattr(self, "_current_font_color", "#1A1A1A")
+        col = QColorDialog.getColor(QColor(initial), self, "Select Text Color")
         if col.isValid():
             hex_col = col.name().upper()
+            self._current_font_color = hex_col
             self._apply_context_change(lambda it: setattr(it.element.style, "font_color", hex_col), "Change Text Color")
-            self.ctx_btn_color.setStyleSheet(f"background-color: {hex_col}; color: #FFFFFF;")
+            self.ctx_btn_color.setIcon(self._create_color_icon(hex_col))
+
+    def _on_align_btn_clicked(self, align: str) -> None:
+        self._set_ctx_align_ui(align)
+        self._on_ctx_align_changed(align)
+
+    def _sync_align_buttons_from_combo(self, align: str) -> None:
+        self._set_ctx_align_ui(align)
+        self._on_ctx_align_changed(align)
+
+    def _set_ctx_align_ui(self, align: str) -> None:
+        align = (align or "left").lower().strip()
+        if align == "center":
+            self.ctx_btn_align_center.setChecked(True)
+        elif align == "right":
+            self.ctx_btn_align_right.setChecked(True)
+        else:
+            self.ctx_btn_align_left.setChecked(True)
+        self.ctx_cmb_align.blockSignals(True)
+        self.ctx_cmb_align.setCurrentText(align)
+        self.ctx_cmb_align.blockSignals(False)
 
     def _on_ctx_align_changed(self, align: str) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "text_align", align), "Change Alignment")

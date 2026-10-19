@@ -11,6 +11,7 @@ Supports instant runtime switching without application restart and persists pref
 import logging
 import platform
 import sys
+from pathlib import Path
 from typing import Optional
 from PySide6.QtCore import QObject, QSettings, Signal
 from PySide6.QtGui import QColor, QFont, QPalette
@@ -27,6 +28,15 @@ class ThemeManager(QObject):
     theme_changed = Signal(str)  # Emits applied effective theme name ("black" or "white")
 
     _instance: Optional["ThemeManager"] = None
+
+    @classmethod
+    def _get_asset_path(cls, filename: str) -> Path:
+        base_dir = getattr(sys, "_MEIPASS", None)
+        if base_dir:
+            cand = Path(base_dir) / "id_card_generator" / "resources" / "assets" / filename
+            if cand.exists():
+                return cand
+        return Path(__file__).parent.parent / "resources" / "assets" / filename
 
     @classmethod
     def instance(cls) -> "ThemeManager":
@@ -103,10 +113,12 @@ class ThemeManager(QObject):
 
         app.setStyleSheet(stylesheet)
 
-    @staticmethod
-    def _get_black_stylesheet() -> str:
+    @classmethod
+    def _get_black_stylesheet(cls) -> str:
         """Windows 11 Fluent Dark / Black theme stylesheet."""
-        return """
+        chevron_dark = cls._get_asset_path("chevron_down_dark.svg").as_posix()
+        chevron_up_dark = cls._get_asset_path("chevron_up_dark.svg").as_posix()
+        stylesheet = """
 /* === Windows 11 Fluent Dark / Black Stylesheet === */
 
 * {
@@ -222,32 +234,83 @@ QPushButton#btn_danger:hover {
 }
 
 /* Input Fields */
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QFontComboBox {
     background-color: #202023;
     border: 1px solid #3F3F46;
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 4px 8px;
     color: #F4F4F5;
     min-height: 20px;
 }
 
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+QComboBox, QFontComboBox {
+    padding-right: 24px;
+}
+
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QFontComboBox:focus {
     border: 1px solid #60CDFF;
     background-color: #242428;
 }
 
-QComboBox::drop-down {
-    border: none;
-    padding-right: 8px;
+QComboBox::drop-down, QFontComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 22px;
+    border-left: none;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
 }
 
-QComboBox QAbstractItemView {
+QComboBox::down-arrow, QFontComboBox::down-arrow {
+    image: url("__CHEVRON_DARK_URL__");
+    width: 10px;
+    height: 7px;
+}
+
+QComboBox QAbstractItemView, QFontComboBox QAbstractItemView {
     background-color: #202023;
     border: 1px solid #3F3F46;
     border-radius: 6px;
     selection-background-color: #0078D4;
     selection-color: #FFFFFF;
     padding: 4px;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid #3F3F46;
+    border-bottom: 1px solid #3F3F46;
+    border-top-right-radius: 5px;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {
+    background-color: #2E2E33;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 18px;
+    border-left: 1px solid #3F3F46;
+    border-bottom-right-radius: 5px;
+}
+
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #2E2E33;
+}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("__CHEVRON_UP_DARK_URL__");
+    width: 8px;
+    height: 5px;
+}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("__CHEVRON_DARK_URL__");
+    width: 8px;
+    height: 5px;
 }
 
 /* Tables and Lists */
@@ -395,12 +458,67 @@ QGroupBox::title {
     padding: 0 6px;
     color: #60CDFF;
 }
-"""
 
-    @staticmethod
-    def _get_white_stylesheet() -> str:
+/* Segmented Alignment Controls & Formatting Buttons */
+QFrame#ctx_align_rect, QFrame#insp_align_rect {
+    background-color: #202023;
+    border: 1px solid #3F3F46;
+    border-radius: 4px;
+}
+QFrame#ctx_align_rect QToolButton, QFrame#insp_align_rect QToolButton {
+    background-color: transparent;
+    color: #A1A1AA;
+    border: none;
+    font-size: 11px;
+    font-weight: 500;
+}
+QFrame#ctx_align_rect QToolButton:hover, QFrame#insp_align_rect QToolButton:hover {
+    background-color: #2E2E33;
+    color: #FFFFFF;
+}
+QFrame#ctx_align_rect QToolButton:checked, QFrame#insp_align_rect QToolButton:checked {
+    background-color: #0078D4;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+QFrame#ctx_align_rect QToolButton#btn_align_left, QFrame#insp_align_rect QToolButton#btn_align_left {
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+    border-right: 1px solid #3F3F46;
+}
+QFrame#ctx_align_rect QToolButton#btn_align_center, QFrame#insp_align_rect QToolButton#btn_align_center {
+    border-radius: 0px;
+    border-right: 1px solid #3F3F46;
+}
+QFrame#ctx_align_rect QToolButton#btn_align_right, QFrame#insp_align_rect QToolButton#btn_align_right {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+QToolButton#ctx_bold_btn, QToolButton#ctx_italic_btn {
+    background-color: #262629;
+    color: #E4E4E7;
+    border: 1px solid #3F3F46;
+    border-radius: 4px;
+    font-size: 13px;
+}
+QToolButton#ctx_bold_btn:hover, QToolButton#ctx_italic_btn:hover {
+    background-color: #333338;
+    border-color: #52525B;
+}
+QToolButton#ctx_bold_btn:checked, QToolButton#ctx_italic_btn:checked {
+    background-color: #0078D4;
+    color: #FFFFFF;
+    border-color: #005A9E;
+}
+"""
+        return stylesheet.replace("__CHEVRON_DARK_URL__", chevron_dark).replace("__CHEVRON_UP_DARK_URL__", chevron_up_dark)
+
+    @classmethod
+    def _get_white_stylesheet(cls) -> str:
         """Windows 11 Fluent Light / White theme stylesheet."""
-        return """
+        chevron_light = cls._get_asset_path("chevron_down_light.svg").as_posix()
+        chevron_up_light = cls._get_asset_path("chevron_up_light.svg").as_posix()
+        stylesheet = """
 /* === Windows 11 Fluent Light / White Stylesheet === */
 
 * {
@@ -516,32 +634,83 @@ QPushButton#btn_danger:hover {
 }
 
 /* Input Fields */
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QFontComboBox {
     background-color: #FFFFFF;
     border: 1px solid #D1D5DB;
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 4px 8px;
     color: #111827;
     min-height: 20px;
 }
 
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+QComboBox, QFontComboBox {
+    padding-right: 24px;
+}
+
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QFontComboBox:focus {
     border: 1px solid #0067C0;
     background-color: #FFFFFF;
 }
 
-QComboBox::drop-down {
-    border: none;
-    padding-right: 8px;
+QComboBox::drop-down, QFontComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 22px;
+    border-left: none;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
 }
 
-QComboBox QAbstractItemView {
+QComboBox::down-arrow, QFontComboBox::down-arrow {
+    image: url("__CHEVRON_LIGHT_URL__");
+    width: 10px;
+    height: 7px;
+}
+
+QComboBox QAbstractItemView, QFontComboBox QAbstractItemView {
     background-color: #FFFFFF;
     border: 1px solid #D1D5DB;
     border-radius: 6px;
     selection-background-color: #0067C0;
     selection-color: #FFFFFF;
     padding: 4px;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid #D1D5DB;
+    border-bottom: 1px solid #D1D5DB;
+    border-top-right-radius: 5px;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {
+    background-color: #F3F4F6;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 18px;
+    border-left: 1px solid #D1D5DB;
+    border-bottom-right-radius: 5px;
+}
+
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #F3F4F6;
+}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("__CHEVRON_UP_LIGHT_URL__");
+    width: 8px;
+    height: 5px;
+}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("__CHEVRON_LIGHT_URL__");
+    width: 8px;
+    height: 5px;
 }
 
 /* Tables and Lists */
@@ -689,4 +858,57 @@ QGroupBox::title {
     padding: 0 6px;
     color: #0067C0;
 }
+
+/* Segmented Alignment Controls & Formatting Buttons */
+QFrame#ctx_align_rect, QFrame#insp_align_rect {
+    background-color: #F3F4F6;
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+}
+QFrame#ctx_align_rect QToolButton, QFrame#insp_align_rect QToolButton {
+    background-color: transparent;
+    color: #4B5563;
+    border: none;
+    font-size: 11px;
+    font-weight: 500;
+}
+QFrame#ctx_align_rect QToolButton:hover, QFrame#insp_align_rect QToolButton:hover {
+    background-color: #E5E7EB;
+    color: #111827;
+}
+QFrame#ctx_align_rect QToolButton:checked, QFrame#insp_align_rect QToolButton:checked {
+    background-color: #0067C0;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+QFrame#ctx_align_rect QToolButton#btn_align_left, QFrame#insp_align_rect QToolButton#btn_align_left {
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+    border-right: 1px solid #D1D5DB;
+}
+QFrame#ctx_align_rect QToolButton#btn_align_center, QFrame#insp_align_rect QToolButton#btn_align_center {
+    border-radius: 0px;
+    border-right: 1px solid #D1D5DB;
+}
+QFrame#ctx_align_rect QToolButton#btn_align_right, QFrame#insp_align_rect QToolButton#btn_align_right {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+QToolButton#ctx_bold_btn, QToolButton#ctx_italic_btn {
+    background-color: #F9FAFB;
+    color: #1F2937;
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+    font-size: 13px;
+}
+QToolButton#ctx_bold_btn:hover, QToolButton#ctx_italic_btn:hover {
+    background-color: #F3F4F6;
+    border-color: #9CA3AF;
+}
+QToolButton#ctx_bold_btn:checked, QToolButton#ctx_italic_btn:checked {
+    background-color: #0067C0;
+    color: #FFFFFF;
+    border-color: #005A9E;
+}
 """
+        return stylesheet.replace("__CHEVRON_LIGHT_URL__", chevron_light).replace("__CHEVRON_UP_LIGHT_URL__", chevron_up_light)

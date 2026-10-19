@@ -229,8 +229,9 @@ class PillowRenderer:
         # Fallback to element static content or name
         return elem.static_content or ""
 
-    @staticmethod
+    @classmethod
     def _render_text(
+        cls,
         card_img: Image.Image,
         elem: CanvasElement,
         text: str,
@@ -245,6 +246,27 @@ class PillowRenderer:
         warnings: List[str] = []
         if not text:
             return warnings
+
+        # If text contains Devanagari characters, render using Qt's HarfBuzz complex shaping engine
+        if any(0x0900 <= ord(c) <= 0x097F for c in text):
+            rendered_layer = cls._render_devanagari_text_qt(
+                text=text,
+                family=elem.style.font_family,
+                font_size_pt=elem.style.font_size,
+                font_color=elem.style.font_color or "#000000",
+                bold=elem.style.font_bold,
+                italic=elem.style.font_italic,
+                w=w,
+                h=h,
+                text_align=elem.style.text_align,
+                vertical_align=elem.style.vertical_align,
+                wrap=elem.style.wrap,
+                overflow_policy=elem.style.overflow_policy,
+                dpi=dpi,
+            )
+            if rendered_layer:
+                card_img.alpha_composite(rendered_layer, (x, y))
+                return warnings
 
         layout = TextLayout.layout_text(
             text=text,
@@ -274,6 +296,105 @@ class PillowRenderer:
             draw.text((int(lx), int(ly)), line_str, font=layout.font, fill=font_color)
 
         return warnings
+
+    @classmethod
+    def _render_devanagari_text_qt(
+        cls,
+        text: str,
+        family: str,
+        font_size_pt: float,
+        font_color: str,
+        bold: bool,
+        italic: bool,
+        w: int,
+        h: int,
+        text_align: str = "left",
+        vertical_align: str = "top",
+        wrap: bool = True,
+        overflow_policy: TextOverflowPolicy = TextOverflowPolicy.AUTO_SHRINK,
+        dpi: int = DEFAULT_DPI,
+    ) -> Optional[Image.Image]:
+        """Render Devanagari text using Qt's OpenType complex script shaping engine with HarfBuzz."""
+        try:
+            import sys
+            from PySide6.QtCore import QRectF, Qt
+            from PySide6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QImage, QPainter
+            from id_card_generator.core.geometry import points_to_document_pixels
+
+            app = QGuiApplication.instance()
+            if not app:
+                app = QGuiApplication(sys.argv)
+
+            qimg = QImage(max(1, w), max(1, h), QImage.Format_ARGB32_Premultiplied)
+            qimg.fill(Qt.transparent)
+            painter = QPainter(qimg)
+            painter.setRenderHint(QPainter.TextAntialiasing)
+
+            font = QFont(family)
+            font.setFamilies([
+                family,
+                "Mangal",
+                "Nirmala UI",
+                "Devanagari Sangam MN",
+                "Kohinoor Devanagari",
+                "Noto Sans Devanagari",
+                "Arial",
+            ])
+            font.setBold(bold)
+            font.setItalic(italic)
+            font.setStyleStrategy(QFont.PreferAntialias)
+
+            flags = Qt.TextIncludeTrailingSpaces
+            if text_align == "center":
+                flags |= Qt.AlignHCenter
+            elif text_align == "right":
+                flags |= Qt.AlignRight
+            else:
+                flags |= Qt.AlignLeft
+
+            if vertical_align == "middle":
+                flags |= Qt.AlignVCenter
+            elif vertical_align == "bottom":
+                flags |= Qt.AlignBottom
+            else:
+                flags |= Qt.AlignTop
+
+            if wrap:
+                flags |= Qt.TextWordWrap
+
+            cur_pt = float(font_size_pt)
+            rect = QRectF(0, 0, w, h)
+
+            if overflow_policy == TextOverflowPolicy.AUTO_SHRINK and text:
+                min_pt = 4.0
+                while cur_pt >= min_pt:
+                    doc_px = points_to_document_pixels(cur_pt, dpi)
+                    font.setPixelSize(max(1, int(round(doc_px))))
+                    fm = QFontMetrics(font)
+                    bounding = fm.boundingRect(rect.toRect(), flags, text)
+                    single_w = fm.horizontalAdvance(text)
+                    fits_single_line = (single_w <= w) and ("\n" not in text)
+                    if fits_single_line:
+                        break
+                    if bounding.width() <= w and bounding.height() <= h:
+                        break
+                    cur_pt -= 0.5
+            else:
+                doc_px = points_to_document_pixels(cur_pt, dpi)
+                font.setPixelSize(max(1, int(round(doc_px))))
+
+            painter.setFont(font)
+            painter.setPen(QColor(font_color))
+            painter.drawText(rect, flags, text)
+            painter.end()
+
+            ptr = qimg.bits()
+            bytes_per_line = qimg.bytesPerLine()
+            raw = bytes(ptr)
+            return Image.frombuffer("RGBA", (qimg.width(), qimg.height()), raw, "raw", "BGRA", bytes_per_line, 1)
+        except Exception as e:
+            logger.warning("Qt Devanagari text rendering fallback to FreeType: %s", e)
+            return None
 
     @staticmethod
     def _render_photo(
