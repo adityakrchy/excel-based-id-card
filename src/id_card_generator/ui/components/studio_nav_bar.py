@@ -34,7 +34,7 @@ class StudioNavBar(QFrame):
     help_requested = Signal()
 
     TABS = [
-        (StudioTab.HUB, "Projects & Hub"),
+        (StudioTab.HUB, "Project Hub"),
         (StudioTab.TEMPLATES, "Templates Library"),
         (StudioTab.DESIGNER, "Template Designer"),
         (StudioTab.DATA_MAPPING, "Data Mapping"),
@@ -53,7 +53,7 @@ class StudioNavBar(QFrame):
         layout.setContentsMargins(14, 0, 14, 0)
         layout.setSpacing(12)
 
-        # Left Brand Section: Project Hub Lockup
+        # Left Brand Section: ID Studio Lockup
         brand_layout = QHBoxLayout()
         brand_layout.setSpacing(8)
 
@@ -61,7 +61,7 @@ class StudioNavBar(QFrame):
         lbl_icon.setStyleSheet("font-size: 15px;")
         brand_layout.addWidget(lbl_icon)
 
-        lbl_hub = QLabel("Project Hub")
+        lbl_hub = QLabel("ID Studio")
         lbl_hub.setStyleSheet(
             f"color: #FFFFFF; font-family: {TYPOGRAPHY.FONT_FAMILY_UI}; "
             f"font-size: 13px; font-weight: 700; margin-right: 12px;"

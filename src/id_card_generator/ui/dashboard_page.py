@@ -72,10 +72,11 @@ class PresetCardWidget(QFrame):
         self.setObjectName("preset_card")
         self._key = key
         self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(188)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
 
         # Header: Icon + Badge
         header = QHBoxLayout()
@@ -85,55 +86,58 @@ class PresetCardWidget(QFrame):
         icon_box.setFixedSize(32, 32)
         if icon_type == "card":
             icon_box.setText("🪪")
-            icon_box.setStyleSheet("background-color: #1A2744; border: 1px solid #2B3D66; border-radius: 6px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #1A2744; border: 1px solid #2B3D66; border-radius: 6px; font-size: 15px;")
         elif icon_type == "shield":
             icon_box.setText("🛡️")
-            icon_box.setStyleSheet("background-color: #162B20; border: 1px solid #234834; border-radius: 6px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #162B20; border: 1px solid #234834; border-radius: 6px; font-size: 15px;")
         elif icon_type == "cap":
             icon_box.setText("🎓")
-            icon_box.setStyleSheet("background-color: #242233; border: 1px solid #3A3654; border-radius: 6px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #242233; border: 1px solid #3A3654; border-radius: 6px; font-size: 15px;")
         else:
             icon_box.setText("🎟️")
-            icon_box.setStyleSheet("background-color: #2B2519; border: 1px solid #4D3F24; border-radius: 6px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #2B2519; border: 1px solid #4D3F24; border-radius: 6px; font-size: 15px;")
         icon_box.setAlignment(Qt.AlignCenter)
         header.addWidget(icon_box)
         header.addStretch()
 
         lbl_badge = QLabel(badge)
         lbl_badge.setStyleSheet(
-            f"background-color: {SURFACE_HIGH}; color: {badge_color}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; "
-            f"font-family: {FONT_FAMILY_MONO}; font-size: 10px; font-weight: 600; padding: 2px 6px;"
+            f"background-color: #1C202A; color: {badge_color}; "
+            f"border: 1px solid #2B303C; border-radius: 4px; "
+            f"font-family: {FONT_FAMILY_MONO}; font-size: 10px; font-weight: 600; padding: 2px 7px;"
         )
         header.addWidget(lbl_badge)
         layout.addLayout(header)
 
         # Title & Subtitle
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"color: #FFFFFF; font-family: {FONT_FAMILY_UI}; font-size: 13px; font-weight: 700;")
+        lbl_title.setStyleSheet(f"color: #FFFFFF; font-family: {FONT_FAMILY_UI}; font-size: 13px; font-weight: 700; margin-top: 2px;")
         layout.addWidget(lbl_title)
 
         lbl_sub = QLabel(subtitle)
-        lbl_sub.setStyleSheet(f"color: {TEXT_MUTED}; font-family: {FONT_FAMILY_MONO}; font-size: 10px;")
+        lbl_sub.setStyleSheet("color: #7E8494; font-family: monospace; font-size: 10px;")
         layout.addWidget(lbl_sub)
 
         # Description
         lbl_desc = QLabel(description)
         lbl_desc.setWordWrap(True)
-        lbl_desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; line-height: 1.35;")
-        layout.addWidget(lbl_desc, stretch=1)
+        lbl_desc.setFixedHeight(34)
+        lbl_desc.setStyleSheet("color: #A0A6B5; font-size: 11px; line-height: 1.3;")
+        layout.addWidget(lbl_desc)
+
+        layout.addStretch(1)
 
         # Bottom row: Tech Note + Use Link
         bottom = QHBoxLayout()
         lbl_tech = QLabel(tech_note)
-        lbl_tech.setStyleSheet(f"color: {TEXT_MUTED}; font-family: {FONT_FAMILY_MONO}; font-size: 10px;")
+        lbl_tech.setStyleSheet("color: #6C7280; font-family: monospace; font-size: 10px; font-weight: 500;")
         bottom.addWidget(lbl_tech)
         bottom.addStretch()
 
         self.btn_use = QPushButton("Use →")
         self.btn_use.setCursor(Qt.PointingHandCursor)
         self.btn_use.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {PRIMARY}; border: none; font-weight: 600; font-size: 11px; }}"
+            f"QPushButton {{ background: transparent; color: {PRIMARY}; border: none; font-weight: 700; font-size: 11px; padding: 2px 4px; }}"
             f"QPushButton:hover {{ color: #85A3FF; text-decoration: underline; }}"
         )
         self.btn_use.clicked.connect(lambda: self.selected.emit(self._key))
@@ -142,12 +146,12 @@ class PresetCardWidget(QFrame):
 
         self.setStyleSheet(
             f"QFrame#preset_card {{"
-            f"  background-color: {SURFACE_LOW};"
-            f"  border: 1px solid {BORDER_DEFAULT};"
-            f"  border-radius: 6px;"
+            f"  background-color: #14171E;"
+            f"  border: 1px solid #252934;"
+            f"  border-radius: 8px;"
             f"}}"
             f"QFrame#preset_card:hover {{"
-            f"  background-color: {SURFACE_CONTAINER};"
+            f"  background-color: #1A1E27;"
             f"  border-color: {PRIMARY};"
             f"}}"
         )
@@ -178,26 +182,27 @@ class RecentProjectRowWidget(QFrame):
         super().__init__(parent)
         self._path = path_text
         self.setObjectName("project_row")
+        self.setFixedHeight(58)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 8, 14, 8)
+        layout.setSpacing(14)
 
         # Thumbnail Icon
         icon_box = QLabel()
         icon_box.setFixedSize(36, 36)
         if icon_type == "card":
             icon_box.setText("🪪")
-            icon_box.setStyleSheet("background-color: #1A2744; border: 1px solid #2B3D66; border-radius: 4px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #1A2744; border: 1px solid #2B3D66; border-radius: 6px; font-size: 16px;")
         elif icon_type == "shield":
             icon_box.setText("🛡️")
-            icon_box.setStyleSheet("background-color: #162B20; border: 1px solid #234834; border-radius: 4px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #162B20; border: 1px solid #234834; border-radius: 6px; font-size: 16px;")
         elif icon_type == "cap":
             icon_box.setText("🎓")
-            icon_box.setStyleSheet("background-color: #242233; border: 1px solid #3A3654; border-radius: 4px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #242233; border: 1px solid #3A3654; border-radius: 6px; font-size: 16px;")
         else:
             icon_box.setText("🎟️")
-            icon_box.setStyleSheet("background-color: #2B2519; border: 1px solid #4D3F24; border-radius: 4px; font-size: 16px;")
+            icon_box.setStyleSheet("background-color: #2B2519; border: 1px solid #4D3F24; border-radius: 6px; font-size: 16px;")
         icon_box.setAlignment(Qt.AlignCenter)
         layout.addWidget(icon_box)
 
@@ -214,9 +219,9 @@ class RecentProjectRowWidget(QFrame):
 
         lbl_tag = QLabel(tag)
         lbl_tag.setStyleSheet(
-            f"background-color: {SURFACE_HIGH}; color: {tag_color}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 3px; "
-            f"font-family: {FONT_FAMILY_MONO}; font-size: 9px; font-weight: 600; padding: 1px 5px;"
+            f"background-color: #1E222C; color: {tag_color}; "
+            f"border: 1px solid #2B303C; border-radius: 3px; "
+            f"font-family: {FONT_FAMILY_MONO}; font-size: 9px; font-weight: 600; padding: 1px 6px;"
         )
         title_row.addWidget(lbl_tag)
         title_row.addStretch()
@@ -224,7 +229,7 @@ class RecentProjectRowWidget(QFrame):
 
         lbl_sub = QLabel(
             f"<font color='{SEMANTIC_SUCCESS}'><b>{records_text}</b></font> • "
-            f"<font color='{TEXT_MUTED}'>Edited {edited_text} • {path_text}</font>"
+            f"<font color='#7E8494'>Edited {edited_text} • {path_text}</font>"
         )
         lbl_sub.setStyleSheet(f"font-size: 10px; font-family: {FONT_FAMILY_MONO};")
         info_layout.addWidget(lbl_sub)
@@ -234,38 +239,40 @@ class RecentProjectRowWidget(QFrame):
         # Actions
         btn_open = QPushButton("Open →")
         btn_open.setCursor(Qt.PointingHandCursor)
-        btn_open.setFixedHeight(26)
+        btn_open.setFixedHeight(28)
         if is_primary_action:
             btn_open.setStyleSheet(
-                f"background-color: {PRIMARY}; color: #FFFFFF; font-weight: 600; "
-                f"border: none; border-radius: 4px; padding: 0 12px; font-size: 11px;"
+                f"QPushButton {{ background-color: {PRIMARY}; color: #FFFFFF; font-weight: 700; "
+                f"border: none; border-radius: 4px; padding: 0 14px; font-size: 11px; }}"
+                f"QPushButton:hover {{ background-color: #6187FF; }}"
             )
         else:
             btn_open.setStyleSheet(
-                f"background-color: {SURFACE_HIGH}; color: {TEXT_PRIMARY}; font-weight: 500; "
-                f"border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; padding: 0 12px; font-size: 11px;"
+                f"QPushButton {{ background-color: #21252F; color: #D1D5E0; font-weight: 600; "
+                f"border: 1px solid #2E3442; border-radius: 4px; padding: 0 14px; font-size: 11px; }}"
+                f"QPushButton:hover {{ background-color: #2A303D; color: #FFFFFF; border-color: #454D60; }}"
             )
         btn_open.clicked.connect(lambda: self.opened.emit(self._path))
         layout.addWidget(btn_open)
 
         btn_more = QToolButton()
         btn_more.setText("⋮")
-        btn_more.setFixedSize(26, 26)
+        btn_more.setFixedSize(28, 28)
         btn_more.setStyleSheet(
-            f"QToolButton {{ background: transparent; color: {TEXT_MUTED}; border: none; font-size: 14px; }}"
-            f"QToolButton:hover {{ background: {SURFACE_HIGH}; color: #FFFFFF; border-radius: 4px; }}"
+            f"QToolButton {{ background: transparent; color: #7E8494; border: none; font-size: 14px; }}"
+            f"QToolButton:hover {{ background: #242935; color: #FFFFFF; border-radius: 4px; }}"
         )
         layout.addWidget(btn_more)
 
         self.setStyleSheet(
             f"QFrame#project_row {{"
-            f"  background-color: {SURFACE_LOW};"
-            f"  border: 1px solid {BORDER_DEFAULT};"
-            f"  border-radius: 4px;"
+            f"  background-color: #14171E;"
+            f"  border: 1px solid #242832;"
+            f"  border-radius: 6px;"
             f"}}"
             f"QFrame#project_row:hover {{"
-            f"  background-color: {SURFACE_CONTAINER};"
-            f"  border-color: #4A4D57;"
+            f"  background-color: #1B1E26;"
+            f"  border-color: #383F50;"
             f"}}"
         )
 
@@ -299,8 +306,8 @@ class DashboardPage(QWidget):
         container = QWidget()
         container.setStyleSheet(f"background-color: {SURFACE_LOWEST};")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(40, 24, 40, 32)
-        layout.setSpacing(20)
+        layout.setContentsMargins(48, 28, 48, 36)
+        layout.setSpacing(28)
 
         # -------------------------------------------------------------
         # 1. Hero Header Row: Title, Subtitle, and Primary Actions
@@ -375,7 +382,7 @@ class DashboardPage(QWidget):
         # 2. "Start from a Template" Section (4 Preset Cards Grid)
         # -------------------------------------------------------------
         tmpl_section = QVBoxLayout()
-        tmpl_section.setSpacing(10)
+        tmpl_section.setSpacing(12)
 
         tmpl_header = QHBoxLayout()
         lbl_tmpl_title = QLabel("Start from a Template")
@@ -403,7 +410,7 @@ class DashboardPage(QWidget):
 
         # 4 Cards Row
         cards_layout = QHBoxLayout()
-        cards_layout.setSpacing(12)
+        cards_layout.setSpacing(14)
 
         card1 = PresetCardWidget(
             key="corporate_cr80",
@@ -464,7 +471,7 @@ class DashboardPage(QWidget):
         # 3. "Recent Projects" Section
         # -------------------------------------------------------------
         recent_section = QVBoxLayout()
-        recent_section.setSpacing(10)
+        recent_section.setSpacing(12)
 
         recent_header = QHBoxLayout()
         lbl_recent_title = QLabel("Recent Projects")
@@ -495,7 +502,7 @@ class DashboardPage(QWidget):
 
         # 4 Recent Project Rows
         recent_rows_box = QVBoxLayout()
-        recent_rows_box.setSpacing(6)
+        recent_rows_box.setSpacing(8)
 
         row1 = RecentProjectRowWidget(
             name="Acme_Corp_Staff_Badge_2025.idcrt",
@@ -589,6 +596,7 @@ class DashboardPage(QWidget):
         compat_layout.addWidget(self.spin_dpi)
 
         layout.addWidget(self._compat_widget)
+        layout.addStretch(1)
 
         scroll.setWidget(container)
         main_layout.addWidget(scroll)
