@@ -203,9 +203,10 @@ class ProjectManager:
                 data = json.load(f)
             config = ProjectConfiguration.model_validate(data)
 
-            # Auto-assign or heal workspace directory if project file is in a folder
-            if not config.workspace_dir or not Path(config.workspace_dir).exists():
-                config.workspace_dir = str(file_path.parent.resolve())
+            # Auto-assign or heal workspace directory if legacy project file is in a workspace folder
+            if file_path.name == "project.json" or (file_path.parent / "data").is_dir():
+                if not config.workspace_dir or not Path(config.workspace_dir).exists():
+                    config.workspace_dir = str(file_path.parent.resolve())
 
             # Heal relative/moved paths within workspace
             if config.workspace_dir:

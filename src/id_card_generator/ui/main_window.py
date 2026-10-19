@@ -41,6 +41,7 @@ from id_card_generator.tasks.task_manager import TaskManager
 from id_card_generator.ui.components import StudioHeaderBar, StudioNavBar, StudioTab
 from id_card_generator.ui.dashboard_page import DashboardPage
 from id_card_generator.ui.data_source_page import DataSourcePage
+from id_card_generator.ui.dialogs.new_project_dialog import NewProjectDialog
 from id_card_generator.ui.dialogs.project_dialog import ProjectDialog
 from id_card_generator.ui.dialogs.relink_dialog import RelinkDialog
 from id_card_generator.ui.editor_page import EditorPage
@@ -85,18 +86,10 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if not self._startup_prompt_shown and not os.environ.get("PYTEST_CURRENT_TEST"):
-            self._startup_prompt_shown = True
-            QTimer.singleShot(150, self._prompt_startup_project)
 
     def _prompt_startup_project(self) -> None:
-        """Prompt user on launch to create or open a project workspace."""
-        if self.current_project_config is not None:
-            return
-        dialog = ProjectDialog(self, initial_mode="create")
-        if dialog.exec():
-            if dialog.created_config:
-                self.set_project(dialog.created_config, dialog.selected_workspace_path)
+        """Deprecated startup workspace prompt: no-op to allow direct Project Hub onboarding."""
+        pass
 
     def _setup_ui(self) -> None:
         central_widget = QWidget()
@@ -282,6 +275,7 @@ class MainWindow(QMainWindow):
         self.page_dashboard.dpi_changed.connect(lambda dpi: setattr(self.settings, "dpi", dpi))
         self.page_dashboard.new_project_requested.connect(self._new_project)
         self.page_dashboard.open_project_requested.connect(self._open_project)
+        self.page_dashboard.preset_selected.connect(self._on_preset_selected)
 
         # Sequential step-by-step navigation signals
         self.page_data_source.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
@@ -533,11 +527,14 @@ class MainWindow(QMainWindow):
 
     # --- Project Save / Load / Relink ---
     def set_project(self, config: ProjectConfiguration, workspace_path: Optional[Path] = None) -> None:
-        """Set active project configuration and synchronize workspace across application views."""
+        """Set active project configuration and synchronize across application views."""
         self.current_project_config = config
-        ws_path = Path(workspace_path).resolve() if workspace_path else (config.workspace_path if config.workspace_path else None)
-        if ws_path:
-            self.current_project_path = ws_path / "project.json" if ws_path.is_dir() else ws_path
+        path_obj = Path(workspace_path).resolve() if workspace_path else (config.workspace_path if config.workspace_path else None)
+        if path_obj:
+            if path_obj.is_dir():
+                self.current_project_path = path_obj / "project.json"
+            else:
+                self.current_project_path = path_obj
         else:
             self.current_project_path = None
 
@@ -546,7 +543,7 @@ class MainWindow(QMainWindow):
         self.page_data_source.set_project_config(config)
         self.page_photos.set_project_config(config)
 
-        # Load spreadsheet if exists in workspace
+        # Load spreadsheet if exists
         if config.excel_file_path and Path(config.excel_file_path).exists():
             self.page_data_source.load_file(Path(config.excel_file_path), copy_to_workspace=False)
 
@@ -561,15 +558,22 @@ class MainWindow(QMainWindow):
             self.page_photos.matcher.overrides = dict(config.photo_overrides)
         if config.template:
             self.active_template = config.template
+            if hasattr(self.page_editor, "load_template"):
+                self.page_editor.load_template(config.template)
+            self.page_templates.active_template = config.template
 
         # Set export output directory
         if config.exports_dir:
             self.page_export.lbl_dest_dir.setText(str(config.exports_dir))
             self.page_export.last_export_dir = config.exports_dir
+        elif config.last_export_dir:
+            self.page_export.lbl_dest_dir.setText(str(config.last_export_dir))
+            self.page_export.last_export_dir = Path(config.last_export_dir)
 
         if hasattr(self, "header_bar"):
-            self.header_bar.set_project_title(f"{config.project_name}.idproj", False)
-            self.header_bar.set_sync_status("Auto-saved (Local)", COLORS.TERTIARY)
+            title = self.current_project_path.name if self.current_project_path else config.project_name
+            self.header_bar.set_project_title(title, False)
+            self.header_bar.set_sync_status("Saved (Local)", COLORS.TERTIARY)
 
         self.switch_page(WorkflowStep.DASHBOARD)
         self._refresh_dashboard_metrics()
@@ -633,76 +637,162 @@ class MainWindow(QMainWindow):
         )
 
     def _new_project(self) -> None:
-        """Create a new project workspace."""
-        dialog = ProjectDialog(self, initial_mode="create")
+        """Create a new project document (.idcrt)."""
+        dialog = NewProjectDialog(self, template_manager=self.template_manager)
         if dialog.exec():
             if dialog.created_config:
                 self.records = []
                 self.columns = []
                 self.match_results = {}
                 self.column_mappings = {}
-                self.active_template = None
+                self.active_template = dialog.created_config.template
                 self.last_generation_summary = None
-                self.set_project(dialog.created_config, dialog.selected_workspace_path)
-                QMessageBox.information(
-                    self,
-                    "Workspace Ready",
-                    f"Project '{dialog.created_config.project_name}' workspace created at:\n{dialog.selected_workspace_path}",
-                )
+                self.set_project(dialog.created_config, workspace_path=None)
+                if dialog.created_config.template:
+                    if hasattr(self.page_editor, "load_template"):
+                        self.page_editor.load_template(dialog.created_config.template)
+                    self.page_templates.active_template = dialog.created_config.template
+                self.switch_page(WorkflowStep.DATA_SOURCE)
+
+    def _on_preset_selected(self, preset_key: str) -> None:
+        """Start a new project with the chosen preset template."""
+        preset_titles = {
+            "corporate_cr80": "Corporate Staff ID",
+            "defense_pki": "High-Security Defense",
+            "university_pass": "University Student Pass",
+            "event_cr100": "Event & Conference Pass",
+        }
+        title = preset_titles.get(preset_key, "New ID Project")
+
+        # Pick matching template if available, else first built-in
+        tmpl = None
+        for t in self.template_manager.list_templates():
+            if preset_key in t.id or preset_key in t.name.lower():
+                tmpl = t
+                break
+        if not tmpl and self.template_manager.list_templates():
+            tmpl = self.template_manager.list_templates()[0]
+
+        cfg = ProjectConfiguration(
+            project_name=title,
+            template=tmpl,
+        )
+        self.records = []
+        self.columns = []
+        self.match_results = {}
+        self.column_mappings = {}
+        self.active_template = tmpl
+        self.last_generation_summary = None
+        self.set_project(cfg, workspace_path=None)
+        if tmpl:
+            if hasattr(self.page_editor, "load_template"):
+                self.page_editor.load_template(tmpl)
+            self.page_templates.active_template = tmpl
+        self.switch_page(WorkflowStep.DATA_SOURCE)
 
     def _open_project(self) -> None:
-        """Open an existing workspace or project.json."""
-        dialog = ProjectDialog(self, initial_mode="open")
-        if dialog.exec():
-            if dialog.created_config:
-                cfg = dialog.created_config
-                missing = ProjectManager.check_missing_references(cfg)
-                if missing:
-                    relink_dialog = RelinkDialog(missing, self)
-                    if relink_dialog.exec():
-                        cfg = ProjectManager.relink_references(cfg, relink_dialog.replacements)
-                    else:
-                        return
-                self.set_project(cfg, dialog.selected_workspace_path)
-                QMessageBox.information(self, "Project Loaded", f"Project '{cfg.project_name}' loaded successfully.")
+        """Open an existing .idcrt project file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open ID Studio Project",
+            "",
+            "ID Studio Project (*.idcrt);;Legacy Project (*.json *.idproj);;All Files (*)",
+        )
+        if file_path:
+            self.load_project_from_file(Path(file_path))
+
+    def load_project_from_file(self, file_path: Path) -> bool:
+        """Load and restore an ID Studio project (.idcrt / .json)."""
+        try:
+            file_path = Path(file_path).resolve()
+            if not file_path.exists():
+                QMessageBox.warning(self, "File Not Found", f"Project file does not exist:\n{file_path}")
+                return False
+
+            cfg = ProjectManager.load_project(file_path)
+            missing = ProjectManager.check_missing_references(cfg)
+            if missing:
+                relink_dialog = RelinkDialog(missing, self)
+                if relink_dialog.exec():
+                    cfg = ProjectManager.relink_references(cfg, relink_dialog.replacements)
+                else:
+                    return False
+
+            self.set_project(cfg, workspace_path=file_path)
+            if not os.environ.get("PYTEST_CURRENT_TEST"):
+                QMessageBox.information(
+                    self,
+                    "Project Loaded",
+                    f"Project '{cfg.project_name}' loaded successfully from:\n{file_path.name}",
+                )
+            return True
+        except Exception as e:
+            logger.error("Failed to load project: %s", e)
+            if not os.environ.get("PYTEST_CURRENT_TEST"):
+                QMessageBox.critical(self, "Load Error", f"Could not load project from {file_path.name}:\n{e}")
+            return False
 
     def _save_project(self) -> None:
+        """Save project to active .idcrt path, or prompt if unsaved."""
         if self.current_project_path:
             self._save_to_path(self.current_project_path)
-        elif self.current_project_config and self.current_project_config.project_file_path:
-            self._save_to_path(self.current_project_config.project_file_path)
         else:
             self._save_project_as()
 
     def _save_project_as(self) -> None:
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save Project", "project.json", "Project Files (*.json)")
+        """Prompt user for destination .idcrt path and save."""
+        default_name = "Untitled.idcrt"
+        if self.current_project_config and self.current_project_config.project_name:
+            clean = "".join(c for c in self.current_project_config.project_name if c.isalnum() or c in (" ", "_", "-")).strip()
+            if clean:
+                default_name = f"{clean}.idcrt"
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save ID Studio Project",
+            default_name,
+            "ID Studio Project (*.idcrt);;Legacy Project (*.json *.idproj);;All Files (*)",
+        )
         if file_path:
-            self.current_project_path = Path(file_path)
+            save_path = Path(file_path)
+            if not save_path.suffix:
+                save_path = save_path.with_suffix(".idcrt")
+            self.current_project_path = save_path
             self._save_to_path(self.current_project_path)
 
     def _save_to_path(self, path: Path) -> None:
         try:
+            path = Path(path).resolve()
+            if not path.suffix:
+                path = path.with_suffix(".idcrt")
+
             cfg = self.current_project_config or ProjectConfiguration()
-            if cfg.project_name == "Untitled Project":
+            if cfg.project_name in ("Untitled Project", "Untitled", ""):
                 cfg.project_name = path.stem
             cfg.excel_file_path = str(self.page_data_source.current_file_path) if self.page_data_source.current_file_path else cfg.excel_file_path
             cfg.sheet_name = self.page_data_source.cmb_sheets.currentText() or cfg.sheet_name
             cfg.header_row = self.page_data_source.spin_header.value()
-            cfg.photo_dir_path = str(self.page_photos.matcher.photo_dir) if self.page_photos.matcher.photo_dir else cfg.photo_dir_path
+            cfg.photo_dir_path = str(self.page_photos.matcher.photo_dir) if (hasattr(self.page_photos, "matcher") and self.page_photos.matcher.photo_dir) else cfg.photo_dir_path
             cfg.template = self.active_template or self.page_templates.active_template or cfg.template
             cfg.column_mappings = self.column_mappings
-            cfg.photo_overrides = self.page_photos.matcher.overrides
+            cfg.photo_overrides = self.page_photos.matcher.overrides if hasattr(self.page_photos, "matcher") else {}
             cfg.missing_photo_policy = self.settings.missing_photo_policy
             cfg.review_states = {r.record_id: r.status for r in self.page_review.manager.records}
-            if not cfg.workspace_dir and path.name == "project.json":
-                cfg.workspace_dir = str(path.parent.resolve())
+            if hasattr(self.page_export, "last_export_dir") and self.page_export.last_export_dir:
+                cfg.last_export_dir = str(self.page_export.last_export_dir)
 
             ProjectManager.save_project(cfg, path)
             self.current_project_config = cfg
             self.current_project_path = path
+
+            if hasattr(self, "header_bar"):
+                self.header_bar.set_project_title(path.name, False)
+                self.header_bar.set_sync_status("Saved (Local)", COLORS.TERTIARY)
+
             self._refresh_status_bar()
             self._refresh_dashboard_metrics()
-            QMessageBox.information(self, "Project Saved", f"Project successfully saved to {path.name}.")
+            if not os.environ.get("PYTEST_CURRENT_TEST"):
+                QMessageBox.information(self, "Project Saved", f"Project successfully saved to:\n{path.name}")
         except Exception as e:
             logger.error("Failed to save project: %s", e)
             QMessageBox.critical(self, "Save Error", f"Could not save project: {e}")

@@ -279,6 +279,7 @@ class DashboardPage(QWidget):
     dpi_changed = Signal(int)
     new_project_requested = Signal()
     open_project_requested = Signal()
+    preset_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -310,7 +311,7 @@ class DashboardPage(QWidget):
         left_hero = QVBoxLayout()
         left_hero.setSpacing(4)
 
-        lbl_workspace_badge = QLabel("● WORKSPACE READY · Enterprise v2.4.1")
+        lbl_workspace_badge = QLabel("● SYSTEM READY · Enterprise v2.4.1")
         lbl_workspace_badge.setStyleSheet(
             f"color: {SEMANTIC_SUCCESS}; font-family: {FONT_FAMILY_MONO}; "
             f"font-size: 10px; font-weight: 700; letter-spacing: 0.05em;"
@@ -497,7 +498,7 @@ class DashboardPage(QWidget):
         recent_rows_box.setSpacing(6)
 
         row1 = RecentProjectRowWidget(
-            name="Acme_Corp_Staff_Badge_2025.idproj",
+            name="Acme_Corp_Staff_Badge_2025.idcrt",
             tag="CR80",
             records_text="1,420 Records",
             edited_text="12m ago",
@@ -510,7 +511,7 @@ class DashboardPage(QWidget):
         recent_rows_box.addWidget(row1)
 
         row2 = RecentProjectRowWidget(
-            name="Gov_Defense_Security_Pass_Q2.idproj",
+            name="Gov_Defense_Security_Pass_Q2.idcrt",
             tag="PIV / FIPS 201",
             records_text="850 Records",
             edited_text="yesterday",
@@ -523,7 +524,7 @@ class DashboardPage(QWidget):
         recent_rows_box.addWidget(row2)
 
         row3 = RecentProjectRowWidget(
-            name="Metro_University_Student_IDs_2025.idproj",
+            name="Metro_University_Student_IDs_2025.idcrt",
             tag="CR80",
             records_text="14,500 Records",
             edited_text="3 days ago",
@@ -536,7 +537,7 @@ class DashboardPage(QWidget):
         recent_rows_box.addWidget(row3)
 
         row4 = RecentProjectRowWidget(
-            name="TechSummit_Annual_Badge_Passes.idproj",
+            name="TechSummit_Annual_Badge_Passes.idcrt",
             tag="CR100",
             records_text="3,200 Records",
             edited_text="Oct 14",
@@ -604,6 +605,7 @@ class DashboardPage(QWidget):
 
     def _on_preset_selected(self, preset_key: str) -> None:
         """Trigger navigation directly into Template Designer or Data Source."""
+        self.preset_selected.emit(preset_key)
         self.navigate_requested.emit(WorkflowStep.TEMPLATES.value)
 
     def _open_recent_project(self, path_str: str) -> None:

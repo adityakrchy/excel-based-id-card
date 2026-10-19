@@ -59,7 +59,7 @@ class StudioHeaderBar(QFrame):
         self.lbl_slash.setStyleSheet("color: #4A4D57; font-size: 11px;")
         left_layout.addWidget(self.lbl_slash)
 
-        self.lbl_project_name = QLabel("Workspace Root :: Central Secure Credential Repository")
+        self.lbl_project_name = QLabel("Project: Untitled.idcrt")
         self.lbl_project_name.setStyleSheet(
             f"color: #8E909F; font-family: {TYPOGRAPHY.FONT_FAMILY_MONO}; font-size: 11px;"
         )
@@ -171,10 +171,13 @@ class StudioHeaderBar(QFrame):
             self.theme_requested.emit(theme)
 
     def set_project_title(self, name: str, is_dirty: bool = False) -> None:
-        if name and name.lower() not in ("untitled", "untitled.idproj"):
-            self.lbl_project_name.setText(f"Workspace Root :: {name}")
+        if name:
+            clean = name.strip()
+            if not clean.endswith(".idcrt") and not clean.endswith(".idproj") and not clean.endswith(".json"):
+                clean = f"{clean}.idcrt"
+            self.lbl_project_name.setText(f"Project: {clean}")
         else:
-            self.lbl_project_name.setText("Workspace Root :: Central Secure Credential Repository")
+            self.lbl_project_name.setText("Project: Untitled.idcrt")
         self.lbl_dirty_dot.setVisible(is_dirty)
 
     def set_sync_status(self, text: str, dot_color: str = COLORS.TERTIARY) -> None:
