@@ -38,6 +38,7 @@ from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.generation.batch_generator import GenerationSummary
 from id_card_generator.resources.resource_loader import get_resource_path
 from id_card_generator.tasks.task_manager import TaskManager
+from id_card_generator.templates.template_manager import TemplateManager
 from id_card_generator.ui.components import StudioHeaderBar, StudioNavBar, StudioTab
 from id_card_generator.ui.dashboard_page import DashboardPage
 from id_card_generator.ui.data_source_page import DataSourcePage
@@ -78,6 +79,7 @@ class MainWindow(QMainWindow):
         self.column_mappings: Dict[str, str] = {}
         self.settings = RenderSettings()
         self.last_generation_summary: Optional[GenerationSummary] = None
+        self.template_manager = TemplateManager()
 
         self._setup_ui()
         self._setup_menus()
