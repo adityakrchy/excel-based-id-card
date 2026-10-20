@@ -6,6 +6,7 @@ clipped.  These tests lock the layout down.
 """
 
 import pytest
+from PySide6.QtCore import QPoint
 
 from id_card_generator.ui.dialogs.template_cleanup_dialog import (
     COL_ACTIONS,
@@ -102,3 +103,41 @@ def test_long_text_is_elided_not_cut(cleanup_dialog: TemplateCleanupDialog):
         widget = table.cellWidget(row, 4)
         if isinstance(widget, ElidedLabel):
             assert widget.text().endswith("…") or len(widget.fullText()) <= 40
+
+
+def test_action_buttons_fit_into_the_column(cleanup_dialog: TemplateCleanupDialog):
+    """The action buttons must not overflow their column."""
+    from PySide6.QtWidgets import QPushButton
+
+    table = cleanup_dialog.table
+    column_width = table.columnWidth(5)
+
+    for row in range(table.rowCount()):
+        container = table.cellWidget(row, 5)
+        if container is None:
+            continue
+        needed = sum(
+            button.sizeHint().width()
+            for button in container.findChildren(QPushButton)
+        )
+        assert needed <= column_width, (
+            f"row {row}: the actions need {needed}px but the column is "
+            f"{column_width}px"
+        )
+
+
+def test_action_buttons_are_aligned_within_the_row(cleanup_dialog: TemplateCleanupDialog):
+    """Every action button of a row sits on the same baseline."""
+    from PySide6.QtWidgets import QPushButton
+
+    table = cleanup_dialog.table
+
+    for row in range(table.rowCount()):
+        container = table.cellWidget(row, 5)
+        if container is None:
+            continue
+        tops = {
+            button.mapTo(container, QPoint(0, 0)).y()
+            for button in container.findChildren(QPushButton)
+        }
+        assert len(tops) <= 1, f"row {row}: the action buttons are not aligned {tops}"

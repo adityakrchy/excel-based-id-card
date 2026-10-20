@@ -260,6 +260,7 @@ class TemplateCleanupDialog(QDialog):
                 chk.setFixedHeight(CONTROL_HEIGHT)
                 chk.toggled.connect(self._update_delete_button_state)
                 chk_layout.addWidget(chk)
+                chk_layout.activate()
                 self.table.setCellWidget(row_idx, 0, chk_container)
                 self._checkbox_map[tmpl.id] = chk
 
@@ -285,6 +286,7 @@ class TemplateCleanupDialog(QDialog):
                 title_row.addWidget(active_badge)
             title_row.addStretch()
             name_layout.addLayout(title_row)
+            name_layout.activate()
 
             if tmpl.description:
                 desc_lbl = ElidedLabel(tmpl.description)
@@ -321,16 +323,19 @@ class TemplateCleanupDialog(QDialog):
             file_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             self.table.setCellWidget(row_idx, 4, file_lbl)
 
-            # Col 5: Actions
+            # Col 5: Actions - the buttons have to fit into the column,
+            # otherwise they are clipped by the viewport.
             actions_container = QWidget()
             actions_layout = QHBoxLayout(actions_container)
             actions_layout.setContentsMargins(4, 0, 4, 0)
-            actions_layout.setSpacing(6)
+            actions_layout.setSpacing(4)
+            actions_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-            btn_load = QPushButton("✓ Active" if is_active else "Use / Load")
+            btn_load = QPushButton("✓ Active" if is_active else "Use")
             btn_load.setFixedHeight(CONTROL_HEIGHT)
-            btn_load.setMinimumWidth(84)
+            btn_load.setFixedWidth(70)
             btn_load.setStyleSheet("font-size: 11px;")
+            btn_load.setToolTip("Load this template into the designer")
             btn_load.clicked.connect(lambda ch=False, t=tmpl: self._on_load_clicked(t))
             actions_layout.addWidget(btn_load)
 
@@ -338,15 +343,20 @@ class TemplateCleanupDialog(QDialog):
                 btn_del = QPushButton("🗑 Delete")
                 btn_del.setObjectName("btn_danger")
                 btn_del.setFixedHeight(CONTROL_HEIGHT)
-                btn_del.setMinimumWidth(84)
-                btn_del.setStyleSheet("font-size: 11px;")
-                btn_del.setToolTip("Permanently delete this saved template file from disk")
+                btn_del.setFixedWidth(88)
+                btn_del.setStyleSheet("font-size: 12px;")
+                btn_del.setToolTip(
+                    f"Permanently delete '{tmpl.name}' from disk"
+                )
                 btn_del.clicked.connect(
                     lambda ch=False, tid=tmpl.id, tname=tmpl.name: self._delete_single_template(tid, tname)
                 )
                 actions_layout.addWidget(btn_del)
 
-            actions_layout.addStretch()
+            # The layout of a cell widget is only calculated when the event
+            # loop runs - without this the buttons are drawn at their default
+            # position and look misaligned.
+            actions_layout.activate()
             self.table.setCellWidget(row_idx, 5, actions_container)
 
             # Check search filter visibility
