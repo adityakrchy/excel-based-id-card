@@ -548,10 +548,8 @@ class TemplatePage(QWidget):
                 break
 
         self.template_selected.emit(updated)
-        QMessageBox.information(
-            self,
-            "Canvas Properties Saved",
-            f"Canvas properties for '{updated.name}' have been saved.",
+        self.notice.set_message(
+            f"Canvas properties for '{updated.name}' have been saved.", severity="success"
         )
 
     def _edit_canvas_properties(self, tmpl: Optional[TemplateDefinition] = None) -> None:
@@ -578,10 +576,9 @@ class TemplatePage(QWidget):
                         break
 
                 self.template_selected.emit(updated)
-                QMessageBox.information(
-                    self,
-                    "Canvas Properties Updated",
+                self.notice.set_message(
                     f"Canvas properties for '{updated.name}' updated successfully.",
+                    severity="success",
                 )
 
     def _update_preview(self, tmpl: TemplateDefinition) -> None:
@@ -620,10 +617,9 @@ class TemplatePage(QWidget):
     def _use_template(self) -> None:
         if self.active_template:
             self.template_selected.emit(self.active_template)
-            QMessageBox.information(
-                self,
-                "Template Activated",
+            self.notice.set_message(
                 f"'{self.active_template.name}' is now the active template for your project.",
+                severity="success",
             )
 
     def _duplicate_template(self) -> None:
@@ -637,7 +633,7 @@ class TemplatePage(QWidget):
             if it.data(Qt.UserRole) == new_tmpl.id:
                 self.list_widget.setCurrentItem(it)
                 break
-        QMessageBox.information(self, "Template Duplicated", f"Created '{new_name}'.")
+        self.notice.set_message(f"Created '{new_name}'.", severity="success")
 
     def _import_template(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(self, "Import Template JSON", "", "JSON Files (*.json)")
@@ -650,7 +646,9 @@ class TemplatePage(QWidget):
                     if it.data(Qt.UserRole) == imported.id:
                         self.list_widget.setCurrentItem(it)
                         break
-                QMessageBox.information(self, "Template Imported", f"Imported '{imported.name}' successfully.")
+                self.notice.set_message(
+                    f"Imported '{imported.name}' successfully.", severity="success"
+                )
             except Exception as e:
                 logger.error("Failed to import template %s: %s", file_path, e)
                 QMessageBox.critical(self, "Import Error", f"Failed to import template: {e}")
@@ -667,7 +665,7 @@ class TemplatePage(QWidget):
         if dest:
             try:
                 self.manager.export_template(self.active_template.id, Path(dest))
-                QMessageBox.information(self, "Export Successful", f"Saved template to {dest}.")
+                self.notice.set_message(f"Saved template to {dest}.", severity="success")
             except Exception as e:
                 logger.error("Failed to export template: %s", e)
                 QMessageBox.critical(self, "Export Error", f"Failed to export template: {e}")
