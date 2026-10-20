@@ -421,6 +421,31 @@ QPushButton#btn_ghost:hover {
     color: $on_surface;
 }
 
+QPushButton#btn_secondary {
+    background-color: $surface_container;
+    color: $on_surface_variant;
+    border: 1px solid $border;
+    font-weight: 500;
+}
+
+QPushButton#btn_secondary:hover {
+    background-color: $surface_high;
+    color: $on_surface;
+    border-color: $outline_variant;
+}
+
+QToolButton#btn_ghost {
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: $on_surface_variant;
+    font-size: 15px;
+}
+
+QToolButton#btn_ghost:hover {
+    background-color: $surface_high;
+    color: $on_surface;
+}
+
 /* Compact square buttons (zoom steppers, record stepper, ...) */
 QPushButton#btn_stepper, QToolButton#btn_stepper {
     background-color: $surface_container;
@@ -795,6 +820,11 @@ QLabel#notice_banner[severity="success"] {
     color: $tertiary;
 }
 
+/* Labels never paint a surface of their own. */
+QLabel {
+    background: transparent;
+}
+
 /* --- Typography roles ------------------------------------------------ */
 QLabel[role="pageTitle"] {
     color: $on_surface;
@@ -843,6 +873,30 @@ QLabel[role="monoMuted"] {
     color: $text_muted;
     font-family: $mono_font;
     font-size: 11px;
+}
+
+QLabel[role="specKey"] {
+    color: $text_muted;
+    font-size: 11px;
+}
+
+QLabel[role="specValue"] {
+    color: $on_surface;
+    font-family: $mono_font;
+    font-size: 11px;
+}
+
+QLineEdit[role="fieldFlat"], QTextEdit[role="fieldFlat"] {
+    background-color: $surface_low;
+    border: 1px solid $border_subtle;
+    border-radius: 4px;
+    padding: 3px 8px;
+    color: $on_surface;
+}
+
+QLineEdit[role="fieldFlat"]:focus, QTextEdit[role="fieldFlat"]:focus {
+    border-color: $primary;
+    background-color: $surface_container;
 }
 
 QLabel[role="tableTitle"] {

@@ -9,10 +9,12 @@ from id_card_generator.ui.components.page_scaffold import (
     PageFooter,
     PageHeader,
 )
+from id_card_generator.ui.components.spec_list import SpecList
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.components.studio_header_bar import StudioHeaderBar
 from id_card_generator.ui.components.studio_nav_bar import StudioNavBar, StudioTab
 from id_card_generator.ui.components.surface import StatTile, SurfaceCard
+from id_card_generator.ui.components.template_gallery import TemplateGalleryDelegate
 
 __all__ = [
     "ElidedLabel",
@@ -22,10 +24,12 @@ __all__ = [
     "PageFooter",
     "PageHeader",
     "StatTile",
+    "SpecList",
     "StatusPill",
     "StudioHeaderBar",
     "StudioNavBar",
     "StudioTab",
     "SurfaceCard",
+    "TemplateGalleryDelegate",
     "normalize_control_heights",
 ]
