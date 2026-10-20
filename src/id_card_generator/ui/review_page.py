@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from id_card_generator.core.constants import MatchStatus, ReviewStatus, WorkflowStep
 from id_card_generator.core.models import (
+    RenderSettings,
     PhotoMatchResult,
     RenderResult,
     ReviewRecord,
@@ -36,7 +37,7 @@ from id_card_generator.core.models import (
     TemplateDefinition,
 )
 from id_card_generator.generation.batch_generator import BatchGenerator
-from id_card_generator.rendering.pillow_renderer import PillowRenderer
+from id_card_generator.resources.resource_loader import get_staging_dir
 from id_card_generator.review.review_manager import ReviewManager
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
@@ -79,6 +80,7 @@ class ReviewPage(QWidget):
         self.template: Optional[TemplateDefinition] = None
         self.source_records_map: Dict[str, SourceRecord] = {}
         self.match_results_map: Dict[str, PhotoMatchResult] = {}
+        self.settings = RenderSettings()
         self.column_mappings: Dict[str, str] = {}
         self._current_filter: Optional[ReviewStatus] = None
 
@@ -445,13 +447,13 @@ class ReviewPage(QWidget):
         rec = self.manager.get_current_record()
         if not rec:
             return
-        self.manager.set_status(rec.record_id, status)
+        self.manager.update_status(rec.record_id, status)
         self.review_updated.emit(self.manager)
-        self.manager.next()
+        self.manager.next_record()
         self._update_display()
 
     def _batch_approve(self) -> None:
-        count = self.manager.batch_approve_valid()
+        count = self.manager.batch_approve_all_valid()
         self.review_updated.emit(self.manager)
         self._update_display()
         self.notice.set_message(
@@ -472,11 +474,19 @@ class ReviewPage(QWidget):
         photo_path = match_res.photo_path if match_res else None
 
         try:
-            renderer = PillowRenderer(self.template)
-            res = renderer.render_card(src_rec, photo_path, column_mappings=self.column_mappings)
-            if res.success and res.output_path:
-                rec.rendered_image_path = str(res.output_path)
-                self.manager.set_status(rec.record_id, ReviewStatus.PENDING)
+            # Re-render through the batch generator so the card is written
+            # to the staging folder exactly like during the batch run.
+            res = BatchGenerator.generate_single_card(
+                template=self.template,
+                record=src_rec,
+                match_result=match_res,
+                column_mappings=self.column_mappings,
+                settings=self.settings,
+                target_dir=get_staging_dir(),
+            )
+            if res.success and res.image_path:
+                rec.rendered_image_path = str(res.image_path)
+                self.manager.update_status(rec.record_id, ReviewStatus.PENDING)
                 self.review_updated.emit(self.manager)
                 self._update_display()
                 self.notice.set_message(
@@ -491,21 +501,21 @@ class ReviewPage(QWidget):
             self.notice.set_message(f"Failed to re-render card: {e}", severity="error")
 
     def _on_search_changed(self, text: str) -> None:
-        self.manager.filter_text = text
+        self.manager.search_query = text
         self._update_display()
 
     def _first(self) -> None:
-        self.manager.first()
+        self.manager.first_record()
         self._update_display()
 
     def _prev(self) -> None:
-        self.manager.prev()
+        self.manager.prev_record()
         self._update_display()
 
     def _next(self) -> None:
-        self.manager.next()
+        self.manager.next_record()
         self._update_display()
 
     def _last(self) -> None:
-        self.manager.last()
+        self.manager.last_record()
         self._update_display()

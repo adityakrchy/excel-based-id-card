@@ -30,7 +30,7 @@ from id_card_generator.core.models import (
     SourceRecord,
     TemplateDefinition,
 )
-from id_card_generator.generation.batch_generator import GenerationSummary
+from id_card_generator.generation.batch_generator import BatchGenerator, GenerationSummary
 from id_card_generator.generation.generation_worker import GenerationWorker
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
@@ -78,6 +78,7 @@ class GenerationPage(QWidget):
         self.settings = RenderSettings()
 
         self._worker: Optional[GenerationWorker] = None
+        self._retired_workers: List[GenerationWorker] = []
         self._start_time: float = 0.0
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
@@ -126,7 +127,9 @@ class GenerationPage(QWidget):
         self.card_rendered, self.lbl_kpi_rendered = create_kpi_card("Cards Rendered", "0 / 0", PRIMARY_LIGHT)
         self.card_time, self.lbl_kpi_time = create_kpi_card("Elapsed Time", "00:00", TEXT_PRIMARY)
         self.card_rate, self.lbl_kpi_rate = create_kpi_card("Render Speed", "0.0 /sec", SEMANTIC_SUCCESS)
-        self.card_workers, self.lbl_kpi_workers = create_kpi_card("Worker Threads", "4 Threads", SEMANTIC_WARNING)
+        self.card_workers, self.lbl_kpi_workers = create_kpi_card(
+            "Render Threads", "1 Thread", SEMANTIC_WARNING
+        )
 
         kpi_row.addWidget(self.card_rendered)
         kpi_row.addWidget(self.card_time)
@@ -309,17 +312,25 @@ class GenerationPage(QWidget):
         self._start_time = time.time()
         self._timer.start()
 
+        workers = BatchGenerator.resolve_workers(len(self.records))
+        self.lbl_kpi_workers.setText(
+            f"{workers} Thread{'s' if workers != 1 else ''}"
+        )
+
+        self._stop_worker()
         self._worker = GenerationWorker(
             template=self.template,
             records=self.records,
             match_results=self.match_results,
             column_mappings=self.column_mappings,
             settings=self.settings,
+            workers=workers,
         )
         self._worker.progress_updated.connect(self._on_progress)
         self._worker.status_message.connect(self._on_status)
-        self._worker.card_generated.connect(self._on_card_generated)
-        self._worker.generation_finished.connect(self._on_finished)
+        self._worker.record_finished.connect(self._on_card_generated)
+        self._worker.batch_finished.connect(self._on_finished)
+        self._worker.error_occurred.connect(self._on_error)
         self._worker.start()
 
     def _update_elapsed_time(self) -> None:
@@ -329,14 +340,52 @@ class GenerationPage(QWidget):
             secs = elapsed % 60
             self.lbl_kpi_time.setText(f"{mins:02d}:{secs:02d}")
 
+    def _stop_worker(self) -> None:
+        """Join the running worker before it is replaced.
+
+        A QThread that is destroyed while it is still running crashes the
+        application, so the reference is kept until the thread has finished.
+        """
+        worker = self._worker
+        self._worker = None
+        if worker is None:
+            return
+        if worker.isRunning():
+            worker.cancel()
+            if not worker.wait(3000):
+                # Still running - hold on to it until it reports that it is done.
+                self._retired_workers.append(worker)
+
+                def _release() -> None:
+                    if worker in self._retired_workers:
+                        self._retired_workers.remove(worker)
+                    worker.deleteLater()
+
+                worker.finished.connect(_release)
+        else:
+            worker.deleteLater()
+
+    def shutdown(self) -> None:
+        """Stop the generation before the page is destroyed."""
+        self._timer.stop()
+        self._stop_worker()
+        for worker in list(self._retired_workers):
+            worker.wait(2000)
+        self._retired_workers.clear()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self.shutdown()
+        super().closeEvent(event)
+
     def _cancel_generation(self) -> None:
+        """Request a cancellation - the worker confirms when it stopped."""
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self.lbl_status.setText("Cancelling run...")
-            self.pill_engine_state.set_status("CANCELLED", color=SEMANTIC_WARNING)
-            self._timer.stop()
+            self.pill_engine_state.set_status("CANCELLING", color=SEMANTIC_WARNING)
+            self.btn_cancel.setEnabled(False)
 
-    def _on_progress(self, current: int, total: int) -> None:
+    def _on_progress(self, current: int, total: int, pin: str = "", message: str = "") -> None:
         if total > 0:
             pct = int((current / total) * 100)
             self.progress_bar.setValue(pct)
@@ -354,24 +403,57 @@ class GenerationPage(QWidget):
         sb.setValue(sb.maximum())
 
     def _on_card_generated(self, result) -> None:
-        if result.success:
-            self._on_status(f"[OK] Rendered PIN: {result.pin} -> {result.output_path}")
-        else:
-            self._on_status(f"[ERROR] Failed PIN: {result.pin} - {result.error_message}")
+        """A single card was rendered - the log line is emitted by the worker."""
+        if result is None:
+            return
+
+    def _on_error(self, message: str) -> None:
+        """The batch run failed."""
+        self._timer.stop()
+        self.btn_generate.setEnabled(True)
+        self.btn_cancel.setEnabled(False)
+        self.lbl_status.setText("Generation failed.")
+        self.pill_engine_state.set_status("ERROR", color=SEMANTIC_ERROR)
+        self.notice.set_message(f"Generation failed: {message}", severity="error")
+        self._on_status(f"[FATAL] {message}")
 
     def _on_finished(self, summary: GenerationSummary) -> None:
+        """The batch run finished (successfully or cancelled)."""
         self._timer.stop()
         self.btn_generate.setEnabled(True)
         self.btn_cancel.setEnabled(False)
         self.btn_goto_review.setEnabled(True)
         self.nav_bar.btn_next.setEnabled(True)
 
+        # Release the worker - it must not be destroyed while it runs.
+        worker = self._worker
+        self._worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+        elapsed = time.time() - self._start_time if self._start_time else 0.0
         status_text = (
-            f"Finished in {summary.elapsed_seconds:.1f}s: "
-            f"{summary.completed_count} generated, {summary.error_count} errors, {summary.skipped_count} skipped."
+            f"Finished in {elapsed:.1f}s: "
+            f"{summary.completed_count} generated, {summary.failed_count} errors, "
+            f"{summary.skipped_count} skipped."
         )
+
+        if summary.cancelled:
+            status_text = (
+                f"Cancelled after {summary.completed_count} of "
+                f"{summary.total_records} cards ({elapsed:.1f}s)."
+            )
+            self.pill_engine_state.set_status("CANCELLED", color=SEMANTIC_WARNING)
+            self.notice.set_message(status_text, severity="warning")
+        else:
+            self.pill_engine_state.set_status("COMPLETED", color=SEMANTIC_SUCCESS)
+            if summary.failed_count:
+                self.notice.set_message(
+                    f"{summary.failed_count} card(s) could not be generated.",
+                    severity="warning",
+                )
+
         self.lbl_status.setText(status_text)
-        self.pill_engine_state.set_status("COMPLETED", color=SEMANTIC_SUCCESS)
         self._on_status("\n" + "=" * 50)
         self._on_status(status_text)
 

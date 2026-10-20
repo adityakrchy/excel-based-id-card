@@ -247,7 +247,10 @@ class MainWindow(QMainWindow):
         A worker thread that is still running when its parent is destroyed
         crashes the application.
         """
-        for page in (getattr(self, "page_photos", None),):
+        for page in (
+            getattr(self, "page_photos", None),
+            getattr(self, "page_generation", None),
+        ):
             if page is not None and hasattr(page, "shutdown"):
                 try:
                     page.shutdown()
