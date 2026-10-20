@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "excel-id-card-generator"
-version = "1.0.4"
+version = "1.0.5"
 description = "Professional Excel-Based ID Card Generator Desktop Application"
 readme = "README.md"
 authors = [
