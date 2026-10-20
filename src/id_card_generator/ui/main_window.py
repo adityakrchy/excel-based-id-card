@@ -464,6 +464,12 @@ class MainWindow(QMainWindow):
         # always sees what to do next, even before its prerequisites are met.
         upcoming = workflow.next_step(self._current_step)
 
+        # Steps the user already moved past are never "blocked".
+        passed = set()
+        if self._current_step in workflow.PIPELINE:
+            position = workflow.PIPELINE.index(self._current_step)
+            passed = set(workflow.PIPELINE[:position])
+
         states: Dict[StudioTab, TabState] = {}
         for tab in StudioTab:
             step = workflow.step_for_tab(tab.value)
@@ -479,8 +485,10 @@ class MainWindow(QMainWindow):
                 states[tab] = TabState.DONE
                 continue
 
-            if step != upcoming and workflow.missing_requirements(
-                step, self._completed_steps
+            if (
+                step not in passed
+                and step != upcoming
+                and workflow.missing_requirements(step, self._completed_steps)
             ):
                 states[tab] = TabState.BLOCKED
                 continue

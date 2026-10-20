@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from id_card_generator.core.constants import OutputFormat, WorkflowStep
+from id_card_generator.core.constants import MatchStatus, OutputFormat, WorkflowStep
 from id_card_generator.core.models import (
     PhotoMatchResult,
     RenderSettings,
@@ -263,7 +263,11 @@ class GenerationPage(QWidget):
         self.lbl_chk_records.setText(f"Records: {len(records):,} loaded ({valid_count:,} valid)")
         self.lbl_kpi_rendered.setText(f"0 / {len(records):,}")
 
-        matched_count = sum(1 for m in match_results.values() if m.matched)
+        matched_count = sum(
+            1
+            for m in match_results.values()
+            if m.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN)
+        )
         missing_count = len(records) - matched_count
         self.lbl_chk_photos.setText(f"Photos: {matched_count:,} matched ({missing_count:,} missing)")
 

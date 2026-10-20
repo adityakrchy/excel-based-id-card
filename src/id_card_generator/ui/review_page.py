@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from id_card_generator.core.constants import ReviewStatus, WorkflowStep
+from id_card_generator.core.constants import MatchStatus, ReviewStatus, WorkflowStep
 from id_card_generator.core.models import (
     PhotoMatchResult,
     RenderResult,
@@ -422,7 +422,11 @@ class ReviewPage(QWidget):
 
         if match_res:
             lines.append("<hr>")
-            status_color = SEMANTIC_SUCCESS if match_res.matched else SEMANTIC_ERROR
+            status_color = (
+                SEMANTIC_SUCCESS
+                if match_res.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN)
+                else SEMANTIC_ERROR
+            )
             lines.append(f"<b>Photo Match:</b> <font color='{status_color}'>{match_res.status.value.upper()}</font>")
             if match_res.photo_path:
                 lines.append(f"<b>File:</b> {Path(match_res.photo_path).name}")

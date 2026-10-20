@@ -1,4 +1,4 @@
-"""Simulate the real user flow: new project -> data source -> photos."""
+"""Walk the real production flow and report every step."""
 
 import os
 import tempfile
@@ -10,15 +10,13 @@ from PySide6.QtWidgets import QApplication
 
 app = QApplication([])
 
-from id_card_generator.core.models import ProjectConfiguration
+import pandas as pd
+
+from id_card_generator.core.constants import WorkflowStep
 from id_card_generator.ui.main_window import MainWindow
 from id_card_generator.ui.dialogs.new_project_dialog import NewProjectDialog
 
 tmp = Path(tempfile.mkdtemp())
-
-# Build a small spreadsheet to upload.
-import pandas as pd
-
 xlsx = tmp / "staff.xlsx"
 pd.DataFrame(
     {
@@ -37,13 +35,28 @@ win = MainWindow()
 win.resize(1440, 900)
 win.show()
 
+PAGES = {
+    0: "Hub",
+    1: "Data Source",
+    2: "Photo Library",
+    3: "Templates",
+    4: "Designer",
+    5: "Generate",
+    6: "Review",
+    7: "Export",
+    8: "Settings",
+}
 
-def state(label):
-    print(f"--- {label}: page index = {win.stack.currentIndex()} (0=dashboard 1=data 2=photos 3=templates 4=editor 5=gen 6=review 7=export)")
-    win.grab().save(f"/tmp/opencode/flow_{label}.png")
+
+def report(label):
+    idx = win.stack.currentIndex()
+    active = [t.value for t, s in win.studio_nav._states.items() if s.value == "active"]
+    done = [t.value for t, s in win.studio_nav._states.items() if s.value == "done"]
+    blocked = [t.value for t, s in win.studio_nav._states.items() if s.value == "blocked"]
+    print(f"{label:34} -> {PAGES[idx]:14} active={active} done={done} blocked={blocked}")
 
 
-# 1. Create a new project (as the hub does).
+# 1. New project from the hub.
 dialog = NewProjectDialog(win, template_manager=win.template_manager)
 dialog.txt_project_name.setText("Staff Badges 2026")
 dialog._on_create_clicked()
@@ -57,32 +70,54 @@ win.set_project(cfg, workspace_path=None)
 if cfg.template:
     win.page_editor.load_template(cfg.template)
     win.page_templates.active_template = cfg.template
-win.switch_page(win.step_to_index and __import__(
-    "id_card_generator.core.constants", fromlist=["WorkflowStep"]
-).WorkflowStep.DATA_SOURCE)
-state("1_after_new_project")
+win.switch_page(WorkflowStep.DATA_SOURCE)
+app.processEvents()
+report("1. new project")
 
 # 2. Upload the data source.
 win.page_data_source.load_file(xlsx, copy_to_workspace=False)
 app.processEvents()
-print("records loaded:", len(win.page_data_source.records), "columns:", win.page_data_source.columns)
-state("2_after_data_upload")
+report("2. data source uploaded")
 
-# 3. Photos directory.
-win.switch_page(__import__(
-    "id_card_generator.core.constants", fromlist=["WorkflowStep"]
-).WorkflowStep.PHOTOS)
+# 3. Continue with the photos directory (the footer's next button).
+win.page_data_source.nav_bar.btn_next.click()
 app.processEvents()
 win.page_photos.matcher.photo_dir = str(photos)
 win.page_photos._rescan()
 app.processEvents()
-print("photo dir:", win.page_photos.matcher.photo_dir)
-state("3_after_photos")
+report("3. photos directory")
 
-# 4. Continue to templates.
-win.switch_page(__import__(
-    "id_card_generator.core.constants", fromlist=["WorkflowStep"]
-).WorkflowStep.TEMPLATES)
-state("4_templates")
+# 4. Templates.
+win.page_photos.nav_bar.btn_next.click()
+app.processEvents()
+win.page_templates._use_template()
+app.processEvents()
+report("4. template selected")
 
-print("DONE")
+# 5. Designer.
+win.page_templates.nav_bar.btn_next.click()
+app.processEvents()
+report("5. designer")
+
+# 6. Generate.
+win.page_editor.nav_bar.btn_next.click()
+app.processEvents()
+report("6. generate")
+
+# 7. Review.
+win.page_generation.nav_bar.btn_next.click()
+app.processEvents()
+report("7. review")
+
+# 8. Export.
+win.page_review.nav_bar.btn_next.click()
+app.processEvents()
+report("8. export")
+
+# 9. Back to the hub - it must point at the next unfinished step.
+win.page_export.nav_bar.btn_next.click()
+app.processEvents()
+report("9. back on the hub")
+print("hub hint:", win.page_dashboard.lbl_flow_next.text())
+print("hub button:", win.page_dashboard.btn_flow_continue.text())
+win.grab().save("/tmp/opencode/flow_end.png")
