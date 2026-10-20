@@ -174,34 +174,20 @@ class TemplatePage(QWidget):
         body.setSpacing(12)
         layout.addLayout(body, stretch=1)
 
-        # Header & Action Bar
-        top_bar = QHBoxLayout()
-        title_box = QVBoxLayout()
-        title_box.addWidget(QLabel("<h2>ID Card Templates</h2>"))
-        lbl_sub = QLabel(
-            "Select, preview, and edit canvas template specifications before opening the mapping editor."
-        )
-        lbl_sub.setStyleSheet("color: #64748B;")
-        title_box.addWidget(lbl_sub)
-        top_bar.addLayout(title_box)
-
-        top_bar.addStretch()
-
+        # Actions live in the page header - no duplicated title block.
         self.btn_blank = QPushButton("+ Create Blank Canvas...")
         self.btn_blank.setObjectName("btn_primary")
         self.btn_blank.clicked.connect(self._create_blank_canvas)
-        top_bar.addWidget(self.btn_blank)
+        self.page_header.add_action(self.btn_blank)
 
         self.btn_import = QPushButton("Import Template JSON...")
         self.btn_import.clicked.connect(self._import_template)
-        top_bar.addWidget(self.btn_import)
+        self.page_header.add_action(self.btn_import)
 
-        self.btn_cleanup = QPushButton("🧹 Clean Up Saved Templates...")
+        self.btn_cleanup = QPushButton("🧹 Clean Up...")
         self.btn_cleanup.setToolTip("Open template cleanup manager to search, delete, and clean up older saved templates")
         self.btn_cleanup.clicked.connect(self._open_cleanup_dialog)
-        top_bar.addWidget(self.btn_cleanup)
-
-        body.addLayout(top_bar)
+        self.page_header.add_action(self.btn_cleanup)
 
         # Main Splitter: Left List (templates) vs Right Workspace (preview + properties)
         main_splitter = QSplitter(Qt.Horizontal)

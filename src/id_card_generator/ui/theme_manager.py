@@ -9,6 +9,7 @@ exactly the same widget vocabulary and the reusable components in
 
 import logging
 import platform
+import re
 import sys
 from pathlib import Path
 from string import Template
@@ -115,6 +116,106 @@ class ThemeManager(QObject):
         font.setStyleHint(QFont.SansSerif)
         app.setFont(font)
         app.setStyleSheet(self.build_stylesheet(effective_theme))
+
+    @classmethod
+    def retarget_stylesheet(cls, stylesheet: str, theme: str = "black") -> str:
+        """Map legacy hard coded colours onto the current palette.
+
+        Older widgets still carry hard coded dark hex values in their inline
+        stylesheets.  Rewriting them keeps the light theme readable while the
+        pages are migrated to the design tokens.
+        """
+        if not stylesheet:
+            return stylesheet
+        values = cls._legacy_values(theme)
+        for legacy, token in cls.LEGACY_COLOR_MAP.items():
+            value = values[token[1:]]
+            if legacy in stylesheet.lower():
+                stylesheet = re.sub(
+                    re.escape(legacy), value, stylesheet, flags=re.IGNORECASE
+                )
+        return stylesheet
+
+    @classmethod
+    def retarget_widget(cls, widget, theme: str = "black") -> None:
+        """Rewrite the inline stylesheet of a widget for the given theme.
+
+        The original stylesheet is remembered so switching back and forth
+        between the themes never degrades the result.
+        """
+        if widget.property("theme_managed"):
+            return
+        original = widget.property("original_stylesheet")
+        if original is None:
+            original = widget.styleSheet()
+            if not original:
+                return
+            widget.setProperty("original_stylesheet", original)
+        retargeted = cls.retarget_stylesheet(original, theme)
+        if retargeted != widget.styleSheet():
+            widget.setStyleSheet(retargeted)
+
+    # Legacy dark palette values -> token names.
+    LEGACY_COLOR_MAP = {
+        "#111317": "$surface",
+        "#0f1115": "$surface_dim",
+        "#0c0e12": "$surface_lowest",
+        "#1a1c20": "$surface_low",
+        "#1e2024": "$surface_container",
+        "#282a2e": "$surface_high",
+        "#333539": "$surface_highest",
+        "#202023": "$surface_low",
+        "#262629": "$surface_container",
+        "#2e2e33": "$surface_high",
+        "#333338": "$surface_highest",
+        "#27272a": "$surface_container",
+        "#14171e": "$surface_low",
+        "#1a1e27": "$surface_high",
+        "#252934": "$border",
+        "#2b303c": "$border",
+        "#383d47": "$border",
+        "#3f3f46": "$border",
+        "#282c34": "$border_subtle",
+        "#52525b": "$outline_variant",
+        "#e2e2e8": "$on_surface",
+        "#c4c5d5": "$on_surface_variant",
+        "#c4c6d1": "$on_surface_variant",
+        "#8e909f": "$text_muted",
+        "#a2a8b3": "$text_muted",
+        "#a1a1aa": "$text_muted",
+        "#7e8494": "$text_muted",
+        "#6c7280": "$text_muted",
+        "#64748b": "$text_muted",
+        "#6c8cff": "$primary_container",
+        "#0078d4": "$primary_container",
+        "#005a9e": "$primary_container",
+        "#b6c4ff": "$primary",
+        "#85a3ff": "$primary",
+        "#38bdf8": "$primary",
+        "#60cdff": "$primary",
+    }
+
+    @classmethod
+    def _legacy_values(cls, theme: str = "black") -> dict:
+        """Return the token values the legacy map resolves to."""
+        p = palette_for(theme)
+        return {
+            "surface": p.SURFACE,
+            "surface_dim": p.SURFACE_DIM,
+            "surface_lowest": p.SURFACE_LOWEST,
+            "surface_low": p.SURFACE_LOW,
+            "surface_container": p.SURFACE_CONTAINER,
+            "surface_high": p.SURFACE_HIGH,
+            "surface_highest": p.SURFACE_HIGHEST,
+            "border": p.BORDER_HAIRLINE,
+            "border_subtle": p.BORDER_SUBTLE,
+            "outline_variant": p.OUTLINE_VARIANT,
+            "on_surface": p.ON_SURFACE,
+            "on_surface_variant": p.ON_SURFACE_VARIANT,
+            "text_muted": p.TEXT_MUTED,
+            "primary": p.PRIMARY,
+            "primary_container": p.PRIMARY_CONTAINER,
+        }
 
     # ------------------------------------------------------------------
     # Stylesheet generation
@@ -631,7 +732,7 @@ QLabel#notice_banner[severity="success"] {
     color: $tertiary;
 }
 
-/* --- Misc ---------------------------------------------------------- */
+/* --- Typography roles ------------------------------------------------ */
 QLabel[role="pageTitle"] {
     color: $on_surface;
     font-size: 15px;
@@ -650,17 +751,60 @@ QLabel[role="sectionLabel"] {
     letter-spacing: 0.08em;
 }
 
+QLabel[role="brandTitle"] {
+    color: $on_surface;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+QLabel[role="cardTitle"] {
+    color: $on_surface;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+QLabel[role="cardSubtitle"] {
+    color: $text_muted;
+    font-size: 10px;
+}
+
+QLabel[role="stepBadge"] {
+    color: $text_muted;
+    font-family: $mono_font;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+}
+
+QLabel[role="monoMuted"] {
+    color: $text_muted;
+    font-family: $mono_font;
+    font-size: 11px;
+}
+
+QLabel[role="badge"] {
+    background-color: $surface_container;
+    color: $text_muted;
+    border: 1px solid $border;
+    border-radius: 3px;
+    font-family: $mono_font;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+}
+
 QLabel[role="metricValue"] {
     color: $on_surface;
     font-family: $mono_font;
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
 }
 
 QLabel[role="metricCaption"] {
     color: $text_muted;
     font-size: 10px;
-    letter-spacing: 0.06em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
 }
 
 QMenu {
@@ -699,6 +843,7 @@ QToolTip {
             "ui_font": TYPOGRAPHY.FONT_FAMILY_UI,
             "mono_font": TYPOGRAPHY.FONT_FAMILY_MONO,
             "surface": p.SURFACE,
+            "surface_dim": p.SURFACE_DIM,
             "surface_dim": p.SURFACE_DIM,
             "surface_low": p.SURFACE_LOW,
             "surface_container": p.SURFACE_CONTAINER,

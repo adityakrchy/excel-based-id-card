@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 from id_card_generator.ui.components.status_pill import StatusPill
-from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY
+from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY, palette_for
 
 
 class StudioTab(str, Enum):
@@ -56,10 +56,13 @@ class StudioNavBar(QFrame):
         super().__init__(parent)
         self.setObjectName("studio_nav_bar")
         self.setFixedHeight(44)
+        # The ribbon restyles itself on every theme change.
+        self.setProperty("theme_managed", True)
         self._buttons: Dict[StudioTab, QPushButton] = {}
         self._state_dots: Dict[StudioTab, QLabel] = {}
         self._states: Dict[StudioTab, TabState] = {}
         self._active_tab = StudioTab.HUB
+        self._theme = "black"
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 14, 0)
@@ -74,16 +77,13 @@ class StudioNavBar(QFrame):
         brand_layout.addWidget(lbl_icon)
 
         lbl_hub = QLabel("ID Studio")
-        lbl_hub.setStyleSheet(
-            f"color: #FFFFFF; font-family: {TYPOGRAPHY.FONT_FAMILY_UI}; "
-            f"font-size: 13px; font-weight: 700; margin-right: 12px;"
-        )
+        lbl_hub.setProperty("role", "brandTitle")
         brand_layout.addWidget(lbl_hub)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
         sep.setFixedHeight(18)
-        sep.setStyleSheet("background-color: #2D3038;")
+        sep.setObjectName("nav_separator")
         brand_layout.addWidget(sep)
 
         layout.addLayout(brand_layout)
@@ -159,9 +159,6 @@ class StudioNavBar(QFrame):
 
         # FIPS Security Pill
         self.pill_fips = StatusPill(text="FIPS 140-3 HW-SEC OK", dot_color=COLORS.TERTIARY)
-        self.pill_fips.setStyleSheet(
-            f"QFrame#status_pill {{ background-color: #14171D; border: 1px solid #282C34; border-radius: 4px; }}"
-        )
         right_tools.addWidget(self.pill_fips)
 
         # User Avatar Circle Button
@@ -182,38 +179,32 @@ class StudioNavBar(QFrame):
 
         layout.addLayout(right_tools)
 
-        self._apply_style()
+        self.refresh_theme("black")
 
-    def _style_tool_btn(self, btn: QToolButton) -> None:
-        btn.setStyleSheet(
-            f"QToolButton {{"
-            f"  background-color: {COLORS.SURFACE_CONTAINER};"
-            f"  color: {COLORS.ON_SURFACE_VARIANT};"
-            f"  border: 1px solid {COLORS.BORDER_HAIRLINE};"
-            f"  border-radius: 4px;"
-            f"  font-size: 11px;"
-            f"  padding: 0 8px;"
-            f"}}"
-            f"QToolButton:hover {{"
-            f"  background-color: {COLORS.SURFACE_HIGH};"
-            f"  color: {COLORS.ON_SURFACE};"
-            f"}}"
-            f"QToolButton:checked {{"
-            f"  background-color: {COLORS.PRIMARY_CONTAINER};"
-            f"  color: #FFFFFF;"
-            f"  border-color: {COLORS.PRIMARY_CONTAINER};"
-            f"}}"
+    def refresh_theme(self, theme: str = "black") -> None:
+        """Re-apply the ribbon styling for the given theme."""
+        self._theme = theme
+        c = palette_for(theme)
+        for btn in (self.btn_grid, self.btn_preview):
+            self._style_tool_btn(btn, c)
+
+        self.pill_fips.setStyleSheet(
+            f"QFrame#status_pill {{ background-color: {c.SURFACE_LOW}; "
+            f"border: 1px solid {c.BORDER_HAIRLINE}; border-radius: 4px; }}"
         )
+        self.pill_fips.set_dot_color(c.TERTIARY)
 
-    def _apply_style(self) -> None:
         self.setStyleSheet(
             f"QFrame#studio_nav_bar {{"
-            f"  background-color: {COLORS.SURFACE};"
-            f"  border-bottom: 1px solid {COLORS.BORDER_HAIRLINE};"
+            f"  background-color: {c.SURFACE};"
+            f"  border-bottom: 1px solid {c.BORDER_HAIRLINE};"
+            f"}}"
+            f"QFrame#nav_separator {{"
+            f"  background-color: {c.BORDER_HAIRLINE};"
             f"}}"
             f"QPushButton {{"
             f"  background: transparent;"
-            f"  color: {COLORS.ON_SURFACE_VARIANT};"
+            f"  color: {c.ON_SURFACE_VARIANT};"
             f"  border: none;"
             f"  border-bottom: 2px solid transparent;"
             f"  font-family: {TYPOGRAPHY.FONT_FAMILY_UI};"
@@ -222,13 +213,35 @@ class StudioNavBar(QFrame):
             f"  padding: 0 12px;"
             f"}}"
             f"QPushButton:hover {{"
-            f"  color: {COLORS.ON_SURFACE};"
-            f"  background-color: {COLORS.SURFACE_LOW};"
+            f"  color: {c.ON_SURFACE};"
+            f"  background-color: {c.SURFACE_LOW};"
             f"}}"
             f"QPushButton:checked {{"
-            f"  color: #FFFFFF;"
+            f"  color: {c.ON_SURFACE};"
             f"  font-weight: 600;"
-            f"  border-bottom: 2px solid {COLORS.PRIMARY_CONTAINER};"
+            f"  border-bottom: 2px solid {c.PRIMARY_CONTAINER};"
+            f"}}"
+        )
+
+    def _style_tool_btn(self, btn: QToolButton, c=None) -> None:
+        c = c or COLORS
+        btn.setStyleSheet(
+            f"QToolButton {{"
+            f"  background-color: {c.SURFACE_CONTAINER};"
+            f"  color: {c.ON_SURFACE_VARIANT};"
+            f"  border: 1px solid {c.BORDER_HAIRLINE};"
+            f"  border-radius: 4px;"
+            f"  font-size: 11px;"
+            f"  padding: 0 8px;"
+            f"}}"
+            f"QToolButton:hover {{"
+            f"  background-color: {c.SURFACE_HIGH};"
+            f"  color: {c.ON_SURFACE};"
+            f"}}"
+            f"QToolButton:checked {{"
+            f"  background-color: {c.PRIMARY_CONTAINER};"
+            f"  color: {c.ON_PRIMARY_CONTAINER};"
+            f"  border-color: {c.PRIMARY_CONTAINER};"
             f"}}"
         )
 
@@ -247,22 +260,23 @@ class StudioNavBar(QFrame):
         dot = self._state_dots.get(tab)
         if dot is None:
             return
+        c = palette_for(self._theme)
 
         if state == TabState.DONE:
             dot.setText("✓")
-            dot.setStyleSheet(f"color: {COLORS.TERTIARY}; font-size: 11px; font-weight: 700;")
+            dot.setStyleSheet(f"color: {c.TERTIARY}; font-size: 11px; font-weight: 700;")
         elif state == TabState.PARTIAL:
             dot.setText("◐")
-            dot.setStyleSheet(f"color: {COLORS.WARNING}; font-size: 11px;")
+            dot.setStyleSheet(f"color: {c.WARNING}; font-size: 11px;")
         elif state == TabState.ACTIVE:
             dot.setText("●")
-            dot.setStyleSheet(f"color: {COLORS.PRIMARY_CONTAINER}; font-size: 10px;")
+            dot.setStyleSheet(f"color: {c.PRIMARY_CONTAINER}; font-size: 10px;")
         elif state == TabState.BLOCKED:
             dot.setText("○")
-            dot.setStyleSheet(f"color: #5A5E68; font-size: 10px;")
+            dot.setStyleSheet(f"color: {c.BORDER_HAIRLINE}; font-size: 10px;")
         else:
             dot.setText("○")
-            dot.setStyleSheet(f"color: {COLORS.TEXT_MUTED}; font-size: 10px;")
+            dot.setStyleSheet(f"color: {c.TEXT_MUTED}; font-size: 10px;")
 
     def set_tab_states(self, states: Dict[StudioTab, TabState]) -> None:
         """Apply a complete set of tab states at once."""

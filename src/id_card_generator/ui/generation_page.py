@@ -35,6 +35,7 @@ from id_card_generator.generation.generation_worker import GenerationWorker
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
+from id_card_generator.ui.components.surface import StatTile
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -103,16 +104,9 @@ class GenerationPage(QWidget):
         body.setSpacing(12)
         layout.addLayout(body, stretch=1)
 
-        # Header Title Row
-        hdr_row = QHBoxLayout()
-        lbl_title = QLabel("<h2>Batch Card Generation Engine</h2>")
-        lbl_title.setStyleSheet(f"color: {TEXT_PRIMARY};")
-        hdr_row.addWidget(lbl_title)
-        hdr_row.addStretch()
-
+        # Engine state lives in the page header - no duplicated title block.
         self.pill_engine_state = StatusPill("ENGINE READY", color=SEMANTIC_SUCCESS)
-        hdr_row.addWidget(self.pill_engine_state)
-        body.addLayout(hdr_row)
+        self.page_header.add_action(self.pill_engine_state)
 
         # ---------------------------------------------------------
         # 1. KPI Telemetry Grid (Cards Rendered, Time, Rate, Workers)
@@ -121,24 +115,9 @@ class GenerationPage(QWidget):
         kpi_row.setSpacing(10)
 
         def create_kpi_card(title: str, value: str, color: str = TEXT_PRIMARY):
-            card = QFrame()
-            card.setStyleSheet(
-                f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 6px;"
-            )
-            c_layout = QVBoxLayout(card)
-            c_layout.setContentsMargins(8, 6, 8, 6)
-            c_layout.setSpacing(2)
-
-            t_lbl = QLabel(title.upper())
-            t_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-weight: bold; letter-spacing: 0.5px;")
-            c_layout.addWidget(t_lbl)
-
-            v_lbl = QLabel(value)
-            v_lbl.setStyleSheet(
-                f"color: {color}; font-size: 18px; font-weight: bold; font-family: {FONT_FAMILY_MONO};"
-            )
-            c_layout.addWidget(v_lbl)
-            return card, v_lbl
+            """Metric tile built from the shared design system."""
+            tile = StatTile(caption=title.upper(), value=value, accent=color)
+            return tile, tile.lbl_value
 
         self.card_rendered, self.lbl_kpi_rendered = create_kpi_card("Cards Rendered", "0 / 0", PRIMARY_LIGHT)
         self.card_time, self.lbl_kpi_time = create_kpi_card("Elapsed Time", "00:00", TEXT_PRIMARY)

@@ -58,22 +58,16 @@ class PageHeader(QFrame):
         text_col.setSpacing(2)
 
         self.lbl_badge = QLabel(badge)
-        self.lbl_badge.setStyleSheet(
-            f"color: {PRIMARY}; font-family: {FONT_FAMILY_MONO}; "
-            f"font-size: 10px; font-weight: 700; letter-spacing: 0.1em;"
-        )
+        self.lbl_badge.setProperty("role", "sectionLabel")
         self.lbl_badge.setVisible(bool(badge))
         text_col.addWidget(self.lbl_badge)
 
         self.lbl_title = QLabel(title)
-        self.lbl_title.setStyleSheet(
-            f"color: #FFFFFF; font-family: {FONT_FAMILY_UI}; "
-            f"font-size: {TYPOGRAPHY.SIZE_DISPLAY}px; font-weight: 700;"
-        )
+        self.lbl_title.setProperty("role", "pageTitle")
         text_col.addWidget(self.lbl_title)
 
         self.lbl_subtitle = QLabel(subtitle)
-        self.lbl_subtitle.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.lbl_subtitle.setProperty("role", "pageSubtitle")
         self.lbl_subtitle.setVisible(bool(subtitle))
         text_col.addWidget(self.lbl_subtitle)
 
@@ -138,10 +132,7 @@ class PageFooter(QFrame):
         layout.addStretch(1)
 
         self.lbl_badge = QLabel(step_badge or "")
-        self.lbl_badge.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-family: {FONT_FAMILY_MONO}; "
-            f"font-size: 11px; letter-spacing: 0.06em;"
-        )
+        self.lbl_badge.setProperty("role", "stepBadge")
         self.lbl_badge.setVisible(bool(step_badge))
         layout.addWidget(self.lbl_badge)
 
@@ -204,10 +195,7 @@ class EmptyState(QWidget):
 
         self.lbl_title = QLabel(title)
         self.lbl_title.setAlignment(Qt.AlignCenter)
-        self.lbl_title.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-family: {FONT_FAMILY_UI}; "
-            f"font-size: 13px; font-weight: 600;"
-        )
+        self.lbl_title.setProperty("role", "cardTitle")
         layout.addWidget(self.lbl_title)
 
         self.lbl_description = QLabel(description)

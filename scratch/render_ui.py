@@ -1,10 +1,9 @@
-"""Render the redesigned UI to PNG files for visual review."""
+"""Render the redesigned UI (dark + light) for visual review."""
 
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 app = QApplication([])
@@ -17,18 +16,16 @@ win.resize(1440, 900)
 win.show()
 
 
-def capture(step, name):
+def capture(step, name, theme="black"):
+    win.apply_theme(theme)
     win.switch_page(step)
     app.processEvents()
     win.grab().save(f"/tmp/opencode/ui_{name}.png")
-    print("saved", name)
+    print("saved", name, theme)
 
 
-for step, name in [
-    (WorkflowStep.DASHBOARD, "dashboard"),
-    (WorkflowStep.DATA_SOURCE, "data"),
-    (WorkflowStep.TEMPLATES, "templates"),
-    (WorkflowStep.CANVAS_EDITOR, "editor"),
-    (WorkflowStep.EXPORT, "export"),
-]:
-    capture(step, name)
+capture(WorkflowStep.CANVAS_EDITOR, "editor", "black")
+capture(WorkflowStep.CANVAS_EDITOR, "editor_light", "white")
+capture(WorkflowStep.PHOTOS, "photos", "black")
+capture(WorkflowStep.REVIEW, "review", "black")
+capture(WorkflowStep.GENERATE, "generate", "black")

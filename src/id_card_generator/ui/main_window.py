@@ -550,7 +550,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}{title_suffix}")
 
     def apply_theme(self, theme_name: str) -> None:
-        """Apply Windows 11 Fluent theme via centralized ThemeManager."""
+        """Apply the application theme (Windows 11 Fluent inspired)."""
         theme_str = str(theme_name).lower().strip()
         if theme_str == "dark":
             theme_str = "black"
@@ -566,6 +566,29 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.cmb_toolbar_theme.setCurrentIndex(idx)
             self.cmb_toolbar_theme.blockSignals(False)
+
+        self._refresh_theme_styles()
+
+    def _refresh_theme_styles(self) -> None:
+        """Re-apply the chrome and every semantic style for the active theme."""
+        effective = ThemeManager.instance().active_effective_theme
+
+        if hasattr(self, "header_bar"):
+            self.header_bar.refresh_theme(effective)
+        if hasattr(self, "studio_nav"):
+            self.studio_nav.refresh_theme(effective)
+            self._refresh_tab_states()
+
+        # Property based roles (page titles, badges, metrics, ...) have to be
+        # re-polished so the new palette is picked up.
+        from PySide6.QtWidgets import QWidget
+
+        for widget in self.findChildren(QWidget):
+            ThemeManager.retarget_widget(widget, effective)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.update()
+        self.update()
 
     def _on_toolbar_theme_changed(self) -> None:
         theme_val = self.cmb_toolbar_theme.currentData() or "black"

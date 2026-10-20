@@ -51,14 +51,11 @@ class SurfaceCard(QFrame):
         text_col.setSpacing(1)
 
         self.lbl_title = QLabel(title)
-        self.lbl_title.setStyleSheet(
-            f"color: #FFFFFF; font-family: {FONT_FAMILY_UI}; "
-            f"font-size: {TYPOGRAPHY.SIZE_TITLE}px; font-weight: 700;"
-        )
+        self.lbl_title.setProperty("role", "cardTitle")
         text_col.addWidget(self.lbl_title)
 
         self.lbl_subtitle = QLabel(subtitle)
-        self.lbl_subtitle.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        self.lbl_subtitle.setProperty("role", "cardSubtitle")
         self.lbl_subtitle.setVisible(bool(subtitle))
         text_col.addWidget(self.lbl_subtitle)
 
@@ -132,16 +129,13 @@ class StatTile(QFrame):
         layout.setSpacing(4)
 
         self.lbl_caption = QLabel(caption)
-        self.lbl_caption.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;"
-        )
+        self.lbl_caption.setProperty("role", "metricCaption")
         layout.addWidget(self.lbl_caption)
 
         self.lbl_value = QLabel(value)
-        self.lbl_value.setStyleSheet(
-            f"color: {accent or '#FFFFFF'}; font-family: {FONT_FAMILY_MONO}; "
-            f"font-size: 22px; font-weight: 700;"
-        )
+        self.lbl_value.setProperty("role", "metricValue")
+        if accent:
+            self.lbl_value.setStyleSheet(f"color: {accent};")
         layout.addWidget(self.lbl_value)
 
         self.lbl_hint = QLabel(hint)
@@ -157,7 +151,4 @@ class StatTile(QFrame):
         self.lbl_hint.setVisible(bool(hint))
 
     def set_accent(self, accent: Optional[str]) -> None:
-        self.lbl_value.setStyleSheet(
-            f"color: {accent or '#FFFFFF'}; font-family: {FONT_FAMILY_MONO}; "
-            f"font-size: 22px; font-weight: 700;"
-        )
+        self.lbl_value.setStyleSheet(f"color: {accent};" if accent else "")

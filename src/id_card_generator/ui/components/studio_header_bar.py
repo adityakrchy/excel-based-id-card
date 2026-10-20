@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 from id_card_generator.ui.components.status_pill import StatusPill
-from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY
+from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY, palette_for
 
 
 class StudioHeaderBar(QFrame):
@@ -28,6 +28,8 @@ class StudioHeaderBar(QFrame):
         super().__init__(parent)
         self.setObjectName("studio_header_bar")
         self.setFixedHeight(36)
+        # The bar restyles itself on every theme change.
+        self.setProperty("theme_managed", True)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 14, 0)
@@ -40,29 +42,19 @@ class StudioHeaderBar(QFrame):
         left_layout.setSpacing(8)
 
         self.lbl_brand = QLabel("ID STUDIO")
-        self.lbl_brand.setStyleSheet(
-            f"color: #FFFFFF; font-family: {TYPOGRAPHY.FONT_FAMILY_UI}; "
-            f"font-size: 12px; font-weight: 800; letter-spacing: 0.08em;"
-        )
+        self.lbl_brand.setProperty("role", "brandTitle")
         left_layout.addWidget(self.lbl_brand)
 
         self.lbl_version_badge = QLabel("v2.4.1 Enterprise")
-        self.lbl_version_badge.setStyleSheet(
-            f"background-color: {COLORS.SURFACE_CONTAINER}; color: #8E909F; "
-            f"border: 1px solid {COLORS.BORDER_HAIRLINE}; border-radius: 3px; "
-            f"font-family: {TYPOGRAPHY.FONT_FAMILY_MONO}; font-size: 10px; font-weight: 600; "
-            f"padding: 1px 6px;"
-        )
+        self.lbl_version_badge.setProperty("role", "badge")
         left_layout.addWidget(self.lbl_version_badge)
 
         self.lbl_slash = QLabel("/")
-        self.lbl_slash.setStyleSheet("color: #4A4D57; font-size: 11px;")
+        self.lbl_slash.setProperty("role", "monoMuted")
         left_layout.addWidget(self.lbl_slash)
 
         self.lbl_project_name = QLabel("Project: Untitled.idcrt")
-        self.lbl_project_name.setStyleSheet(
-            f"color: #8E909F; font-family: {TYPOGRAPHY.FONT_FAMILY_MONO}; font-size: 11px;"
-        )
+        self.lbl_project_name.setProperty("role", "monoMuted")
         left_layout.addWidget(self.lbl_project_name)
 
         self.lbl_dirty_dot = QLabel("•")
@@ -132,12 +124,7 @@ class StudioHeaderBar(QFrame):
 
         layout.addLayout(right_layout)
 
-        self.setStyleSheet(
-            f"QFrame#studio_header_bar {{"
-            f"  background-color: {COLORS.SURFACE_DIM};"
-            f"  border-bottom: 1px solid {COLORS.BORDER_HAIRLINE};"
-            f"}}"
-        )
+        self.refresh_theme("black")
 
     def _create_icon_btn(self, icon_char: str, tooltip: str) -> QToolButton:
         btn = QToolButton()
@@ -145,24 +132,40 @@ class StudioHeaderBar(QFrame):
         btn.setToolTip(tooltip)
         btn.setFixedSize(24, 24)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet(
-            f"QToolButton {{"
-            f"  background: transparent;"
-            f"  color: {COLORS.ON_SURFACE_VARIANT};"
-            f"  border: 1px solid transparent;"
-            f"  border-radius: 3px;"
-            f"  font-size: 12px;"
-            f"}}"
-            f"QToolButton:hover {{"
-            f"  background-color: {COLORS.SURFACE_HIGH};"
-            f"  color: {COLORS.ON_SURFACE};"
-            f"  border-color: {COLORS.BORDER_HAIRLINE};"
-            f"}}"
-            f"QToolButton:pressed {{"
-            f"  background-color: {COLORS.SURFACE_LOW};"
+        btn.setProperty("role", "iconButton")
+        return btn
+
+    def refresh_theme(self, theme: str = "black") -> None:
+        """Re-apply the chrome styling for the given theme."""
+        c = palette_for(theme)
+        for name in ("btn_new", "btn_open", "btn_save", "btn_undo", "btn_redo"):
+            btn = getattr(self, name, None)
+            if btn is None:
+                continue
+            btn.setStyleSheet(
+                f"QToolButton {{"
+                f"  background: transparent;"
+                f"  color: {c.ON_SURFACE_VARIANT};"
+                f"  border: 1px solid transparent;"
+                f"  border-radius: 3px;"
+                f"  font-size: 12px;"
+                f"}}"
+                f"QToolButton:hover {{"
+                f"  background-color: {c.SURFACE_HIGH};"
+                f"  color: {c.ON_SURFACE};"
+                f"  border-color: {c.BORDER_HAIRLINE};"
+                f"}}"
+                f"QToolButton:pressed {{"
+                f"  background-color: {c.SURFACE_LOW};"
+                f"}}"
+            )
+
+        self.setStyleSheet(
+            f"QFrame#studio_header_bar {{"
+            f"  background-color: {c.SURFACE_DIM};"
+            f"  border-bottom: 1px solid {c.BORDER_HAIRLINE};"
             f"}}"
         )
-        return btn
 
     def _on_theme_changed(self) -> None:
         theme = self.cmb_theme.currentData()
