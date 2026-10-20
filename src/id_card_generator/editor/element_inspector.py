@@ -480,6 +480,8 @@ class ElementInspector(QWidget):
         item = self._current_item
         old_state = item.element.model_dump(mode="json")
         update_fn()
+        # Keep the bounding box large enough for the (possibly changed) text.
+        item.grow_to_fit_content()
         new_state = item.element.model_dump(mode="json")
         if old_state != new_state:
             scene = item.scene()
@@ -540,8 +542,23 @@ class ElementInspector(QWidget):
     def _on_size_changed(self):
         if not self._updating and self._current_item:
             def _update():
-                self._current_item.set_rect(QRectF(0, 0, self.spin_w.value(), self.spin_h.value()))
+                # The size is clamped so a text element can never be shrunk
+                # below the space its content needs.
+                self._current_item.set_rect_constrained(
+                    QRectF(0, 0, self.spin_w.value(), self.spin_h.value())
+                )
             self._apply_change(_update, "Resize Element")
+
+            # Reflect the enforced minimum size back into the spin boxes.
+            elem = self._current_item.element
+            self._updating = True
+            try:
+                if abs(self.spin_w.value() - elem.width) > 0.5:
+                    self.spin_w.setValue(elem.width)
+                if abs(self.spin_h.value() - elem.height) > 0.5:
+                    self.spin_h.setValue(elem.height)
+            finally:
+                self._updating = False
 
     def _on_lock_toggled(self, checked: bool):
         if not self._updating and self._current_item:

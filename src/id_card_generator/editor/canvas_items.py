@@ -22,9 +22,15 @@ from PySide6.QtWidgets import (
     QMenu,
 )
 
-from id_card_generator.core.constants import DEFAULT_DPI, ImageFitMode, TextOverflowPolicy
-from id_card_generator.core.geometry import points_to_document_pixels
+from id_card_generator.core.constants import DEFAULT_DPI, ImageFitMode
 from id_card_generator.core.models import CanvasElement, SourceRecord
+from id_card_generator.editor import text_metrics
+from id_card_generator.editor.text_metrics import (
+    ABSOLUTE_MIN_SIZE,
+    TEXT_ELEMENT_TYPES,
+    constrain_rect_to_min,
+    is_text_element,
+)
 
 
 class CanvasItem(QGraphicsObject):
@@ -103,11 +109,24 @@ class CanvasItem(QGraphicsObject):
     def set_rect(self, rect: QRectF) -> None:
         """Update rectangle dimensions."""
         self.prepareGeometryChange()
-        self._rect = rect
-        self.element.width = max(10.0, rect.width())
-        self.element.height = max(10.0, rect.height())
+        self._rect = QRectF(
+            rect.x(),
+            rect.y(),
+            max(ABSOLUTE_MIN_SIZE, rect.width()),
+            max(ABSOLUTE_MIN_SIZE, rect.height()),
+        )
+        self.element.width = self._rect.width()
+        self.element.height = self._rect.height()
         self.update()
         self.geometry_changed.emit(self)
+
+    def set_rect_constrained(self, rect: QRectF, handle: Optional[int] = None) -> None:
+        """Set the rectangle, keeping it large enough for the element content.
+
+        For text elements the box is never allowed to become smaller than the
+        space its text needs, so the content can never be clipped away.
+        """
+        self.set_rect(self._apply_text_min_size(rect, handle))
 
     def update_model_position(self) -> None:
         """Sync Qt item position to model coordinates."""
@@ -125,58 +144,105 @@ class CanvasItem(QGraphicsObject):
         self._cached_pixmap = None
         self.update()
 
-    def _get_text_natural_size(self) -> tuple:
-        """Return the natural (w, h) in document pixels needed to fully display the text content.
+    # ── Text sizing helpers ──────────────────────────────────────────────────
+    # The bounding box of a text element must always be able to hold its
+    # content, otherwise dragging the box over the text makes the text
+    # disappear.  These helpers measure the *real* rendered size of the
+    # content and are used as the minimum size during an interactive resize
+    # (Figma / Illustrator "auto-height" behaviour).
 
-        Used as minimum size during resize so the box cannot be dragged smaller
-        than the actual text, preventing it from being clipped/hidden.
-        """
-        elem = self.element
-        if elem.type not in ("static_text", "dynamic_text", "pin_field"):
-            return (10.0, 10.0)
+    def _get_display_text(self) -> str:
+        """Return the text this element currently displays."""
+        return text_metrics.resolve_display_text(self.element, self._sample_record)
 
-        # Resolve display text (same logic as _paint_text)
-        if elem.type == "static_text":
-            text = elem.static_content or elem.name
-        elif elem.type == "pin_field":
-            text = elem.binding or "PIN-100001"
-        else:
-            col = elem.binding or elem.name
-            if self._sample_record:
-                text = self._sample_record.get_value(col, f"[{col}]")
-            else:
-                text = f"[{col}]"
-
-        if not text:
-            return (10.0, 10.0)
-
+    def _get_scene_dpi(self) -> int:
+        """Return the document DPI of the current template."""
         scene = self.scene()
-        dpi = DEFAULT_DPI
-        if scene and hasattr(scene, "template") and scene.template:
-            dpi = getattr(scene.template, "dpi", DEFAULT_DPI) or DEFAULT_DPI
+        if scene and getattr(scene, "template", None):
+            return getattr(scene.template, "dpi", DEFAULT_DPI) or DEFAULT_DPI
+        return DEFAULT_DPI
 
-        font_size_pt = float(elem.style.font_size)
-        doc_px = points_to_document_pixels(font_size_pt, dpi)
+    def _get_text_font(self, rect: Optional[QRectF] = None):
+        """Return the font used to paint this element's text."""
+        text = self._get_display_text()
+        return text_metrics.resolve_font(
+            self.element, text, self._get_scene_dpi(), rect or QRectF(self._rect)
+        )
 
-        chosen = elem.style.font_family or "Arial"
-        font = QFont(chosen)
-        font.setBold(elem.style.font_bold)
-        font.setItalic(elem.style.font_italic)
-        font.setPixelSize(max(1, int(round(doc_px))))
+    def _get_text_natural_size(self) -> tuple:
+        """Return the natural (w, h) in document pixels of the text content.
 
-        fm = QFontMetrics(font)
-        flags = Qt.TextIncludeTrailingSpaces
-        if elem.style.wrap and "\n" in text:
-            flags |= Qt.TextWordWrap
-            br = fm.boundingRect(
-                QRect(0, 0, int(self._rect.width()), 32767), flags, text
-            )
-        else:
-            br = fm.boundingRect(QRect(0, 0, 32767, 32767), flags, text)
+        This is the size the text needs when it is *not* re-flowed, i.e. the
+        size of the text as authored.  It is used to auto-fit freshly created
+        text elements so the box hugs its content from the start.
+        """
+        if not is_text_element(self.element):
+            return (ABSOLUTE_MIN_SIZE, ABSOLUTE_MIN_SIZE)
 
-        padding = 4.0  # small breathing room so text isn't right at the edge
-        return (max(10.0, float(br.width()) + padding),
-                max(10.0, float(br.height()) + padding))
+        text = self._get_display_text()
+        if not text:
+            return (ABSOLUTE_MIN_SIZE, ABSOLUTE_MIN_SIZE)
+
+        font = self._get_text_font()
+        need_w, need_h = text_metrics.natural_text_size(self.element, text, font)
+        return (
+            max(ABSOLUTE_MIN_SIZE, need_w + text_metrics.TEXT_PADDING),
+            max(ABSOLUTE_MIN_SIZE, need_h + text_metrics.TEXT_PADDING),
+        )
+
+    def _get_text_min_size(self, avail_width: Optional[float] = None) -> tuple:
+        """Return the minimum (w, h) the element may be resized to.
+
+        The minimum guarantees the rendered text always stays inside the
+        bounding box.  Wrapped text may become narrower (down to its longest
+        word) but the box then grows taller, exactly like the auto-height
+        behaviour of Figma and Illustrator.
+        """
+        if not is_text_element(self.element):
+            return (ABSOLUTE_MIN_SIZE, ABSOLUTE_MIN_SIZE)
+
+        text = self._get_display_text()
+        if not text:
+            return (ABSOLUTE_MIN_SIZE, ABSOLUTE_MIN_SIZE)
+
+        if avail_width is None:
+            avail_width = self._rect.width()
+
+        font = self._get_text_font(QRectF(0, 0, max(1.0, avail_width), max(1.0, self._rect.height())))
+        return text_metrics.minimum_text_size(self.element, text, font, avail_width)
+
+    def _apply_text_min_size(self, rect: QRectF, handle: Optional[int] = None) -> QRectF:
+        """Clamp ``rect`` so it can never swallow the text content."""
+        if not is_text_element(self.element):
+            return rect
+
+        # 1. Width first: the text must never be squeezed below the width of
+        #    its longest unbreakable word.
+        min_w, _ = self._get_text_min_size(rect.width())
+        out = constrain_rect_to_min(rect, min_w, 0.0, handle)
+
+        # 2. Then the height for the final width: narrowing a wrapped text box
+        #    needs more vertical space for the re-flowed lines (auto-height).
+        _, min_h = self._get_text_min_size(out.width())
+        out = constrain_rect_to_min(out, out.width(), min_h, handle)
+
+        return out
+
+    def grow_to_fit_content(self) -> bool:
+        """Grow the bounding box so the text content fits inside it.
+
+        The box is never shrunk - a size the user chose deliberately is kept.
+        Returns True when the element had to grow.
+        """
+        if not is_text_element(self.element):
+            return False
+
+        constrained = self._apply_text_min_size(QRectF(self._rect))
+        if constrained == self._rect:
+            return False
+
+        self.set_rect(constrained)
+        return True
 
     def _get_handle_rects(self) -> Dict[int, QRectF]:
         """Compute the 8 resize handle bounding rectangles in local coordinates."""
@@ -305,36 +371,14 @@ class CanvasItem(QGraphicsObject):
                     scene.set_active_guides(snap_res.guides, snap_res.spacing_badges)
                 scene.update()
 
-            # Enforce minimum size: at least 10 px, and for text elements
-            # never smaller than the natural rendered text size so the box
-            # cannot "swallow" the text content.
-            elem = self.element
-            if elem.type in ("static_text", "dynamic_text", "pin_field"):
-                min_w, min_h = self._get_text_natural_size()
-            else:
-                min_w, min_h = 10.0, 10.0
+            # Enforce the minimum size.  Text elements may never be resized
+            # below the size their content needs, so the box can never
+            # "swallow" the text (Figma / Illustrator auto-height behaviour).
+            new_rect = self._apply_text_min_size(new_rect, handle)
 
-            # Clamp: if the resize would make the box smaller than the minimum,
-            # hold the constrained edge in place (don't apply the resize).
-            if new_rect.width() >= min_w and new_rect.height() >= min_h:
+            if new_rect.width() >= ABSOLUTE_MIN_SIZE and new_rect.height() >= ABSOLUTE_MIN_SIZE:
                 self.set_rect(new_rect)
-            elif new_rect.width() >= min_w:
-                # height is too small — keep current height edge
-                clamped = QRectF(new_rect)
-                if handle in (0, 1, 2):  # top handles
-                    clamped.setTop(clamped.bottom() - min_h)
-                else:
-                    clamped.setHeight(min_h)
-                self.set_rect(clamped)
-            elif new_rect.height() >= min_h:
-                # width is too small — keep current width edge
-                clamped = QRectF(new_rect)
-                if handle in (0, 6, 7):  # left handles
-                    clamped.setLeft(clamped.right() - min_w)
-                else:
-                    clamped.setWidth(min_w)
-                self.set_rect(clamped)
-            # else: both dimensions too small — don't resize at all
+            # else: the resize was rejected entirely (element already minimal)
             event.accept()
             return
 
@@ -567,48 +611,7 @@ class CanvasItem(QGraphicsObject):
 
     def _paint_text(self, painter: QPainter, rect: QRectF, elem: CanvasElement):
         # Resolve text to display
-        if elem.type == "static_text":
-            text = elem.static_content or elem.name
-        elif elem.type == "pin_field":
-            text = self._sample_record.pin if self._sample_record else (elem.binding or "PIN-100001")
-        else:
-            # Dynamic text
-            col = elem.binding or elem.name
-            if self._sample_record:
-                text = self._sample_record.get_value(col, f"[{col}]")
-            else:
-                text = f"[{col}]"
-
-        font_size_pt = float(elem.style.font_size)
-        has_devanagari = any(0x0900 <= ord(c) <= 0x097F for c in text)
-
-        # Determine document DPI from scene template (canvas is in document pixels)
-        scene = self.scene()
-        dpi = DEFAULT_DPI
-        if scene and hasattr(scene, "template") and scene.template and getattr(scene.template, "dpi", None):
-            dpi = scene.template.dpi
-
-        # ── Font family ──────────────────────────────────────────────────────
-        # The user's chosen font ALWAYS goes first.  Devanagari fonts are
-        # appended as unicode fallbacks only — never prepended ahead of the
-        # selected family (that was what broke font switching post-unicode PR).
-        chosen = elem.style.font_family or "Arial"
-        devanagari_fallbacks = [
-            "Devanagari Sangam MN",
-            "Mangal",
-            "Nirmala UI",
-            "Kohinoor Devanagari",
-            "Noto Sans Devanagari",
-        ]
-        families = [chosen] + [f for f in devanagari_fallbacks if f != chosen] + ["Arial"]
-        # ────────────────────────────────────────────────────────────────────
-        font = QFont(families[0])
-        font.setFamilies(families)
-        font.setBold(elem.style.font_bold)
-        font.setItalic(elem.style.font_italic)
-        font.setStyleStrategy(QFont.StyleStrategy(
-            QFont.PreferAntialias | QFont.PreferMatch
-        ))
+        text = self._get_display_text()
 
         flags = Qt.TextIncludeTrailingSpaces
         if elem.style.text_align == "center":
@@ -628,30 +631,9 @@ class CanvasItem(QGraphicsObject):
         if elem.style.wrap:
             flags |= Qt.TextWordWrap
 
-        # ── Font sizing (document-pixel space) ─────────────────────────────────
-        # Canvas coordinates are document pixels (at 300 DPI).  We must
-        # convert pt → document pixels so the font appears the correct
-        # physical size when the card is viewed at its natural zoom.
-        if elem.style.overflow_policy == TextOverflowPolicy.AUTO_SHRINK and text:
-            cur_pt = font_size_pt
-            min_pt = 4.0
-            while cur_pt >= min_pt:
-                doc_px = points_to_document_pixels(cur_pt, dpi)
-                font.setPixelSize(max(1, int(round(doc_px))))
-                fm = QFontMetrics(font)
-                bounding = fm.boundingRect(rect.toRect(), flags, text)
-                single_w = fm.horizontalAdvance(text)
-                fits_single_line = (single_w <= rect.width()) and ("\n" not in text)
-                if fits_single_line:
-                    break
-                if bounding.width() <= rect.width() and bounding.height() <= rect.height():
-                    break
-                cur_pt -= 0.5
-        else:
-            # CLIP / TRUNCATE / WRAP: render at the exact specified pt size
-            doc_px = points_to_document_pixels(font_size_pt, dpi)
-            font.setPixelSize(max(1, int(round(doc_px))))
-        # ─────────────────────────────────────────────────────────────────
+        # The font is resolved by the shared text-metrics helper so that what
+        # is painted and what is measured (minimum size) always agree.
+        font = text_metrics.resolve_font(elem, text, self._get_scene_dpi(), rect)
 
         draw_rect = QRectF(rect)
         fm = QFontMetrics(font)

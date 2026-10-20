@@ -204,7 +204,28 @@ class CanvasScene(QGraphicsScene):
         self._sample_photo_path = photo_path
         for item in self._items_by_id.values():
             item.set_sample_data(record, photo_path)
+        self.fit_text_elements_to_content()
         self.update()
+
+    def fit_text_elements_to_content(self) -> None:
+        """Grow text elements whose box is too small for their content.
+
+        Text must never disappear behind its own bounding box, so whenever the
+        rendered content needs more room (longer value, bigger font, ...) the
+        box grows.  Boxes are never shrunk automatically.
+        """
+        if getattr(self, "_in_fit_text_elements", False):
+            return
+        self._in_fit_text_elements = True
+        try:
+            changed = False
+            for item in self._items_by_id.values():
+                if item.grow_to_fit_content():
+                    changed = True
+            if changed:
+                self.update()
+        finally:
+            self._in_fit_text_elements = False
 
     def get_selected_item(self) -> Optional[CanvasItem]:
         selected = self.selectedItems()

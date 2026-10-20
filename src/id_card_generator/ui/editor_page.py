@@ -33,13 +33,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from id_card_generator.core.constants import ImageFitMode, WorkflowStep
+from id_card_generator.core.constants import DEFAULT_DPI, ImageFitMode, WorkflowStep
 from id_card_generator.core.models import (
     CanvasElement,
     PhotoMatchResult,
     SourceRecord,
     TemplateDefinition,
 )
+from id_card_generator.editor import text_metrics
 from id_card_generator.editor.alignment_tools import AlignmentTools
 from id_card_generator.editor.canvas_items import CanvasItem
 from id_card_generator.editor.canvas_scene import CanvasScene
@@ -1137,6 +1138,7 @@ class EditorPage(QWidget):
             height=40.0,
             binding=column_name,
         )
+        self._auto_fit_text_element(el)
         self.scene.add_element(el)
         self.layers_panel.refresh_layers()
         self._update_sample_preview()
@@ -1151,6 +1153,8 @@ class EditorPage(QWidget):
         old_states = [(it.element.id, it.element.model_dump(mode="json")) for it in selected]
         for it in selected:
             update_item_fn(it)
+            # Keep the box big enough for the (possibly changed) text.
+            it.grow_to_fit_content()
             it.update()
         new_states = [(it.element.id, it.element.model_dump(mode="json")) for it in selected]
 
@@ -1328,6 +1332,27 @@ class EditorPage(QWidget):
         self._apply_context_change(lambda it: setattr(it.element.style, "mask_shape", mask_str), "Change Mask Shape")
 
     # Element Creation Methods
+    def _auto_fit_text_element(self, el: CanvasElement) -> None:
+        """Size a text element so its bounding box hugs its content.
+
+        A text box that is created too small immediately clips its own
+        content, so new text elements are sized from the real rendered size
+        of the text they display.
+        """
+        tmpl = self.scene.template
+        dpi = int(getattr(tmpl, "dpi", DEFAULT_DPI) or DEFAULT_DPI) if tmpl else DEFAULT_DPI
+        max_width = float(tmpl.width_px) * 0.6 if tmpl else None
+
+        record: Optional[SourceRecord] = None
+        records = getattr(self, "records", None)
+        if records:
+            idx = max(0, min(len(records) - 1, self.sample_index))
+            record = records[idx]
+
+        text_metrics.fit_element_to_text(
+            el, record=record, dpi=dpi, max_width=max_width
+        )
+
     def _add_static_text(self) -> None:
         el = CanvasElement(
             name="Static Label",
@@ -1338,6 +1363,7 @@ class EditorPage(QWidget):
             height=48.0,
             static_content="Sample Text",
         )
+        self._auto_fit_text_element(el)
         self.scene.add_element(el)
         self.layers_panel.refresh_layers()
 
@@ -1352,6 +1378,7 @@ class EditorPage(QWidget):
             height=40.0,
             binding=col,
         )
+        self._auto_fit_text_element(el)
         self.scene.add_element(el)
         self.layers_panel.refresh_layers()
         self._update_sample_preview()
