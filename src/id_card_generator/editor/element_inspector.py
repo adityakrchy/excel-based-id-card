@@ -455,6 +455,7 @@ class ElementInspector(QWidget):
         """Bind selected item to inspector form controls."""
         self._current_item = item
         if not item:
+            self._invalidate_current_item()
             self.lbl_title.setText("<i>No element selected</i>")
             self.setEnabled(False)
             return
@@ -518,6 +519,18 @@ class ElementInspector(QWidget):
         self.img_group.setVisible(is_photo)
 
         self._updating = False
+
+    def _invalidate_current_item(self) -> None:
+        """Drop a reference to an item whose C++ object may be gone.
+
+        The canvas item is destroyed whenever the scene is reloaded; keeping
+        the wrapper alive would let a stale object be used later on.
+        """
+        self._current_item = None
+        try:
+            self.setEnabled(False)
+        except RuntimeError:
+            pass
 
     def _refresh_binding_combo(self) -> None:
         self.cmb_binding.blockSignals(True)

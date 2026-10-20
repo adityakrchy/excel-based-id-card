@@ -229,7 +229,7 @@ def test_layers_panel_click_selects_and_shows_tbox(editor_page: EditorPage):
     target_tree_item = None
     for idx in range(tree.topLevelItemCount()):
         t_item = tree.topLevelItem(idx)
-        if t_item.data(0, Qt.UserRole) == photo_item:
+        if t_item.data(0, Qt.UserRole) == photo_item.element.id:
             target_tree_item = t_item
             break
 

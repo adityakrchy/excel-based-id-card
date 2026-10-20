@@ -220,4 +220,4 @@ def test_layers_panel_multi_selection(canvas_setup, qtbot):
     item3.setSelected(True)
     selected_in_tree = panel.tree.selectedItems()
     assert len(selected_in_tree) == 1
-    assert selected_in_tree[0].data(0, Qt.UserRole) == item3
+    assert selected_in_tree[0].data(0, Qt.UserRole) == item3.element.id

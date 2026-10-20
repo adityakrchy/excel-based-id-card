@@ -1090,6 +1090,8 @@ class EditorPage(QWidget):
         """Load template into canvas editor and update metadata readouts."""
         self.scene.load_template(template)
         self.layers_panel.refresh_layers()
+        # The previous selection belonged to the old scene.
+        self.inspector.set_selected_item(None)
         self._update_template_bar_ui()
         if not self._user_adjusted_splitter:
             self.apply_default_splitter_sizes(force=False)

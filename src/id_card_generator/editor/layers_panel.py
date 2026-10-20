@@ -128,6 +128,16 @@ class LayersPanel(QWidget):
 
     def _connect_signals(self) -> None:
         self.scene.selectionChanged.connect(self._on_scene_selection_changed)
+        # The rows must be gone before the canvas items are destroyed.
+        self.scene.about_to_clear.connect(self._on_scene_about_to_clear)
+
+    def _on_scene_about_to_clear(self) -> None:
+        """Drop the tree rows before the canvas items are destroyed."""
+        self._updating = True
+        try:
+            self.tree.clear()
+        finally:
+            self._updating = False
 
     def refresh_layers(self) -> None:
         """Rebuild the layers tree from current canvas items sorted descending by z-index."""
@@ -145,7 +155,10 @@ class LayersPanel(QWidget):
             display_text = f"{elem.name} ({type_tag}){binding_info}"
 
             tree_item = QTreeWidgetItem([display_text, "", ""])
-            tree_item.setData(0, Qt.UserRole, item)
+            # Store the element id, never the canvas item itself: the item is
+            # a QObject that is destroyed when the scene is cleared, and a
+            # stale pointer inside a QVariant crashes the interpreter.
+            tree_item.setData(0, Qt.UserRole, item.element.id)
 
             # Visibility checkbox
             tree_item.setCheckState(1, Qt.Checked if elem.visible else Qt.Unchecked)
@@ -159,12 +172,25 @@ class LayersPanel(QWidget):
 
         self._updating = False
 
+    def _canvas_item_for(self, tree_item: QTreeWidgetItem) -> Optional[CanvasItem]:
+        """Resolve the canvas item of a tree row.
+
+        The row only knows the element id; the item itself is looked up in the
+        scene and may already be gone.
+        """
+        if tree_item is None:
+            return None
+        element_id = tree_item.data(0, Qt.UserRole)
+        if not isinstance(element_id, str):
+            return None
+        return self.scene.item_for_element_id(element_id)
+
     def _on_tree_item_clicked(self, tree_item: QTreeWidgetItem, column: int) -> None:
         """Explicitly focus and select item on canvas with TBox when clicked in layers tab."""
         if column in (1, 2):
             return  # Handled by check state in _on_item_changed
         if len(self.tree.selectedItems()) <= 1:
-            canvas_item: Optional[CanvasItem] = tree_item.data(0, Qt.UserRole)
+            canvas_item = self._canvas_item_for(tree_item)
             if canvas_item:
                 self._select_and_focus_item(canvas_item)
 
@@ -196,9 +222,9 @@ class LayersPanel(QWidget):
         try:
             self.scene.clearSelection()
             selected_canvas_items = []
-            for item in selected:
-                c_item: Optional[CanvasItem] = item.data(0, Qt.UserRole)
-                if c_item and c_item.scene() == self.scene:
+            for tree_row in selected:
+                c_item = self._canvas_item_for(tree_row)
+                if c_item is not None and c_item.scene() == self.scene:
                     c_item.setSelected(True)
                     selected_canvas_items.append(c_item)
 
@@ -227,9 +253,12 @@ class LayersPanel(QWidget):
                 return
             self.tree.clearSelection()
 
+            selected_ids = {
+                item.element.id for item in selected_canvas_items
+            }
             for idx in range(self.tree.topLevelItemCount()):
                 t_item = self.tree.topLevelItem(idx)
-                if t_item.data(0, Qt.UserRole) in selected_canvas_items:
+                if t_item.data(0, Qt.UserRole) in selected_ids:
                     t_item.setSelected(True)
         finally:
             self._updating = False
@@ -237,8 +266,8 @@ class LayersPanel(QWidget):
     def _on_item_changed(self, tree_item: QTreeWidgetItem, column: int) -> None:
         if self._updating:
             return
-        canvas_item: Optional[CanvasItem] = tree_item.data(0, Qt.UserRole)
-        if not canvas_item:
+        canvas_item = self._canvas_item_for(tree_item)
+        if canvas_item is None:
             return
 
         if column == 1:  # Visibility
@@ -253,7 +282,9 @@ class LayersPanel(QWidget):
     def _get_selected_canvas_item(self) -> Optional[CanvasItem]:
         selected = self.tree.selectedItems()
         if selected:
-            return selected[0].data(0, Qt.UserRole)
+            item = self._canvas_item_for(selected[0])
+            if item is not None:
+                return item
         return self.scene.get_selected_item()
 
     def _bring_to_front(self) -> None:

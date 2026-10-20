@@ -2,6 +2,7 @@
 
 import logging
 from typing import Dict, List, Optional, Set
+import shiboken6
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
@@ -32,6 +33,11 @@ class CanvasScene(QGraphicsScene):
 
     element_selected = Signal(object)  # CanvasItem or None
     template_modified = Signal()
+    # Emitted right before the canvas items are destroyed.  Panels that keep a
+    # reference to an item (the layers tree) have to drop it first: a QObject
+    # that is destroyed while a QVariant still references it makes PySide
+    # dereference a freed pointer.
+    about_to_clear = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -158,8 +164,12 @@ class CanvasScene(QGraphicsScene):
 
     def load_template(self, template: TemplateDefinition) -> None:
         """Load a template definition into the scene."""
-        self.clear()
+        # Drop the references *before* clearing: clear() destroys the canvas
+        # items and a stale pointer kept alive in a QVariant makes the
+        # interpreter dereference a freed object.
+        self.about_to_clear.emit()
         self._items_by_id.clear()
+        self.clear()
         self.template = template
         if template:
             self._snap_settings.unit = getattr(template, "unit", "mm") or "mm"
@@ -206,6 +216,24 @@ class CanvasScene(QGraphicsScene):
         for item in self._items_by_id.values():
             item.set_sample_data(record, photo_path)
         self.update()
+
+    def item_for_element_id(self, element_id: str) -> Optional[CanvasItem]:
+        """Return the canvas item of an element id, or None when it is gone.
+
+        The layers panel stores element ids (never the item itself) because a
+        canvas item is destroyed with the scene.
+        """
+        if not element_id:
+            return None
+        item = self._items_by_id.get(element_id)
+        if item is None:
+            return None
+        try:
+            if not shiboken6.isValid(item):
+                return None
+        except (TypeError, RuntimeError):
+            return None
+        return item
 
     def get_selected_item(self) -> Optional[CanvasItem]:
         selected = self.selectedItems()
