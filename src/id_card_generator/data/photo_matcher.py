@@ -1,6 +1,7 @@
 """Matching engine pairing spreadsheet records with photographs via arbitrary key column or PIN."""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from id_card_generator.core.constants import MatchStatus
@@ -9,6 +10,20 @@ from id_card_generator.data.data_normalizer import DataNormalizer
 from id_card_generator.data.photo_scanner import PhotoScanner
 
 logger = logging.getLogger(__name__)
+
+
+def _chunks(items: List, size: int):
+    """Yield consecutive slices of ``items``."""
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
+
+
+# Records above this count are matched on a thread pool.  Below it the
+# thread hand-off costs more than it saves.
+PARALLEL_MATCH_THRESHOLD = 2000
+
+# Upper bound of worker threads used for matching.
+MAX_MATCH_WORKERS = 8
 
 
 class MatchSummary:
@@ -28,8 +43,8 @@ class PhotoMatcher:
 
     def __init__(self) -> None:
         self.photo_dir: Optional[Path] = None
-        self.index: Dict[str, List[Path]] = {}
-        self.lower_index: Dict[str, List[Path]] = {}
+        self.index: Dict[str, List[str]] = {}
+        self.lower_index: Dict[str, List[str]] = {}
         self.overrides: Dict[str, str] = {}  # record_id or key_val -> photo_path
         self.key_column: Optional[str] = None
         self.prefix: str = ""
@@ -51,22 +66,25 @@ class PhotoMatcher:
 
     def set_indexes(
         self,
-        index: Dict[str, List[Path]],
-        lower_index: Optional[Dict[str, List[Path]]] = None,
+        index: Dict[str, List[str]],
+        lower_index: Optional[Dict[str, List[str]]] = None,
     ) -> None:
         """Directly update the exact and case-insensitive indexes from background streaming worker."""
         self.index = index
         if lower_index is not None:
             self.lower_index = lower_index
         else:
-            self.lower_index = {}
+            # Build the case-insensitive index without the quadratic list
+            # membership test of the previous implementation.
+            rebuilt: Dict[str, List[str]] = {}
             for stem, paths in self.index.items():
                 lower_stem = stem.lower()
-                if lower_stem not in self.lower_index:
-                    self.lower_index[lower_stem] = []
-                for p in paths:
-                    if p not in self.lower_index[lower_stem]:
-                        self.lower_index[lower_stem].append(p)
+                bucket = rebuilt.get(lower_stem)
+                if bucket is None:
+                    rebuilt[lower_stem] = list(paths)
+                else:
+                    bucket.extend(paths)
+            self.lower_index = rebuilt
 
     def rescan(self) -> None:
         """Rescan current photo directory and rebuild exact and lower-case lookup indexes."""
@@ -160,28 +178,28 @@ class PhotoMatcher:
             if pat and pat not in patterns:
                 patterns.append(pat)
 
-        found_paths: List[Path] = []
+        # Collect the candidates from the exact and the case-insensitive
+        # index.  A set keeps the de-duplication linear.
+        found_paths: List[str] = []
+        seen: Set[str] = set()
         for pat in patterns:
-            # Check exact match
-            if pat in self.index:
-                for p in self.index[pat]:
-                    if p not in found_paths:
-                        found_paths.append(p)
-            # Check case-insensitive match
-            pat_lower = pat.lower()
-            if pat_lower in self.lower_index:
-                for p in self.lower_index[pat_lower]:
-                    if p not in found_paths:
+            for bucket in (self.index.get(pat), self.lower_index.get(pat.lower())):
+                if not bucket:
+                    continue
+                for p in bucket:
+                    if p not in seen:
+                        seen.add(p)
                         found_paths.append(p)
 
         if len(found_paths) == 1:
+            found = found_paths[0]
             return PhotoMatchResult(
                 pin=pin_val,
                 key_value=key_val,
                 record_id=record.record_id,
                 status=MatchStatus.MATCHED,
-                photo_path=str(found_paths[0]),
-                details=f"Matched {found_paths[0].name}",
+                photo_path=found,
+                details=f"Matched {Path(found).name}",
             )
         elif len(found_paths) > 1:
             return PhotoMatchResult(
@@ -189,8 +207,11 @@ class PhotoMatcher:
                 key_value=key_val,
                 record_id=record.record_id,
                 status=MatchStatus.AMBIGUOUS,
-                candidate_paths=[str(p) for p in found_paths],
-                details=f"Ambiguous: {len(found_paths)} photos found ({', '.join(p.name for p in found_paths)})",
+                candidate_paths=list(found_paths),
+                details=(
+                    f"Ambiguous: {len(found_paths)} photos found "
+                    f"({', '.join(Path(p).name for p in found_paths)})"
+                ),
             )
         else:
             return PhotoMatchResult(
@@ -201,36 +222,76 @@ class PhotoMatcher:
                 details=f"No photo found for key '{key_val}' (searched: {', '.join(patterns)})",
             )
 
-    def match_all(self, records: List[SourceRecord]) -> Tuple[Dict[str, PhotoMatchResult], MatchSummary]:
-        """Match all records and generate a comprehensive summary."""
+    def _match_records_parallel(
+        self,
+        records: List[SourceRecord],
+        workers: int,
+    ) -> Dict[str, PhotoMatchResult]:
+        """Match records on a thread pool and return the results by record id."""
         results: Dict[str, PhotoMatchResult] = {}
+        chunk_size = max(256, (len(records) + workers - 1) // workers)
+
+        def _match_chunk(chunk: List[SourceRecord]) -> List[PhotoMatchResult]:
+            return [self.match_record(r) for r in chunk]
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for chunk_results in pool.map(_match_chunk, _chunks(records, chunk_size)):
+                for res in chunk_results:
+                    results[res.record_id] = res
+        return results
+
+    def match_all(
+        self,
+        records: List[SourceRecord],
+        workers: int = 0,
+    ) -> Tuple[Dict[str, PhotoMatchResult], MatchSummary]:
+        """Match all records and generate a comprehensive summary.
+
+        ``workers`` enables multi threaded matching for large datasets; 0
+        picks a sensible value automatically.
+        """
         summary = MatchSummary()
         summary.total_records = len(records)
+        if not records:
+            return {}, summary
 
-        matched_files: Set[Path] = set()
+        if workers <= 0:
+            workers = min(MAX_MATCH_WORKERS, (len(records) // PARALLEL_MATCH_THRESHOLD) + 1)
+        else:
+            workers = max(1, min(workers, MAX_MATCH_WORKERS))
 
-        for r in records:
-            res = self.match_record(r)
-            results[r.record_id] = res
+        if workers > 1 and len(records) >= PARALLEL_MATCH_THRESHOLD:
+            results = self._match_records_parallel(records, workers)
+        else:
+            results = {r.record_id: self.match_record(r) for r in records}
 
-            if res.status == MatchStatus.MATCHED:
-                summary.matched_count += 1
+        # Collect the matched files.  A set keeps the membership test O(1).
+        matched_files: Set[str] = set()
+        for res in results.values():
+            if res.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN):
                 if res.photo_path:
-                    matched_files.add(Path(res.photo_path))
-            elif res.status == MatchStatus.OVERRIDDEN:
-                summary.overridden_count += 1
-                if res.photo_path:
-                    matched_files.add(Path(res.photo_path))
+                    matched_files.add(res.photo_path)
             elif res.status == MatchStatus.AMBIGUOUS:
                 summary.ambiguous_count += 1
             else:
                 summary.missing_count += 1
 
-        # Detect unassigned photos in directory
-        for stem, paths in self.index.items():
-            for p in paths:
-                if p not in matched_files and p not in summary.unassigned_photo_paths:
-                    summary.unassigned_photo_paths.append(p)
+        summary.matched_count = sum(
+            1 for r in results.values() if r.status == MatchStatus.MATCHED
+        )
+        summary.overridden_count = sum(
+            1 for r in results.values() if r.status == MatchStatus.OVERRIDDEN
+        )
 
-        summary.unassigned_photos_count = len(summary.unassigned_photo_paths)
+        # Detect the unassigned photos.  This is linear in the number of
+        # photos - the previous list based membership test was quadratic and
+        # dominated the runtime for large photo folders.
+        unassigned: List[str] = []
+        for paths in self.index.values():
+            for p in paths:
+                if p not in matched_files:
+                    unassigned.append(p)
+
+        summary.unassigned_photo_paths = [Path(p) for p in unassigned]
+        summary.unassigned_photos_count = len(unassigned)
         return results, summary

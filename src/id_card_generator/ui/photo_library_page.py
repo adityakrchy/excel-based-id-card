@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QThreadPool, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -27,10 +27,19 @@ from id_card_generator.core.models import PhotoMatchResult, ProjectConfiguration
 from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.photo_matcher import MatchSummary, PhotoMatcher
 from id_card_generator.tasks.photo_indexing_worker import PhotoIndexingWorker
+from id_card_generator.tasks.photo_match_worker import PhotoMatchWorker
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
+from id_card_generator.ui.photo_thumbnails import (
+    ThumbnailCache,
+    ThumbnailSignals,
+    ThumbnailTask,
+)
 
 logger = logging.getLogger(__name__)
+
+# Number of thumbnails that are decoded for the visible rows.
+MAX_VISIBLE_THUMBS = 60
 
 
 class PhotoLibraryPage(QWidget):
@@ -48,7 +57,18 @@ class PhotoLibraryPage(QWidget):
         self.match_results: Dict[str, PhotoMatchResult] = {}
         self.match_summary: Optional[MatchSummary] = None
         self._worker: Optional[PhotoIndexingWorker] = None
+        self._match_worker: Optional[PhotoMatchWorker] = None
         self._indexed_count: int = 0
+
+        # Thumbnails are decoded on a thread pool and kept in a small cache.
+        self._thumbnail_cache = ThumbnailCache()
+        self._thumbnail_signals = ThumbnailSignals(self)
+        self._thumbnail_signals.ready.connect(self._on_thumbnail_ready)
+        self._thread_pool = QThreadPool(self)
+        self._thread_pool.setMaxThreadCount(max(2, min(8, (__import__("os").cpu_count() or 2))))
+
+        # Incremented for every match request so stale results are dropped.
+        self._match_generation = 0
 
         self._setup_ui()
 
@@ -230,6 +250,7 @@ class PhotoLibraryPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         self.table.setIconSize(self.table.iconSize() * 2)
+        self.table.cellClicked.connect(self._on_action_clicked)
         tab_rec_layout.addWidget(self.table)
         self.tabs.addTab(tab_records, "Record Associations (0)")
 
@@ -271,6 +292,21 @@ class PhotoLibraryPage(QWidget):
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.DATA_SOURCE.value))
         self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.TEMPLATES.value))
         layout.addWidget(self.nav_bar)
+
+    def shutdown(self) -> None:
+        """Stop the background workers before the page is destroyed.
+
+        Dropping a QThread reference while the thread is still running
+        destroys the thread object mid-execution and crashes the application.
+        """
+        self._stop_match_worker()
+        self._stop_indexing()
+        self._thread_pool.clear()
+        self._thread_pool.waitForDone(2000)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self.shutdown()
+        super().closeEvent(event)
 
     def set_columns(self, columns: List[str]) -> None:
         """Set available spreadsheet columns in lookup combo."""
@@ -316,10 +352,20 @@ class PhotoLibraryPage(QWidget):
         self._worker.start()
 
     def _stop_indexing(self) -> None:
-        if self._worker and self._worker.isRunning():
-            self._worker.cancel()
-            self._worker.wait(500)
-            self._worker = None
+        """Stop the scanning thread and wait for it to finish.
+
+        The worker reference must not be dropped while the thread is still
+        running - the QThread would be destroyed while executing and crash
+        the application.
+        """
+        worker = self._worker
+        self._worker = None
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.wait(3000)
+        if worker is not None:
+            worker.deleteLater()
+
         self.progress_queue.setVisible(False)
         self.btn_stop_queue.setVisible(False)
 
@@ -337,10 +383,6 @@ class PhotoLibraryPage(QWidget):
         self.table_stream.setUpdatesEnabled(False)
         for stem, path_str in batch:
             row = self.table_stream.rowCount()
-            if row >= MAX_STREAM_ROWS:
-                self.table_stream.removeRow(0)
-                row = self.table_stream.rowCount()
-
             self.table_stream.insertRow(row)
             item_stem = QTableWidgetItem(stem)
             item_name = QTableWidgetItem(Path(path_str).name)
@@ -352,6 +394,13 @@ class PhotoLibraryPage(QWidget):
             self.table_stream.setItem(row, 1, item_name)
             self.table_stream.setItem(row, 2, item_path)
             self.table_stream.setItem(row, 3, item_status)
+
+        # Trim the rolling window once per batch instead of once per row,
+        # which keeps the table from invalidating its layout for every
+        # single discovered photo.
+        overflow = self.table_stream.rowCount() - MAX_STREAM_ROWS
+        for _ in range(overflow):
+            self.table_stream.removeRow(0)
 
         self.table_stream.scrollToBottom()
         self.table_stream.setUpdatesEnabled(True)
@@ -399,60 +448,115 @@ class PhotoLibraryPage(QWidget):
             self.set_directory(self.matcher.photo_dir)
 
     def _rematch(self) -> None:
+        """Re-run the matching on a worker thread.
+
+        Matching and staging the photographs in the workspace is I/O heavy,
+        so it runs off the interface thread.  Results of an outdated request
+        are discarded.
+        """
         if not self.records:
             return
 
-        self.match_results, self.match_summary = self.matcher.match_all(self.records)
+        self._match_generation += 1
+        generation = self._match_generation
 
-        # Copy ONLY matched photographs into the workspace/photos directory
-        if self.project_config and self.project_config.workspace_dir:
-            try:
-                self.match_results, copied_count = ProjectManager.copy_matched_photos_to_workspace(
-                    self.project_config, self.match_results
-                )
-                if copied_count > 0:
-                    self.lbl_workspace_photos.setText(
-                        f"✓ Copied {copied_count} matched photo(s) into workspace: photos/"
-                    )
-                    self.lbl_workspace_photos.setVisible(True)
-                elif any(
-                    m.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN)
-                    or (hasattr(m.status, "value") and m.status.value in ("matched", "overridden"))
-                    for m in self.match_results.values()
-                ):
-                    self.lbl_workspace_photos.setText(
-                        "✓ Matched photographs stored in workspace: photos/"
-                    )
-                    self.lbl_workspace_photos.setVisible(True)
-            except Exception as e:
-                logger.warning("Error copying matched photos to workspace: %s", e)
+        self._stop_match_worker()
 
-        s = self.match_summary
-        self.lbl_metrics.setText(
-            f"{s.matched_count} matched • {s.missing_count} missing • "
-            f"{s.ambiguous_count} ambiguous • {s.overridden_count} overridden"
+        self.lbl_metrics.setText("Matching…")
+        self._match_worker = PhotoMatchWorker(
+            matcher=self.matcher,
+            records=self.records,
+            project_config=self.project_config,
+            copy_to_workspace=self.project_config is not None,
+            parent=self,
         )
-        self.tabs.setTabText(0, f"Record Associations ({s.matched_count}/{len(self.records)} Matched)")
+        self._match_worker.matching_finished.connect(
+            lambda results, summary, copied, gen=generation: self._on_match_finished(
+                results, summary, copied, gen
+            )
+        )
+        self._match_worker.matching_failed.connect(self._on_match_failed)
+        self._match_worker.start()
+
+    def _stop_match_worker(self) -> None:
+        """Cancel and join the running match worker."""
+        worker = self._match_worker
+        self._match_worker = None
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.wait(3000)
+        if worker is not None:
+            worker.deleteLater()
+
+    def _on_match_finished(
+        self,
+        results: Dict[str, PhotoMatchResult],
+        summary: MatchSummary,
+        copied_count: int,
+        generation: int,
+    ) -> None:
+        """Worker finished - publish the results if they are still current."""
+        if generation != self._match_generation:
+            return
+
+        # The worker is done - release it so it can be collected.
+        worker = self._match_worker
+        self._match_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+        self.match_results = results
+        self.match_summary = summary
+
+        if copied_count > 0:
+            self.lbl_workspace_photos.setText(
+                f"✓ Copied {copied_count:,} matched photo(s) into workspace: photos/"
+            )
+            self.lbl_workspace_photos.setVisible(True)
+        elif any(
+            m.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN)
+            for m in results.values()
+        ):
+            self.lbl_workspace_photos.setText(
+                "✓ Matched photographs stored in workspace: photos/"
+            )
+            self.lbl_workspace_photos.setVisible(True)
+
+        s = summary
+        self.lbl_metrics.setText(
+            f"{s.matched_count:,} matched • {s.missing_count:,} missing • "
+            f"{s.ambiguous_count:,} ambiguous • {s.overridden_count:,} overridden"
+        )
+        self.tabs.setTabText(
+            0, f"Record Associations ({s.matched_count:,}/{len(self.records):,} Matched)"
+        )
 
         self._populate_table()
         self.matching_updated.emit(self.match_results, self.match_summary)
 
+    def _on_match_failed(self, error_msg: str) -> None:
+        """The matching worker failed."""
+        self.lbl_metrics.setText("Matching failed")
+        self.notice.set_message(f"Photo matching failed: {error_msg}", severity="error")
+
     def _populate_table(self) -> None:
+        """Fill the association table.
+
+        The rows are plain items - no per row widgets - so a table with tens
+        of thousands of records stays light.  Thumbnails are decoded on a
+        thread pool and inserted as soon as they are ready.
+        """
         self.table.setUpdatesEnabled(False)
         self.table.setRowCount(0)
         total_records = len(self.records)
         self.table.setRowCount(total_records)
-
-        # Thumbnails are loaded for initial visible rows to prevent Qt GUI freeze
-        MAX_INITIAL_THUMBS = 50
 
         for row_idx, rec in enumerate(self.records):
             match = self.match_results.get(rec.record_id)
             key_val = self.matcher.get_lookup_key_value(rec)
 
             # 0. Lookup Key
-            item_key = QTableWidgetItem(key_val or rec.pin)
-            self.table.setItem(row_idx, 0, item_key)
+            self.table.setItem(row_idx, 0, QTableWidgetItem(key_val or rec.pin))
 
             # 1. Name or other column
             name = rec.get_value("Name", "")
@@ -461,16 +565,10 @@ class PhotoLibraryPage(QWidget):
                     if "name" in k.lower() and v:
                         name = str(v)
                         break
-            item_name = QTableWidgetItem(name)
-            self.table.setItem(row_idx, 1, item_name)
+            self.table.setItem(row_idx, 1, QTableWidgetItem(name))
 
-            # 2. Thumbnail (Lazy load initial set)
-            thumb_item = QTableWidgetItem()
-            if row_idx < MAX_INITIAL_THUMBS and match and match.photo_path and Path(match.photo_path).exists():
-                pix = QPixmap(match.photo_path)
-                if not pix.isNull():
-                    thumb_item.setIcon(QIcon(pix.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation)))
-            self.table.setItem(row_idx, 2, thumb_item)
+            # 2. Thumbnail - filled in by the thumbnail workers
+            self.table.setItem(row_idx, 2, QTableWidgetItem())
 
             # 3. Match Status
             status_text = match.status.value.upper() if match else "MISSING"
@@ -481,39 +579,87 @@ class PhotoLibraryPage(QWidget):
                 item_status.setForeground(QColor("#EAB308"))
             else:
                 item_status.setForeground(QColor("#EF4444"))
-
             item_status.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 3, item_status)
 
             # 4. Resolved Path
             path_str = match.photo_path or (match.details if match else "No match")
-            item_path = QTableWidgetItem(path_str)
-            self.table.setItem(row_idx, 4, item_path)
+            self.table.setItem(row_idx, 4, QTableWidgetItem(path_str))
 
             # 5. Override Status
             override_str = "Custom Override" if (match and match.is_overridden) else "Automatic"
             item_override = QTableWidgetItem(override_str)
             if match and match.is_overridden:
-                item_override.setForeground(QColor("#A855F7"))
+                item_override.setForeground(QColor("#A855FC"))
             self.table.setItem(row_idx, 5, item_override)
 
-            # 6. Action button with explicit row parameters
-            action_btn = QPushButton("Clear" if (match and match.is_overridden) else "Assign...")
-            action_btn.setFixedWidth(75)
-            if match and match.is_overridden:
-                action_btn.setStyleSheet("color: #EC4899; font-weight: bold;")
-                action_btn.clicked.connect(
-                    lambda ch=False, rid=rec.record_id, kv=key_val, p=rec.pin: self._clear_override(rid, kv, p)
-                )
-            else:
-                action_btn.setStyleSheet("color: #38BDF8;")
-                action_btn.clicked.connect(
-                    lambda ch=False, rid=rec.record_id, kv=key_val, p=rec.pin: self._manual_override(rid, kv, p)
-                )
-            self.table.setCellWidget(row_idx, 6, action_btn)
+            # 6. Action - a clickable item instead of a widget per row
+            action_item = QTableWidgetItem(
+                "Clear" if (match and match.is_overridden) else "Assign..."
+            )
+            action_item.setForeground(
+                QColor("#A855FC") if (match and match.is_overridden) else QColor("#38BDF8")
+            )
+            action_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row_idx, 6, action_item)
 
         self.table.setUpdatesEnabled(True)
         self._filter_table()
+        self._request_thumbnails()
+
+    def _request_thumbnails(self) -> None:
+        """Queue the visible thumbnails for decoding on the thread pool."""
+        self._thumbnail_cache.clear()
+
+        first = max(0, self.table.rowAt(0))
+        last = min(self.table.rowCount() - 1, first + MAX_VISIBLE_THUMBS)
+
+        for row in range(first, last + 1):
+            match = self.match_results.get(self.records[row].record_id)
+            if not match or not match.photo_path:
+                continue
+            path = match.photo_path
+            cached = self._thumbnail_cache.get(path)
+            if cached is not None:
+                self._apply_thumbnail(row, path, cached)
+                continue
+            self._thread_pool.start(
+                ThumbnailTask(row, path, self._thumbnail_signals)
+            )
+
+    def _on_thumbnail_ready(self, row: int, path: str, image) -> None:
+        """A thumbnail finished decoding - insert it into the table."""
+        if image is None:
+            return
+        if row >= len(self.records):
+            return
+        self._thumbnail_cache.put(path, image)
+        self._apply_thumbnail(row, path, image)
+
+    def _apply_thumbnail(self, row: int, path: str, image) -> None:
+        """Show a decoded thumbnail in the table cell."""
+        if row >= self.table.rowCount():
+            return
+        item = self.table.item(row, 2)
+        if item is None:
+            return
+        try:
+            pixmap = QPixmap.fromImage(image)
+        except Exception:
+            return
+        item.setIcon(QIcon(pixmap))
+
+    def _on_action_clicked(self, row: int, column: int) -> None:
+        """Handle a click in the action column."""
+        if column != 6 or not (0 <= row < len(self.records)):
+            return
+        rec = self.records[row]
+        key_val = self.matcher.get_lookup_key_value(rec)
+        match = self.match_results.get(rec.record_id)
+        if match and match.is_overridden:
+            self._clear_override(rec.record_id, key_val, rec.pin)
+        else:
+            self._manual_override(rec.record_id, key_val, rec.pin)
 
     def _assign_selected_row(self) -> None:
         """Assign custom photo to the currently selected table row."""

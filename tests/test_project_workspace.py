@@ -167,6 +167,12 @@ def test_photo_library_page_workspace_integration(qtbot, temp_dir: Path):
     page.matcher.set_directory(external_photos)
     page._rematch()
 
+    # The matching runs on a worker thread - wait for it to finish.
+    for _ in range(200):
+        if page._match_worker is None and page.match_results:
+            break
+        qtbot.wait(25)
+
     # Matched photo should now be in workspace photos
     ws_photos = ws_path / "photos"
     assert (ws_photos / "P100.jpg").exists()

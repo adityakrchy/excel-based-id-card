@@ -2,6 +2,7 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -11,6 +12,12 @@ from id_card_generator.core.exceptions import ProjectError
 from id_card_generator.core.models import PhotoMatchResult, ProjectConfiguration
 
 logger = logging.getLogger(__name__)
+
+# Photographs above this count are copied with a thread pool.
+COPY_PARALLEL_THRESHOLD = 200
+
+# Upper bound of copy workers.
+MAX_COPY_WORKERS = 8
 
 
 class ProjectManager:
@@ -116,10 +123,13 @@ class ProjectManager:
     def copy_matched_photos_to_workspace(
         config: ProjectConfiguration,
         match_results: Dict[str, PhotoMatchResult],
+        workers: int = 0,
     ) -> Tuple[Dict[str, PhotoMatchResult], int]:
-        """Copy ONLY matched (and manually overridden) photographs into workspace photos/ directory.
-        
-        Leaves unmatched photos untouched and updates match_results with workspace paths.
+        """Copy ONLY matched (and manually overridden) photographs into the workspace photos/ directory.
+
+        Leaves unmatched photos untouched and updates match_results with the
+        workspace paths.  The copies run on a thread pool - copying thousands
+        of photographs is I/O bound and used to freeze the interface.
         """
         if not config.photos_dir:
             return match_results, 0
@@ -127,40 +137,70 @@ class ProjectManager:
         photos_dir = config.photos_dir
         photos_dir.mkdir(parents=True, exist_ok=True)
 
-        copied_count = 0
-        for record_id, result in match_results.items():
-            # Only matched or manually overridden photos are copied
-            is_matched = result.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN) or (
-                hasattr(result.status, "value") and result.status.value in ("matched", "overridden")
+        def _is_matched(result: PhotoMatchResult) -> bool:
+            return result.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN) or (
+                hasattr(result.status, "value")
+                and result.status.value in ("matched", "overridden")
             )
-            if not is_matched or not result.photo_path:
+
+        candidates = [
+            (record_id, result)
+            for record_id, result in match_results.items()
+            if _is_matched(result) and result.photo_path
+        ]
+        if not candidates:
+            return match_results, 0
+
+        def _copy_one(item) -> Optional[Path]:
+            """Copy one photograph into the workspace and return the new path."""
+            record_id, result = item
+            try:
+                src = Path(result.photo_path).resolve()
+                if not src.exists():
+                    return None
+
+                target = (photos_dir / src.name).resolve()
+                if target.exists():
+                    try:
+                        if not src.samefile(target):
+                            target = (
+                                photos_dir
+                                / f"{src.stem}_{result.pin or record_id}{src.suffix}"
+                            ).resolve()
+                    except OSError:
+                        pass
+
+                if src != target:
+                    try:
+                        shutil.copy2(src, target)
+                    except shutil.SameFileError:
+                        pass
+                    except Exception as e:
+                        logger.warning("Failed to copy matched photo %s: %s", src, e)
+                        return None
+                return target
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning("Failed to copy matched photo: %s", e)
+                return None
+
+        if workers <= 0:
+            workers = min(MAX_COPY_WORKERS, (len(candidates) // COPY_PARALLEL_THRESHOLD) + 1)
+        else:
+            workers = max(1, min(workers, MAX_COPY_WORKERS))
+
+        copied_count = 0
+        if workers > 1 and len(candidates) >= COPY_PARALLEL_THRESHOLD:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                targets = list(pool.map(_copy_one, candidates))
+        else:
+            targets = [_copy_one(item) for item in candidates]
+
+        for (record_id, result), target in zip(candidates, targets):
+            if target is None:
                 continue
-
-            src = Path(result.photo_path).resolve()
-            if not src.exists():
-                continue
-
-            target = (photos_dir / src.name).resolve()
-            if target.exists():
-                try:
-                    if not src.samefile(target):
-                        target = (photos_dir / f"{src.stem}_{result.pin or record_id}{src.suffix}").resolve()
-                except OSError:
-                    pass
-
-            if src != target:
-                try:
-                    shutil.copy2(src, target)
-                    copied_count += 1
-                except shutil.SameFileError:
-                    pass
-                except Exception as e:
-                    logger.warning("Failed to copy matched photo %s: %s", src, e)
-                    continue
-
-            # Update match result with workspace copy path
             result.photo_path = str(target)
             result.matched_filename = target.name
+            copied_count += 1
 
         if config.project_file_path and config.project_file_path.exists():
             try:
