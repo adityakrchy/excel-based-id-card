@@ -62,11 +62,11 @@ class SettingsPage(QWidget):
         app_card = QFrame()
         app_card.setObjectName("card_panel")
         app_layout = QVBoxLayout(app_card)
-        app_layout.addWidget(QLabel("<b>Appearance & Theme:</b>"))
+        app_layout.addWidget(self._section_label("APPEARANCE"))
 
         theme_row = QHBoxLayout()
-        theme_row.addWidget(QLabel("Application Theme:"))
         self.cmb_theme = QComboBox()
+        self.cmb_theme.setPlaceholderText("Application theme")
         self.cmb_theme.addItem("Black (Fluent Dark)", "black")
         self.cmb_theme.addItem("White (Fluent Light)", "white")
         self.cmb_theme.addItem("System (Follow Windows)", "system")
@@ -85,11 +85,11 @@ class SettingsPage(QWidget):
         proc_card = QFrame()
         proc_card.setObjectName("card_panel")
         proc_layout = QVBoxLayout(proc_card)
-        proc_layout.addWidget(QLabel("<b>Generation & Rendering Rules:</b>"))
+        proc_layout.addWidget(self._section_label("GENERATION"))
 
         policy_row = QHBoxLayout()
-        policy_row.addWidget(QLabel("Missing Photograph Policy:"))
         self.cmb_policy = QComboBox()
+        self.cmb_policy.setPlaceholderText("Missing photograph policy")
         self.cmb_policy.addItem("Generate with Silhouette Placeholder", MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER)
         self.cmb_policy.addItem("Skip Record During Batch Generation", MissingPhotoPolicy.SKIP_RECORD)
         self.cmb_policy.addItem("Fail Record and Halt Card Creation", MissingPhotoPolicy.FAIL_RECORD)
@@ -99,8 +99,8 @@ class SettingsPage(QWidget):
         proc_layout.addLayout(policy_row)
 
         dpi_row = QHBoxLayout()
-        dpi_row.addWidget(QLabel("Default Print DPI:"))
         self.spin_dpi = QSpinBox()
+        self.spin_dpi.setPrefix("Default print DPI ")
         self.spin_dpi.setRange(72, 1200)
         self.spin_dpi.setValue(300)
         dpi_row.addWidget(self.spin_dpi)
@@ -113,7 +113,7 @@ class SettingsPage(QWidget):
         diag_card = QFrame()
         diag_card.setObjectName("card_panel")
         diag_layout = QVBoxLayout(diag_card)
-        diag_layout.addWidget(QLabel("<b>Diagnostic Logs & Troubleshooting:</b>"))
+        diag_layout.addWidget(self._section_label("DIAGNOSTICS"))
 
         lbl_log_path = QLabel(f"Active Log File: {get_current_log_path()}")
         lbl_log_path.setStyleSheet("color: #94A3B8; font-family: monospace; font-size: 11px;")
@@ -140,6 +140,12 @@ class SettingsPage(QWidget):
         body.addWidget(about_card)
 
         body.addStretch()
+
+    @staticmethod
+    def _section_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setProperty("role", "sectionLabel")
+        return label
 
     def _on_theme_changed(self, idx: int) -> None:
         theme = self.cmb_theme.currentData() or "black"

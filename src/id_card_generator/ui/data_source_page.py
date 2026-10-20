@@ -41,6 +41,8 @@ from id_card_generator.data.data_validator import DataValidator, ValidationRepor
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.data.hindi_converter import HindiConverter
 from id_card_generator.ui import workflow
+from id_card_generator.ui.studio_tokens import SIZES
+from id_card_generator.ui.components.layout_blocks import Divider, OverflowMenu, StatLine
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.studio_tokens import (
@@ -64,6 +66,9 @@ from id_card_generator.ui.studio_tokens import (
 
 logger = logging.getLogger(__name__)
 
+# Every control in a row uses the same height as the rest of the app.
+CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
+
 
 class DataSourcePage(QWidget):
     """Import spreadsheet, configure sheet/headers, validate rows, and preview data."""
@@ -81,6 +86,7 @@ class DataSourcePage(QWidget):
         self.validation_report: Optional[ValidationReport] = None
         self.field_mappings: Dict[str, str] = {}
         self.template_tokens: List[str] = ["pin_number", "employee_name", "department", "designation", "photo"]
+        self._error_count = 0
 
         self._setup_ui()
 
@@ -136,80 +142,88 @@ class DataSourcePage(QWidget):
         main_layout.addLayout(body, stretch=1)
 
         # ---------------------------------------------------------
-        # 1. Top Ribbon Bar (File Connection + Global Actions)
+        # 1. Source bar: the file, one primary action, a quiet stat line
         # ---------------------------------------------------------
         top_card = QFrame()
         top_card.setObjectName("card_panel")
         top_layout = QVBoxLayout(top_card)
-        top_layout.setContentsMargins(8, 8, 8, 8)
-        top_layout.setSpacing(6)
+        top_layout.setContentsMargins(14, 10, 14, 10)
+        top_layout.setSpacing(10)
 
-        # Primary Action Row
         file_row = QHBoxLayout()
-        file_row.setSpacing(8)
-
-        # Icon and Connection Pill
-        lbl_icon = QLabel("📊")
-        lbl_icon.setStyleSheet("font-size: 16px;")
-        file_row.addWidget(lbl_icon)
+        file_row.setSpacing(10)
 
         self.pill_connection = StatusPill("NO DATA", color=TEXT_MUTED)
         file_row.addWidget(self.pill_connection)
 
-        self.lbl_path = QLabel("<i>No spreadsheet connected</i>")
-        self.lbl_path.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
+        self.lbl_path = QLabel("No spreadsheet connected")
+        self.lbl_path.setProperty("role", "monoMuted")
         file_row.addWidget(self.lbl_path, stretch=1)
 
         self.btn_browse = QPushButton("Import Spreadsheet...")
         self.btn_browse.setObjectName("btn_primary")
+        self.btn_browse.setFixedHeight(CONTROL_HEIGHT)
         self.btn_browse.clicked.connect(self._browse_file)
         file_row.addWidget(self.btn_browse)
 
-        self.btn_refresh = QPushButton("Refresh")
-        self.btn_refresh.setEnabled(False)
-        self.btn_refresh.clicked.connect(self._reimport_data)
-        file_row.addWidget(self.btn_refresh)
-
-        self.btn_automap = QPushButton("✨ Auto-Map")
-        self.btn_automap.setToolTip("Automatically map spreadsheet columns to template placeholders by name similarity")
-        self.btn_automap.clicked.connect(self._auto_map_columns)
-        file_row.addWidget(self.btn_automap)
-
-        self.btn_validate = QPushButton("✓ Validate All")
-        self.btn_validate.setToolTip("Run strict validation checks across all records")
-        self.btn_validate.clicked.connect(self._validate_all_records)
-        file_row.addWidget(self.btn_validate)
+        # Everything secondary lives in the overflow menu.
+        self.btn_more = OverflowMenu("More data source actions")
+        self.btn_more.add_action("Re-import", self._reimport_data)
+        self.btn_more.add_action("Auto-map columns", self._auto_map_columns)
+        self.btn_more.add_action("Validate all records", self._validate_all_records)
+        file_row.addWidget(self.btn_more)
 
         top_layout.addLayout(file_row)
 
-        # Metrics & Badges Strip
-        metrics_row = QHBoxLayout()
-        metrics_row.setSpacing(8)
+        # The metric pills become one quiet line of numbers.
+        self.stat_line = StatLine()
+        top_layout.addWidget(self.stat_line)
 
+        # The legacy buttons stay available for the existing API.
+        self.btn_refresh = QPushButton("Re-import")
+        self.btn_refresh.setEnabled(False)
+        self.btn_refresh.clicked.connect(self._reimport_data)
+        self.btn_refresh.setVisible(False)
+        top_layout.addWidget(self.btn_refresh)
+
+        self.btn_automap = QPushButton("Auto-Map")
+        self.btn_automap.setToolTip("Automatically map spreadsheet columns to template placeholders by name similarity")
+        self.btn_automap.clicked.connect(self._auto_map_columns)
+        self.btn_automap.setVisible(False)
+        top_layout.addWidget(self.btn_automap)
+
+        self.btn_validate = QPushButton("Validate All")
+        self.btn_validate.setToolTip("Run strict validation checks across all records")
+        self.btn_validate.clicked.connect(self._validate_all_records)
+        self.btn_validate.setVisible(False)
+        top_layout.addWidget(self.btn_validate)
+
+        # The metric pills stay available for the API, but the interface only
+        # shows the quiet numbers of the stat line.
         self.pill_placeholders = StatusPill("TOKENS: 0", color=PRIMARY)
         self.pill_mapped = StatusPill("MAPPED: 0", color=SEMANTIC_SUCCESS)
         self.pill_unmapped = StatusPill("UNMAPPED: 0", color=SEMANTIC_WARNING)
         self.pill_records = StatusPill("RECORDS: 0", color=TEXT_SECONDARY)
         self.pill_errors = StatusPill("ERRORS: 0", color=SEMANTIC_ERROR)
 
-        metrics_row.addWidget(self.pill_placeholders)
-        metrics_row.addWidget(self.pill_mapped)
-        metrics_row.addWidget(self.pill_unmapped)
-        metrics_row.addWidget(self.pill_records)
-        metrics_row.addWidget(self.pill_errors)
+        for pill in (
+            self.pill_placeholders,
+            self.pill_mapped,
+            self.pill_unmapped,
+            self.pill_records,
+            self.pill_errors,
+        ):
+            pill.setVisible(False)
 
         self.lbl_workspace_badge = QLabel("")
-        self.lbl_workspace_badge.setStyleSheet(f"color: {SEMANTIC_SUCCESS}; font-weight: 600; font-size: 11px;")
+        self.lbl_workspace_badge.setProperty("role", "pageSubtitle")
         self.lbl_workspace_badge.setVisible(False)
-        metrics_row.addWidget(self.lbl_workspace_badge)
+        top_layout.addWidget(self.lbl_workspace_badge)
 
         self.lbl_hindi_badge = QLabel("")
-        self.lbl_hindi_badge.setStyleSheet(f"color: {PRIMARY}; font-weight: 600; font-size: 11px;")
+        self.lbl_hindi_badge.setProperty("role", "pageSubtitle")
         self.lbl_hindi_badge.setVisible(False)
-        metrics_row.addWidget(self.lbl_hindi_badge)
-
-        metrics_row.addStretch()
-        top_layout.addLayout(metrics_row)
+        top_layout.addWidget(self.lbl_hindi_badge)
 
         body.addWidget(top_card)
 
@@ -255,34 +269,27 @@ class DataSourcePage(QWidget):
         ctrl_bar = QHBoxLayout()
         ctrl_bar.setSpacing(6)
 
-        lbl_sheet = QLabel("Sheet:")
-        lbl_sheet.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-        ctrl_bar.addWidget(lbl_sheet)
-
         self.cmb_sheets = QComboBox()
+        self.cmb_sheets.setPlaceholderText("Sheet")
+        self.cmb_sheets.setFixedHeight(CONTROL_HEIGHT)
         self.cmb_sheets.currentIndexChanged.connect(self._on_sheet_changed)
-        ctrl_bar.addWidget(self.cmb_sheets, stretch=1)
-
-        lbl_hdr = QLabel("Header:")
-        lbl_hdr.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-        ctrl_bar.addWidget(lbl_hdr)
+        ctrl_bar.addWidget(self.cmb_sheets)
 
         self.spin_header = QSpinBox()
         self.spin_header.setRange(0, 100)
         self.spin_header.setValue(0)
+        self.spin_header.setPrefix("Header ")
+        self.spin_header.setFixedHeight(CONTROL_HEIGHT)
         self.spin_header.valueChanged.connect(self._on_header_changed)
         ctrl_bar.addWidget(self.spin_header)
 
-        lbl_hindi = QLabel("Hindi:")
-        lbl_hindi.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-        ctrl_bar.addWidget(lbl_hindi)
-
         self.cmb_hindi_mode = QComboBox()
-        self.cmb_hindi_mode.addItem("Auto-Detect Hindi", "auto")
-        self.cmb_hindi_mode.addItem("Force Kruti Dev → Unicode", "kruti_to_unicode")
-        self.cmb_hindi_mode.addItem("Unicode / Standard (Mangal)", "none")
+        self.cmb_hindi_mode.addItem("Auto-detect Hindi", "auto")
+        self.cmb_hindi_mode.addItem("Kruti Dev → Unicode", "kruti_to_unicode")
+        self.cmb_hindi_mode.addItem("Unicode / Mangal", "none")
+        self.cmb_hindi_mode.setFixedHeight(CONTROL_HEIGHT)
         self.cmb_hindi_mode.currentIndexChanged.connect(self._on_hindi_mode_changed)
-        ctrl_bar.addWidget(self.cmb_hindi_mode, stretch=1)
+        ctrl_bar.addWidget(self.cmb_hindi_mode)
 
         center_layout.addLayout(ctrl_bar)
 
@@ -333,46 +340,63 @@ class DataSourcePage(QWidget):
         mapping_layout.setContentsMargins(8, 8, 8, 8)
         mapping_layout.setSpacing(8)
 
-        lbl_map_head = QLabel("<b>FIELD MAPPING INSPECTOR</b>")
-        lbl_map_head.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px;")
+        lbl_map_head = QLabel("MAPPING")
+        lbl_map_head.setProperty("role", "sectionLabel")
         mapping_layout.addWidget(lbl_map_head)
 
-        mapping_layout.addWidget(QLabel("Target Placeholder:"))
         self.lbl_active_token = QLabel("{{pin_number}}")
-        self.lbl_active_token.setStyleSheet(
-            f"background: {SURFACE_LOWEST}; border: 1px solid {BORDER_SUBTLE}; color: {PRIMARY}; font-family: {FONT_FAMILY_MONO}; font-weight: 600; padding: 6px; border-radius: 4px;"
-        )
+        self.lbl_active_token.setProperty("role", "specValue")
+        self.lbl_active_token.setStyleSheet(f"color: {PRIMARY}; font-weight: 600;")
         mapping_layout.addWidget(self.lbl_active_token)
 
-        mapping_layout.addWidget(QLabel("Source Spreadsheet Column:"))
         self.cmb_source_column = QComboBox()
+        self.cmb_source_column.setPlaceholderText("Spreadsheet column")
+        self.cmb_source_column.setFixedHeight(CONTROL_HEIGHT)
         self.cmb_source_column.currentIndexChanged.connect(self._on_source_column_changed)
         mapping_layout.addWidget(self.cmb_source_column)
 
-        mapping_layout.addWidget(QLabel("Fallback / Default Value:"))
-        self.txt_fallback = QLineEdit()
-        self.txt_fallback.setPlaceholderText("N/A")
-        mapping_layout.addWidget(self.txt_fallback)
-
-        mapping_layout.addWidget(QLabel("Text Overflow Strategy:"))
-        self.cmb_overflow = QComboBox()
-        self.cmb_overflow.addItem("Auto-Shrink Font Size")
-        self.cmb_overflow.addItem("Truncate with Ellipsis (...)")
-        self.cmb_overflow.addItem("Multi-Line Wrap")
-        mapping_layout.addWidget(self.cmb_overflow)
-
-        self.chk_required = QCheckBox("Required Field (Flag Missing)")
-        self.chk_required.setChecked(True)
-        mapping_layout.addWidget(self.chk_required)
-
-        self.chk_convert_hindi = QCheckBox("Auto-Convert KrutiDev/DevLys")
-        self.chk_convert_hindi.setChecked(True)
-        mapping_layout.addWidget(self.chk_convert_hindi)
-
-        self.btn_apply_mapping = QPushButton("Apply Mapping Rule")
+        self.btn_apply_mapping = QPushButton("Apply mapping")
         self.btn_apply_mapping.setObjectName("btn_primary")
+        self.btn_apply_mapping.setFixedHeight(CONTROL_HEIGHT)
         self.btn_apply_mapping.clicked.connect(self._apply_current_mapping)
         mapping_layout.addWidget(self.btn_apply_mapping)
+
+        # The rare settings live behind a toggle.
+        self.btn_rules = QPushButton("⋯  Field rules")
+        self.btn_rules.setObjectName("btn_ghost")
+        self.btn_rules.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_rules.setToolTip("Show the fallback, overflow and conversion rules")
+        self.btn_rules.clicked.connect(self._toggle_rules)
+        mapping_layout.addWidget(self.btn_rules)
+
+        self.rules_box = QWidget()
+        rules_layout = QVBoxLayout(self.rules_box)
+        rules_layout.setContentsMargins(0, 4, 0, 0)
+        rules_layout.setSpacing(8)
+
+        self.txt_fallback = QLineEdit()
+        self.txt_fallback.setPlaceholderText("Fallback value")
+        self.txt_fallback.setFixedHeight(CONTROL_HEIGHT)
+        self.txt_fallback.setProperty("role", "fieldFlat")
+        rules_layout.addWidget(self.txt_fallback)
+
+        self.cmb_overflow = QComboBox()
+        self.cmb_overflow.addItem("Auto-shrink font size")
+        self.cmb_overflow.addItem("Truncate with ellipsis")
+        self.cmb_overflow.addItem("Multi-line wrap")
+        self.cmb_overflow.setFixedHeight(CONTROL_HEIGHT)
+        rules_layout.addWidget(self.cmb_overflow)
+
+        self.chk_required = QCheckBox("Required field")
+        self.chk_required.setChecked(True)
+        rules_layout.addWidget(self.chk_required)
+
+        self.chk_convert_hindi = QCheckBox("Convert KrutiDev / DevLys")
+        self.chk_convert_hindi.setChecked(True)
+        rules_layout.addWidget(self.chk_convert_hindi)
+
+        self.rules_box.setVisible(False)
+        mapping_layout.addWidget(self.rules_box)
 
         mapping_layout.addStretch()
         self.right_tabs.addTab(tab_mapping, "Mapping")
@@ -384,8 +408,8 @@ class DataSourcePage(QWidget):
         insp_layout.setContentsMargins(8, 8, 8, 8)
         insp_layout.setSpacing(6)
 
-        lbl_rec_title = QLabel("<b>RECORD ATTRIBUTES</b>")
-        lbl_rec_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px;")
+        lbl_rec_title = QLabel("RECORD")
+        lbl_rec_title.setProperty("role", "sectionLabel")
         insp_layout.addWidget(lbl_rec_title)
 
         self.lbl_inspect_details = QLabel("<i>Select a row in the table to inspect all attributes.</i>")
@@ -442,6 +466,18 @@ class DataSourcePage(QWidget):
         self.pill_mapped.set_status(f"MAPPED: {mapped_count}", color=SEMANTIC_SUCCESS if mapped_count > 0 else TEXT_MUTED)
         unmapped = len(self.template_tokens) - mapped_count
         self.pill_unmapped.set_status(f"UNMAPPED: {unmapped}", color=SEMANTIC_WARNING if unmapped > 0 else SEMANTIC_SUCCESS)
+
+        self.stat_line.set_stats([
+            ("Fields", len(self.template_tokens)),
+            ("Mapped", mapped_count, SEMANTIC_SUCCESS if mapped_count else None),
+            ("Unmapped", unmapped, SEMANTIC_WARNING if unmapped else None),
+            ("Records", len(self.records)),
+            ("Errors", self._error_count, SEMANTIC_ERROR if self._error_count else None),
+        ])
+
+    def _toggle_rules(self) -> None:
+        """Show or hide the rarely used field rules."""
+        self.rules_box.setVisible(not self.rules_box.isVisible())
 
     def _on_placeholder_clicked(self, item: QListWidgetItem) -> None:
         token = item.data(Qt.UserRole)
@@ -563,10 +599,12 @@ class DataSourcePage(QWidget):
                 f"{report.missing_pins} missing PINs • {len(report.duplicate_pins)} duplicate PINs"
             )
             self.pill_records.set_status(f"RECORDS: {len(records):,}", color=TEXT_SECONDARY)
+            self._error_count = report.missing_pins + len(report.duplicate_pins)
             self.pill_errors.set_status(
-                f"ERRORS: {report.missing_pins + len(report.duplicate_pins)}",
-                color=SEMANTIC_ERROR if (report.missing_pins + len(report.duplicate_pins)) > 0 else SEMANTIC_SUCCESS,
+                f"ERRORS: {self._error_count}",
+                color=SEMANTIC_ERROR if self._error_count > 0 else SEMANTIC_SUCCESS,
             )
+            self._refresh_stat_line()
 
             self.data_loaded.emit(cols, records, report)
 

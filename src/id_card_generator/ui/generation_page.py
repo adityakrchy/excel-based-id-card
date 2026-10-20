@@ -154,19 +154,25 @@ class GenerationPage(QWidget):
         self.grid_checklist = QGridLayout()
         self.grid_checklist.setSpacing(8)
 
-        self.lbl_chk_records = QLabel("Records: 0 loaded (0 valid)")
-        self.lbl_chk_records.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
-        self.lbl_chk_photos = QLabel("Photos: 0 matched (0 missing)")
-        self.lbl_chk_photos.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
-        self.lbl_chk_template = QLabel("Template: None selected")
-        self.lbl_chk_template.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
-        self.lbl_chk_output = QLabel("Output: PNG @ 300 DPI ({PIN_NUMBER}_{NAME}.png)")
-        self.lbl_chk_output.setStyleSheet(f"color: {TEXT_SECONDARY}; font-family: {FONT_FAMILY_MONO}; font-size: 11px;")
+        self.lbl_chk_records = QLabel("0 loaded (0 valid)")
+        self.lbl_chk_records.setProperty("role", "specValue")
+        self.lbl_chk_photos = QLabel("0 matched (0 missing)")
+        self.lbl_chk_photos.setProperty("role", "specValue")
+        self.lbl_chk_template = QLabel("None selected")
+        self.lbl_chk_template.setProperty("role", "specValue")
+        self.lbl_chk_output = QLabel("PNG @ 300 DPI")
+        self.lbl_chk_output.setProperty("role", "specValue")
 
-        self.grid_checklist.addWidget(self.lbl_chk_records, 0, 0)
-        self.grid_checklist.addWidget(self.lbl_chk_photos, 0, 1)
-        self.grid_checklist.addWidget(self.lbl_chk_template, 1, 0)
-        self.grid_checklist.addWidget(self.lbl_chk_output, 1, 1)
+        for row, (key, value) in enumerate((
+            ("Records", self.lbl_chk_records),
+            ("Photos", self.lbl_chk_photos),
+            ("Template", self.lbl_chk_template),
+            ("Output", self.lbl_chk_output),
+        )):
+            caption = QLabel(key)
+            caption.setProperty("role", "specKey")
+            self.grid_checklist.addWidget(caption, row, 0)
+            self.grid_checklist.addWidget(value, row, 1)
 
         chk_layout.addLayout(self.grid_checklist)
         body.addWidget(self.checklist_frame)
@@ -270,7 +276,7 @@ class GenerationPage(QWidget):
 
         # Update checklist labels
         valid_count = sum(1 for r in records if r.is_valid)
-        self.lbl_chk_records.setText(f"Records: {len(records):,} loaded ({valid_count:,} valid)")
+        self.lbl_chk_records.setText(f"{len(records):,} loaded ({valid_count:,} valid)")
         self.lbl_kpi_rendered.setText(f"0 / {len(records):,}")
 
         matched_count = sum(
@@ -279,14 +285,14 @@ class GenerationPage(QWidget):
             if m.status in (MatchStatus.MATCHED, MatchStatus.OVERRIDDEN)
         )
         missing_count = len(records) - matched_count
-        self.lbl_chk_photos.setText(f"Photos: {matched_count:,} matched ({missing_count:,} missing)")
+        self.lbl_chk_photos.setText(f"{matched_count:,} matched ({missing_count:,} missing)")
 
         tmpl_name = template.name if template else "None selected"
-        self.lbl_chk_template.setText(f"Template: {tmpl_name}")
+        self.lbl_chk_template.setText(tmpl_name)
 
         fmt = settings.output_format.value.upper()
         pat = getattr(settings, "filename_pattern", "{PIN_NUMBER}_{NAME}")
-        self.lbl_chk_output.setText(f"Output: {fmt} @ {settings.dpi} DPI ({pat})")
+        self.lbl_chk_output.setText(f"{fmt} @ {settings.dpi} DPI · {pat}")
 
     def _start_generation(self) -> None:
         if not self.template:

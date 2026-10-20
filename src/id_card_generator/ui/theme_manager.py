@@ -875,6 +875,20 @@ QLabel[role="monoMuted"] {
     font-size: 11px;
 }
 
+QLabel[role="statCaption"] {
+    color: $text_muted;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+}
+
+QLabel[role="statValue"] {
+    color: $on_surface;
+    font-family: $mono_font;
+    font-size: 12px;
+    font-weight: 600;
+}
+
 QLabel[role="specKey"] {
     color: $text_muted;
     font-size: 11px;

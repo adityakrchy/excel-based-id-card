@@ -29,7 +29,14 @@ from id_card_generator.data.photo_matcher import MatchSummary, PhotoMatcher
 from id_card_generator.tasks.photo_indexing_worker import PhotoIndexingWorker
 from id_card_generator.tasks.photo_match_worker import PhotoMatchWorker
 from id_card_generator.ui import workflow
+from id_card_generator.ui.components.layout_blocks import OverflowMenu, StatLine
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
+from id_card_generator.ui.studio_tokens import (
+    PRIMARY,
+    SEMANTIC_SUCCESS,
+    SEMANTIC_WARNING,
+    SIZES,
+)
 from id_card_generator.ui.photo_thumbnails import (
     ThumbnailCache,
     ThumbnailSignals,
@@ -37,6 +44,9 @@ from id_card_generator.ui.photo_thumbnails import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Every control in a row uses the same height as the rest of the app.
+CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
 
 # Number of thumbnails that are decoded for the visible rows.
 MAX_VISIBLE_THUMBS = 60
@@ -101,94 +111,104 @@ class PhotoLibraryPage(QWidget):
         body.setSpacing(10)
         layout.addLayout(body, stretch=1)
 
-        # 1. Directory Selection Card
+        # 1. Source bar: the folder, one primary action, the rest in a menu
         top_card = QFrame()
         top_card.setObjectName("card_panel")
         top_vlayout = QVBoxLayout(top_card)
+        top_vlayout.setContentsMargins(14, 10, 14, 10)
+        top_vlayout.setSpacing(8)
 
         top_layout = QHBoxLayout()
+        top_layout.setSpacing(10)
+
+        self.lbl_photo_dir = QLabel("No photo directory selected")
+        self.lbl_photo_dir.setProperty("role", "monoMuted")
+        top_layout.addWidget(self.lbl_photo_dir, stretch=1)
 
         self.btn_select_dir = QPushButton("Select Photo Folder...")
         self.btn_select_dir.setObjectName("btn_primary")
+        self.btn_select_dir.setFixedHeight(CONTROL_HEIGHT)
         self.btn_select_dir.clicked.connect(self._browse_directory)
+        top_layout.addWidget(self.btn_select_dir)
 
-        self.lbl_photo_dir = QLabel("<i>No photo directory selected</i>")
-        self.lbl_photo_dir.setStyleSheet("color: #94A3B8; font-weight: 500;")
-
-        self.btn_rescan = QPushButton("Rescan Folder")
+        self.btn_rescan = QPushButton("Rescan")
+        self.btn_rescan.setObjectName("btn_secondary")
+        self.btn_rescan.setFixedHeight(CONTROL_HEIGHT)
         self.btn_rescan.setEnabled(False)
         self.btn_rescan.clicked.connect(self._rescan)
-
-        top_layout.addWidget(self.btn_select_dir)
-        top_layout.addWidget(self.lbl_photo_dir, stretch=1)
         top_layout.addWidget(self.btn_rescan)
+
         top_vlayout.addLayout(top_layout)
 
         # Workspace copied photos badge
         self.lbl_workspace_photos = QLabel("")
-        self.lbl_workspace_photos.setStyleSheet("color: #10B981; font-weight: 600; font-size: 11px;")
+        self.lbl_workspace_photos.setProperty("role", "pageSubtitle")
         self.lbl_workspace_photos.setVisible(False)
         top_vlayout.addWidget(self.lbl_workspace_photos)
 
         body.addWidget(top_card)
 
-        # 2. Live Background Queue & Indexing Banner (Visible during scanning)
+        # 2. The indexing queue is a slim status line, not a panel
         self.queue_card = QFrame()
         self.queue_card.setObjectName("card_panel")
-        queue_layout = QVBoxLayout(self.queue_card)
-        queue_layout.setContentsMargins(12, 10, 12, 10)
-        queue_layout.setSpacing(6)
+        queue_layout = QHBoxLayout(self.queue_card)
+        queue_layout.setContentsMargins(14, 8, 14, 8)
+        queue_layout.setSpacing(10)
 
-        queue_header_row = QHBoxLayout()
-        self.lbl_queue_status = QLabel("⚡ Background Photo Indexing Queue Idle")
-        self.lbl_queue_status.setStyleSheet("font-weight: 600; color: #38BDF8;")
-        queue_header_row.addWidget(self.lbl_queue_status, stretch=1)
+        self.lbl_queue_status = QLabel("Idle")
+        self.lbl_queue_status.setProperty("role", "pageSubtitle")
+        queue_layout.addWidget(self.lbl_queue_status, stretch=1)
 
         self.lbl_queue_latest = QLabel("")
-        self.lbl_queue_latest.setStyleSheet("color: #94A3B8; font-size: 11px; font-family: monospace;")
-        queue_header_row.addWidget(self.lbl_queue_latest)
-
-        self.btn_stop_queue = QPushButton("Stop Scan")
-        self.btn_stop_queue.setFixedWidth(80)
-        self.btn_stop_queue.setVisible(False)
-        self.btn_stop_queue.clicked.connect(self._stop_indexing)
-        queue_header_row.addWidget(self.btn_stop_queue)
-
-        queue_layout.addLayout(queue_header_row)
+        self.lbl_queue_latest.setProperty("role", "monoMuted")
+        queue_layout.addWidget(self.lbl_queue_latest)
 
         self.progress_queue = QProgressBar()
         self.progress_queue.setRange(0, 0)  # indeterminate while counting
-        self.progress_queue.setFixedHeight(8)
+        self.progress_queue.setFixedWidth(120)
+        self.progress_queue.setFixedHeight(4)
         self.progress_queue.setVisible(False)
         queue_layout.addWidget(self.progress_queue)
 
+        self.btn_stop_queue = QPushButton("Stop")
+        self.btn_stop_queue.setObjectName("btn_secondary")
+        self.btn_stop_queue.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_stop_queue.setVisible(False)
+        self.btn_stop_queue.clicked.connect(self._stop_indexing)
+        queue_layout.addWidget(self.btn_stop_queue)
+
         body.addWidget(self.queue_card)
 
-        # 3. Matching Rules Card (Generic Column, Prefix, Suffix)
+        # 3. Matching rules - one quiet row
         rules_card = QFrame()
         rules_card.setObjectName("card_panel")
         rules_layout = QHBoxLayout(rules_card)
-        rules_layout.setContentsMargins(10, 8, 10, 8)
-        rules_layout.setSpacing(12)
+        rules_layout.setContentsMargins(14, 8, 14, 8)
+        rules_layout.setSpacing(10)
 
-        rules_layout.addWidget(QLabel("<b>Photo Lookup Key Column:</b>"))
+        lbl_rules = QLabel("LOOKUP")
+        lbl_rules.setProperty("role", "sectionLabel")
+        rules_layout.addWidget(lbl_rules)
+
         self.cmb_key_col = QComboBox()
-        self.cmb_key_col.addItem("Auto-Detect (PIN / ID)")
+        self.cmb_key_col.addItem("Auto-detect (PIN / ID)")
+        self.cmb_key_col.setFixedHeight(CONTROL_HEIGHT)
         self.cmb_key_col.currentIndexChanged.connect(self._on_rule_changed)
         rules_layout.addWidget(self.cmb_key_col)
 
-        rules_layout.addSpacing(8)
-        rules_layout.addWidget(QLabel("Prefix:"))
         self.txt_prefix = QLineEdit()
-        self.txt_prefix.setPlaceholderText("e.g. EMP_")
-        self.txt_prefix.setFixedWidth(80)
+        self.txt_prefix.setPlaceholderText("Prefix")
+        self.txt_prefix.setFixedWidth(96)
+        self.txt_prefix.setFixedHeight(CONTROL_HEIGHT)
+        self.txt_prefix.setProperty("role", "fieldFlat")
         self.txt_prefix.textChanged.connect(self._on_rule_changed)
         rules_layout.addWidget(self.txt_prefix)
 
-        rules_layout.addWidget(QLabel("Suffix:"))
         self.txt_suffix = QLineEdit()
-        self.txt_suffix.setPlaceholderText("e.g. _id")
-        self.txt_suffix.setFixedWidth(80)
+        self.txt_suffix.setPlaceholderText("Suffix")
+        self.txt_suffix.setFixedWidth(96)
+        self.txt_suffix.setFixedHeight(CONTROL_HEIGHT)
+        self.txt_suffix.setProperty("role", "fieldFlat")
         self.txt_suffix.textChanged.connect(self._on_rule_changed)
         rules_layout.addWidget(self.txt_suffix)
 
@@ -206,15 +226,16 @@ class PhotoLibraryPage(QWidget):
 
         # Filter & Summary Metrics Bar
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Filter:"))
+        filter_row.setSpacing(10)
         self.cmb_filter = QComboBox()
         self.cmb_filter.addItems([
-            "All Records",
-            "Matched Photos Only",
-            "Missing Photos Only",
-            "Ambiguous Matches Only",
-            "Overridden Photos Only",
+            "All records",
+            "Matched photos",
+            "Missing photos",
+            "Ambiguous matches",
+            "Overridden photos",
         ])
+        self.cmb_filter.setFixedHeight(CONTROL_HEIGHT)
         self.cmb_filter.currentIndexChanged.connect(self._filter_table)
         filter_row.addWidget(self.cmb_filter)
 
@@ -235,8 +256,11 @@ class PhotoLibraryPage(QWidget):
         filter_row.addWidget(self.btn_clear_selected)
 
         self.lbl_metrics = QLabel("0 matched")
-        self.lbl_metrics.setStyleSheet("font-weight: 600; color: #60CDFF;")
+        self.lbl_metrics.setVisible(False)
         filter_row.addWidget(self.lbl_metrics)
+
+        self.stat_line = StatLine()
+        filter_row.addWidget(self.stat_line)
         tab_rec_layout.addLayout(filter_row)
 
         # Association Table
@@ -251,8 +275,16 @@ class PhotoLibraryPage(QWidget):
             "Override Status",
             "Action",
         ])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(False)
+        self.table.setColumnWidth(0, 150)
+        self.table.setColumnWidth(1, 190)
+        self.table.setColumnWidth(2, 72)
+        self.table.setColumnWidth(3, 120)
+        self.table.setColumnWidth(4, 260)
+        self.table.setColumnWidth(5, 120)
+        self.table.setColumnWidth(6, 100)
         self.table.setIconSize(self.table.iconSize() * 2)
         self.table.cellClicked.connect(self._on_action_clicked)
         tab_rec_layout.addWidget(self.table)
@@ -278,8 +310,13 @@ class PhotoLibraryPage(QWidget):
             "Full Path",
             "Indexed Status",
         ])
-        self.table_stream.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.table_stream.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        stream_header = self.table_stream.horizontalHeader()
+        stream_header.setSectionResizeMode(QHeaderView.Interactive)
+        stream_header.setStretchLastSection(False)
+        self.table_stream.setColumnWidth(0, 180)
+        self.table_stream.setColumnWidth(1, 200)
+        self.table_stream.setColumnWidth(2, 320)
+        self.table_stream.setColumnWidth(3, 120)
         tab_stream_layout.addWidget(self.table_stream)
         self.tabs.addTab(tab_stream, "Live Photo Queue (0)")
 
@@ -555,6 +592,12 @@ class PhotoLibraryPage(QWidget):
             f"{s.matched_count:,} matched • {s.missing_count:,} missing • "
             f"{s.ambiguous_count:,} ambiguous • {s.overridden_count:,} overridden"
         )
+        self.stat_line.set_stats([
+            ("Matched", s.matched_count, SEMANTIC_SUCCESS if s.matched_count else None),
+            ("Missing", s.missing_count, SEMANTIC_WARNING if s.missing_count else None),
+            ("Ambiguous", s.ambiguous_count, SEMANTIC_WARNING if s.ambiguous_count else None),
+            ("Overridden", s.overridden_count, PRIMARY if s.overridden_count else None),
+        ])
         self.tabs.setTabText(
             0, f"Record Associations ({s.matched_count:,}/{len(self.records):,} Matched)"
         )

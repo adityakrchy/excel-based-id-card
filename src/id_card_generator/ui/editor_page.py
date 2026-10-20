@@ -51,6 +51,7 @@ from id_card_generator.templates.template_manager import TemplateManager
 from id_card_generator.ui.dialogs.template_cleanup_dialog import TemplateCleanupDialog
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.elided_label import ElidedLabel
+from id_card_generator.ui.components.layout_blocks import OverflowMenu
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.theme_manager import ThemeManager
@@ -98,30 +99,43 @@ class EditorPage(QWidget):
         main_layout.addWidget(self.page_header)
 
         self.lbl_tmpl_name = QLabel("Default Template")
-        self.lbl_tmpl_name.setStyleSheet("color: #F8FAFC; font-size: 13px; font-weight: 600;")
+        self.lbl_tmpl_name.setProperty("role", "cardTitle")
         self.page_header.add_action(self.lbl_tmpl_name)
 
         self.lbl_tmpl_badge = QLabel("Built-in")
-        self.lbl_tmpl_badge.setStyleSheet(
-            "color: #94A3B8; font-size: 10px; font-weight: bold; padding: 2px 6px; background: #27272A; border-radius: 4px;"
-        )
+        self.lbl_tmpl_badge.setProperty("role", "badgeMuted")
         self.page_header.add_action(self.lbl_tmpl_badge)
 
-        self.btn_tmpl_save = QPushButton("💾 Save Template")
+        # The template management lives in one overflow menu.
+        self.btn_tmpl_more = OverflowMenu("Template actions")
+        self._act_tmpl_save = self.btn_tmpl_more.add_action(
+            "Save template", self._save_current_template
+        )
+        self._act_tmpl_delete = self.btn_tmpl_more.add_action(
+            "Delete template", self._delete_current_template
+        )
+        self.btn_tmpl_more.add_action("Clean up library", self._open_cleanup_dialog)
+        self.page_header.add_action(self.btn_tmpl_more)
+
+        # The legacy buttons stay available for the existing API.
+        self.btn_tmpl_save = QPushButton("Save Template")
         self.btn_tmpl_save.setToolTip("Save canvas design to custom saved templates")
         self.btn_tmpl_save.clicked.connect(self._save_current_template)
+        self.btn_tmpl_save.setVisible(False)
         self.page_header.add_action(self.btn_tmpl_save)
 
-        self.btn_tmpl_delete = QPushButton("🗑 Delete")
+        self.btn_tmpl_delete = QPushButton("Delete")
         self.btn_tmpl_delete.setObjectName("btn_danger")
         self.btn_tmpl_delete.setToolTip("Delete this custom saved template from disk (built-in templates cannot be deleted)")
         self.btn_tmpl_delete.setEnabled(False)
         self.btn_tmpl_delete.clicked.connect(self._delete_current_template)
+        self.btn_tmpl_delete.setVisible(False)
         self.page_header.add_action(self.btn_tmpl_delete)
 
-        self.btn_tmpl_cleanup = QPushButton("🧹 Clean Up...")
+        self.btn_tmpl_cleanup = QPushButton("Clean Up...")
         self.btn_tmpl_cleanup.setToolTip("Open template cleanup manager to search, delete, and clean up older saved templates")
         self.btn_tmpl_cleanup.clicked.connect(self._open_cleanup_dialog)
+        self.btn_tmpl_cleanup.setVisible(False)
         self.page_header.add_action(self.btn_tmpl_cleanup)
 
         # Non blocking feedback area (errors / warnings stay in context).
@@ -1521,18 +1535,18 @@ class EditorPage(QWidget):
         self.lbl_tmpl_name.setText(tmpl.name)
         if is_built:
             self.lbl_tmpl_badge.setText("Built-in")
-            self.lbl_tmpl_badge.setStyleSheet(
-                "color: #94A3B8; font-size: 10px; font-weight: bold; padding: 2px 6px; background: #27272A; border-radius: 4px;"
-            )
+            self.lbl_tmpl_badge.setProperty("role", "badgeMuted")
             self.btn_tmpl_delete.setEnabled(False)
             self.btn_tmpl_delete.setToolTip("Built-in templates cannot be deleted")
+            self._act_tmpl_delete.setEnabled(False)
         else:
             self.lbl_tmpl_badge.setText("Custom Saved")
-            self.lbl_tmpl_badge.setStyleSheet(
-                "color: #C084FC; font-size: 10px; font-weight: bold; padding: 2px 6px; background: rgba(192, 132, 252, 0.15); border-radius: 4px;"
-            )
+            self.lbl_tmpl_badge.setProperty("role", "badgeAccent")
             self.btn_tmpl_delete.setEnabled(True)
             self.btn_tmpl_delete.setToolTip(f"Delete '{tmpl.name}' from disk")
+            self._act_tmpl_delete.setEnabled(True)
+        self.lbl_tmpl_badge.style().unpolish(self.lbl_tmpl_badge)
+        self.lbl_tmpl_badge.style().polish(self.lbl_tmpl_badge)
 
     def _save_current_template(self) -> None:
         """Save the current canvas elements and settings as a user template."""

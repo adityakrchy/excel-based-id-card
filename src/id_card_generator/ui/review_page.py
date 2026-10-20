@@ -41,6 +41,7 @@ from id_card_generator.resources.resource_loader import get_staging_dir
 from id_card_generator.review.review_manager import ReviewManager
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
+from id_card_generator.ui.components.layout_blocks import StatLine
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
@@ -123,10 +124,6 @@ class ReviewPage(QWidget):
         row1 = QHBoxLayout()
         row1.setSpacing(8)
 
-        lbl_icon = QLabel("🔍")
-        lbl_icon.setStyleSheet("font-size: 16px;")
-        row1.addWidget(lbl_icon)
-
         # Compatibility label for any test expecting lbl_counts
         self.lbl_counts = QLabel("Review Summary")
         self.lbl_counts.setVisible(False)
@@ -137,10 +134,16 @@ class ReviewPage(QWidget):
         self.pill_rejected = StatusPill("REJECTED: 0", color=SEMANTIC_ERROR)
         self.pill_correction = StatusPill("CORRECTION: 0", color=PRIMARY)
 
-        row1.addWidget(self.pill_approved)
-        row1.addWidget(self.pill_pending)
-        row1.addWidget(self.pill_rejected)
-        row1.addWidget(self.pill_correction)
+        for pill in (
+            self.pill_approved,
+            self.pill_pending,
+            self.pill_rejected,
+            self.pill_correction,
+        ):
+            pill.setVisible(False)
+
+        self.stat_line = StatLine()
+        row1.addWidget(self.stat_line)
         row1.addStretch()
 
         self.btn_batch_approve = QPushButton("✓ Approve All Valid")
@@ -275,7 +278,7 @@ class ReviewPage(QWidget):
 
         # Individual Approval Action Buttons
         act_box = QVBoxLayout()
-        act_box.setSpacing(6)
+        act_box.setSpacing(8)
 
         self.btn_approve = QPushButton("✓ Approve Card")
         self.btn_approve.setObjectName("btn_success")
@@ -296,15 +299,23 @@ class ReviewPage(QWidget):
         self.btn_correction.clicked.connect(lambda: self._set_current_status(ReviewStatus.CORRECTION))
         act_box.addWidget(self.btn_correction)
 
-        self.btn_skip = QPushButton("Skip Card")
+        # The secondary decisions sit in one compact row.
+        secondary_row = QHBoxLayout()
+        secondary_row.setSpacing(6)
+
+        self.btn_skip = QPushButton("Skip")
+        self.btn_skip.setObjectName("btn_secondary")
         self.btn_skip.setFixedHeight(CONTROL_HEIGHT)
         self.btn_skip.clicked.connect(lambda: self._set_current_status(ReviewStatus.SKIPPED))
-        act_box.addWidget(self.btn_skip)
+        secondary_row.addWidget(self.btn_skip)
 
-        self.btn_regen = QPushButton("⟳ Regenerate Card")
+        self.btn_regen = QPushButton("⟳ Re-render")
+        self.btn_regen.setObjectName("btn_secondary")
         self.btn_regen.setFixedHeight(CONTROL_HEIGHT)
         self.btn_regen.clicked.connect(self._regenerate_current)
-        act_box.addWidget(self.btn_regen)
+        secondary_row.addWidget(self.btn_regen)
+
+        act_box.addLayout(secondary_row)
 
         right_layout.addLayout(act_box)
 
@@ -379,6 +390,13 @@ class ReviewPage(QWidget):
         self.pill_rejected.set_status(f"REJECTED: {c['rejected']}", color=SEMANTIC_ERROR)
         self.pill_correction.set_status(f"CORRECTION: {c['correction']}", color=PRIMARY)
 
+        self.stat_line.set_stats([
+            ("Approved", c["approved"], SEMANTIC_SUCCESS if c["approved"] else None),
+            ("Pending", c["pending"], SEMANTIC_WARNING if c["pending"] else None),
+            ("Rejected", c["rejected"], SEMANTIC_ERROR if c["rejected"] else None),
+            ("Correction", c["correction"], PRIMARY if c["correction"] else None),
+        ])
+
         # Compatibility text
         self.lbl_counts.setText(
             f"Review: {c['approved']} Approved • {c['pending']} Pending • "
@@ -388,7 +406,7 @@ class ReviewPage(QWidget):
         if not rec or not filtered:
             self.lbl_nav_index.setText("No records match filter")
             self.lbl_card_preview.setText("<i>No cards to display</i>")
-            self.lbl_status_badge.setText("STATUS: NONE")
+            self.lbl_status_badge.setText("No status")
             self.lbl_status_badge.setStyleSheet(f"background-color: {SURFACE_HIGH}; color: {TEXT_MUTED}; padding: 6px; border-radius: 4px;")
             self.lbl_record_details.setText("<i>Select or clear filters to view cards.</i>")
             return
