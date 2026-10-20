@@ -7,10 +7,12 @@ clipped.  These tests lock the layout down.
 
 import pytest
 from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QApplication
 
 from id_card_generator.ui.dialogs.template_cleanup_dialog import (
     COL_ACTIONS,
     COL_FILE,
+    COL_NAME,
     COL_SELECT,
     COL_SPECS,
     COL_TYPE,
@@ -46,15 +48,56 @@ def test_columns_fit_their_content(cleanup_dialog: TemplateCleanupDialog):
 
 
 def test_columns_fit_inside_the_dialog(cleanup_dialog: TemplateCleanupDialog):
-    """The fixed columns plus the scroll bar leave room for the name column."""
+    """All columns together fit into the viewport (no horizontal scrollbar)."""
     table = cleanup_dialog.table
-    fixed = sum(
-        table.columnWidth(c)
-        for c in range(table.columnCount())
-        if c != 1
+    total = sum(table.columnWidth(c) for c in range(table.columnCount()))
+    assert total <= table.viewport().width(), (
+        f"the columns need {total}px but the viewport is "
+        f"{table.viewport().width()}px"
     )
-    available = table.viewport().width()
-    assert fixed < available, "the fixed columns leave no room for the name"
+
+
+def test_every_column_can_be_resized(cleanup_dialog: TemplateCleanupDialog):
+    """The user may drag every column separator."""
+    from PySide6.QtWidgets import QHeaderView
+
+    header = cleanup_dialog.table.horizontalHeader()
+    assert header.sectionResizeMode(0) == QHeaderView.Interactive
+    for column in range(cleanup_dialog.table.columnCount()):
+        assert header.sectionResizeMode(column) == QHeaderView.Interactive, (
+            f"column {column} cannot be resized"
+        )
+
+
+def test_a_column_can_actually_be_wider(cleanup_dialog: TemplateCleanupDialog):
+    """Dragging a separator changes the column width."""
+    table = cleanup_dialog.table
+    before = table.columnWidth(4)
+    table.setColumnWidth(4, before + 60)
+    assert table.columnWidth(4) == before + 60
+
+
+def test_delete_button_has_a_gap_to_the_column_edge(cleanup_dialog: TemplateCleanupDialog):
+    """The delete button must not touch the right edge of the column."""
+    from PySide6.QtWidgets import QPushButton
+
+    table = cleanup_dialog.table
+    column_right = table.columnWidth(5)
+
+    for row in range(table.rowCount()):
+        container = table.cellWidget(row, 5)
+        if container is None:
+            continue
+        delete_buttons = [
+            button for button in container.findChildren(QPushButton)
+            if "Delete" in button.text()
+        ]
+        if not delete_buttons:
+            continue
+        delete_button = delete_buttons[0]
+        right_edge = delete_button.mapTo(container, delete_button.rect().topRight()).x() + 1
+        gap = column_right - right_edge
+        assert gap >= 8, f"row {row}: only {gap}px between Delete and the column edge"
 
 
 def test_type_badge_is_not_clipped(cleanup_dialog: TemplateCleanupDialog):
@@ -141,3 +184,23 @@ def test_action_buttons_are_aligned_within_the_row(cleanup_dialog: TemplateClean
             for button in container.findChildren(QPushButton)
         }
         assert len(tops) <= 1, f"row {row}: the action buttons are not aligned {tops}"
+
+
+def test_name_column_fills_the_free_width(qtbot):
+    """Widening the dialog gives the free width to the name column."""
+    dialog = TemplateCleanupDialog()
+    qtbot.addWidget(dialog)
+    dialog.show()
+
+    table = dialog.table
+    before = table.columnWidth(1)
+
+    dialog.resize(dialog.width() + 180, dialog.height())
+    qtbot.wait(50)
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+
+    assert table.columnWidth(1) > before, "the name column did not take the free width"
+    total = sum(table.columnWidth(c) for c in range(table.columnCount()))
+    assert total <= table.viewport().width() + 2

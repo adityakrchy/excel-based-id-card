@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -50,11 +50,12 @@ CONTROL_HEIGHT = 28
 ROW_HEIGHT = 52
 
 # Column widths (the template name column stretches).
-COL_SELECT = 56
-COL_TYPE = 118
-COL_SPECS = 142
-COL_FILE = 190
-COL_ACTIONS = 176
+COL_SELECT = 52
+COL_NAME = 330
+COL_TYPE = 112
+COL_SPECS = 136
+COL_FILE = 180
+COL_ACTIONS = 184
 
 
 class TemplateCleanupDialog(QDialog):
@@ -180,18 +181,17 @@ class TemplateCleanupDialog(QDialog):
         header = self.table.horizontalHeader()
         header.setHighlightSections(False)
         header.setFixedHeight(32)
-        header.setSectionResizeMode(0, QHeaderView.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.Fixed)
-        header.setSectionResizeMode(3, QHeaderView.Fixed)
-        header.setSectionResizeMode(4, QHeaderView.Fixed)
-        header.setSectionResizeMode(5, QHeaderView.Fixed)
+        # Every column can be resized by dragging its separator.
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(False)
         self.table.setColumnWidth(0, COL_SELECT)
+        self.table.setColumnWidth(1, COL_NAME)
         self.table.setColumnWidth(2, COL_TYPE)
         self.table.setColumnWidth(3, COL_SPECS)
         self.table.setColumnWidth(4, COL_FILE)
         self.table.setColumnWidth(5, COL_ACTIONS)
 
+        self.table.viewport().installEventFilter(self)
         main_layout.addWidget(self.table, stretch=1)
 
         # 4. Footer
@@ -211,6 +211,38 @@ class TemplateCleanupDialog(QDialog):
         footer.addWidget(btn_close)
 
         main_layout.addLayout(footer)
+
+    # ------------------------------------------------------------------
+    # Layout
+    # ------------------------------------------------------------------
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().resizeEvent(event)
+        self._expand_name_column()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt naming
+        """Follow the table size so the name column fills the free width."""
+        if watched is self.table.viewport() and event.type() == QEvent.Resize:
+            self._expand_name_column()
+        return super().eventFilter(watched, event)
+
+    def _expand_name_column(self) -> None:
+        """Give the free width of the table to the template name column.
+
+        The columns stay adjustable - this only fills the space that is left
+        over when the dialog is resized.
+        """
+        table = self.table
+        fixed = sum(
+            table.columnWidth(column)
+            for column in range(table.columnCount())
+            if column != 1
+        )
+        # The width of the table minus the frame and the vertical scroll bar
+        # is what the columns have to share.
+        reserve = table.verticalScrollBar().sizeHint().width()
+        available = table.width() - table.frameWidth() * 2 - reserve - fixed
+        if available > table.columnWidth(1):
+            table.setColumnWidth(1, available)
 
     # ------------------------------------------------------------------
     # Table
@@ -327,7 +359,8 @@ class TemplateCleanupDialog(QDialog):
             # otherwise they are clipped by the viewport.
             actions_container = QWidget()
             actions_layout = QHBoxLayout(actions_container)
-            actions_layout.setContentsMargins(4, 0, 4, 0)
+            # The right margin keeps the buttons off the column edge.
+            actions_layout.setContentsMargins(6, 0, 14, 0)
             actions_layout.setSpacing(4)
             actions_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
@@ -369,6 +402,7 @@ class TemplateCleanupDialog(QDialog):
                 self.table.setRowHidden(row_idx, not visible)
 
         self._update_delete_button_state()
+        self._expand_name_column()
 
     # ------------------------------------------------------------------
     # Actions
