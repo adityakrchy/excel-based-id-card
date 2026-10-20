@@ -826,6 +826,12 @@ QLabel {
 }
 
 /* --- Typography roles ------------------------------------------------ */
+QLabel[role="heroTitle"] {
+    color: $on_surface;
+    font-size: 26px;
+    font-weight: 800;
+}
+
 QLabel[role="pageTitle"] {
     color: $on_surface;
     font-size: 15px;

@@ -111,7 +111,8 @@ class PresetCardWidget(QFrame):
 
         # Title & Subtitle
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"color: #FFFFFF; font-family: {FONT_FAMILY_UI}; font-size: 13px; font-weight: 700; margin-top: 2px;")
+        lbl_title.setProperty("role", "cardTitle")
+        lbl_title.setStyleSheet("font-weight: 700;")
         layout.addWidget(lbl_title)
 
         lbl_sub = QLabel(subtitle)
@@ -214,7 +215,8 @@ class RecentProjectRowWidget(QFrame):
         title_row.setSpacing(8)
 
         lbl_name = QLabel(name)
-        lbl_name.setStyleSheet("color: #FFFFFF; font-weight: 700; font-size: 12px; font-family: Inter, sans-serif;")
+        lbl_name.setProperty("role", "cardTitle")
+        lbl_name.setStyleSheet("font-weight: 700; font-size: 12px;")
         title_row.addWidget(lbl_name)
 
         lbl_tag = QLabel(tag)
@@ -302,10 +304,9 @@ class DashboardPage(QWidget):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet(f"background-color: {SURFACE_LOWEST}; border: none;")
 
         container = QWidget()
-        container.setStyleSheet(f"background-color: {SURFACE_LOWEST};")
+        container.setObjectName("page_bg")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(48, 28, 48, 36)
         layout.setSpacing(28)
@@ -327,7 +328,8 @@ class DashboardPage(QWidget):
         left_hero.addWidget(lbl_workspace_badge)
 
         lbl_title = QLabel("Welcome to ID Studio")
-        lbl_title.setStyleSheet("color: #FFFFFF; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;")
+        lbl_title.setProperty("role", "heroTitle")
+        lbl_title.setStyleSheet("font-weight: 800; letter-spacing: -0.02em;")
         left_hero.addWidget(lbl_title)
 
         lbl_sub = QLabel("Design, batch-generate, and print enterprise-grade identification credentials.")
@@ -393,7 +395,7 @@ class DashboardPage(QWidget):
 
         self.lbl_flow_title = QLabel("No project open")
         self.lbl_flow_title.setStyleSheet(
-            f"color: #FFFFFF; font-size: 15px; font-weight: 700;"
+            f"font-size: 15px; font-weight: 700;"
         )
         flow_text.addWidget(self.lbl_flow_title)
 
@@ -420,8 +422,9 @@ class DashboardPage(QWidget):
         tmpl_section.setSpacing(12)
 
         tmpl_header = QHBoxLayout()
-        lbl_tmpl_title = QLabel("Start from a Template")
-        lbl_tmpl_title.setStyleSheet("color: #FFFFFF; font-size: 13px; font-weight: 700;")
+        lbl_tmpl_title = QLabel("START FROM A TEMPLATE")
+        lbl_tmpl_title.setProperty("role", "sectionLabel")
+        lbl_tmpl_title.setStyleSheet("font-size: 13px; font-weight: 700;")
         tmpl_header.addWidget(lbl_tmpl_title)
 
         lbl_media_badge = QLabel("Standard Media")
@@ -509,8 +512,9 @@ class DashboardPage(QWidget):
         recent_section.setSpacing(12)
 
         recent_header = QHBoxLayout()
-        lbl_recent_title = QLabel("Recent Projects")
-        lbl_recent_title.setStyleSheet("color: #FFFFFF; font-size: 13px; font-weight: 700;")
+        lbl_recent_title = QLabel("RECENT PROJECTS")
+        lbl_recent_title.setProperty("role", "sectionLabel")
+        lbl_recent_title.setStyleSheet("font-size: 13px; font-weight: 700;")
         recent_header.addWidget(lbl_recent_title)
         recent_header.addStretch()
 
@@ -519,7 +523,7 @@ class DashboardPage(QWidget):
         self.txt_filter_projects.setFixedWidth(220)
         self.txt_filter_projects.setFixedHeight(26)
         self.txt_filter_projects.setStyleSheet(
-            f"QLineEdit {{ background-color: {SURFACE_LOW}; color: #FFFFFF; border: 1px solid {BORDER_DEFAULT}; "
+            f"QLineEdit {{ background-color: {SURFACE_LOW}; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_DEFAULT}; "
             f"border-radius: 4px; padding: 2px 8px; font-size: 11px; }}"
             f"QLineEdit:focus {{ border-color: {PRIMARY}; }}"
         )
