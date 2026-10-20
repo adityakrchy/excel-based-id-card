@@ -18,18 +18,26 @@ class ContactSheetGenerator:
         card_items: List[Tuple[Path, str, str]],  # (image_path, pin, name)
         output_pdf_path: Path,
         title: str = "ID Cards - Contact Sheet",
+        columns: int = 2,
+        rows: int = 3,
+        margin_mm: float = 12.7,
     ) -> Path:
-        """Create a contact sheet PDF with 2 columns x 3 rows per A4 page."""
+        """Create an optional contact sheet PDF.
+
+        This is a convenience artifact - the export itself always writes one
+        file per card.
+        """
         output_pdf_path.parent.mkdir(parents=True, exist_ok=True)
         c = canvas.Canvas(str(output_pdf_path), pagesize=A4)
         page_w, page_h = A4
 
-        margin_x = 36.0  # 0.5 inch
-        margin_y = 36.0
+        margin = max(4.0, float(margin_mm)) * 72.0 / 25.4  # mm -> points
+        margin_x = margin
+        margin_y = margin
         header_h = 40.0
 
-        cols = 2
-        rows = 3
+        cols = max(1, int(columns))
+        rows = max(1, int(rows))
         per_page = cols * rows
 
         grid_w = page_w - (2 * margin_x)

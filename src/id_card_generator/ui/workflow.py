@@ -103,8 +103,8 @@ STAGES: Tuple[WorkflowStage, ...] = (
     ),
     WorkflowStage(
         step=WorkflowStep.EXPORT,
-        title="Export & Print",
-        subtitle="Impose approved cards on sheets and write the manifest.",
+        title="Export Cards",
+        subtitle="Write every approved card as an individual image file.",
         tab=TAB_EXPORT,
         nav_label="Export",
         requires=(WorkflowStep.REVIEW,),

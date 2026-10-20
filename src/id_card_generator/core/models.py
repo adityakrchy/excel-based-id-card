@@ -152,7 +152,11 @@ class ReviewRecord(BaseModel):
 
 
 class ExportConfiguration(BaseModel):
-    """Export parameters chosen by user."""
+    """Export parameters chosen by user.
+
+    The export always writes one file per card.  The printable contact sheet
+    is an optional extra.
+    """
     output_dir: str
     format: OutputFormat = OutputFormat.PNG
     jpeg_quality: int = 95
@@ -160,6 +164,10 @@ class ExportConfiguration(BaseModel):
     approved_only: bool = True
     export_manifest: bool = True
     export_contact_sheet: bool = False
+    # Layout of the optional printable contact sheet
+    sheet_columns: int = 2
+    sheet_rows: int = 3
+    sheet_margin_mm: float = 12.7
 
 
 class ExportResult(BaseModel):

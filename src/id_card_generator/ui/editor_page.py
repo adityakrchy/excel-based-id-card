@@ -1018,6 +1018,24 @@ class EditorPage(QWidget):
             sc.activated.connect(self._trigger_redo)
             self._redo_shortcuts.append(sc)
 
+    def _safe_fit_to_view(self) -> None:
+        """Fit the canvas, tolerating a page that was already destroyed.
+
+        The single shot timers are not owned by the page, so they can fire
+        after the widget has been deleted.
+        """
+        try:
+            self.view.fit_to_view(enlarge_factor=1.35)
+        except RuntimeError:
+            pass
+
+    def _safe_apply_splitter_sizes(self) -> None:
+        """Apply the default splitter sizes, tolerating a deleted page."""
+        try:
+            self.apply_default_splitter_sizes(force=False)
+        except RuntimeError:
+            pass
+
     def _on_splitter_moved(self, pos: int, index: int) -> None:
         """Record when user manually resizes canvas using the center slider handle."""
         self._user_adjusted_splitter = True
@@ -1045,9 +1063,9 @@ class EditorPage(QWidget):
         super().showEvent(event)
         if not self._user_adjusted_splitter:
             self.apply_default_splitter_sizes(force=False)
-            QTimer.singleShot(0, lambda: self.apply_default_splitter_sizes(force=False))
-            QTimer.singleShot(50, lambda: self.apply_default_splitter_sizes(force=False))
-        QTimer.singleShot(80, lambda: self.view.fit_to_view(enlarge_factor=1.35))
+            QTimer.singleShot(0, self._safe_apply_splitter_sizes)
+            QTimer.singleShot(50, self._safe_apply_splitter_sizes)
+        QTimer.singleShot(80, self._safe_fit_to_view)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -1075,8 +1093,8 @@ class EditorPage(QWidget):
         self._update_template_bar_ui()
         if not self._user_adjusted_splitter:
             self.apply_default_splitter_sizes(force=False)
-            QTimer.singleShot(20, lambda: self.apply_default_splitter_sizes(force=False))
-        QTimer.singleShot(60, lambda: self.view.fit_to_view(enlarge_factor=1.35))
+            QTimer.singleShot(20, self._safe_apply_splitter_sizes)
+        QTimer.singleShot(60, self._safe_fit_to_view)
         self._update_status_dimensions()
         self._update_sample_preview()
 
