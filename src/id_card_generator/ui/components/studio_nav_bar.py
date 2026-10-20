@@ -16,13 +16,21 @@ from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY, palette_for
 
 
 class StudioTab(str, Enum):
-    """Primary Studio Workspaces matching Stitch designs."""
+    """The production pipeline as it appears in the workspace ribbon.
+
+    The ribbon *is* the flow: every stage of a project can be reached from
+    here and every stage shows its progress state.
+    """
+
     HUB = "hub"
+    DATA_SOURCE = "data_source"
+    PHOTOS = "photos"
     TEMPLATES = "templates"
     DESIGNER = "designer"
-    DATA_MAPPING = "data_mapping"
-    GENERATE_PREVIEW = "generate_preview"
-    EXPORT_PRINT = "export_print"
+    GENERATE = "generate"
+    REVIEW = "review"
+    EXPORT = "export"
+    SETTINGS = "settings"
 
 
 class TabState(str, Enum):
@@ -36,7 +44,7 @@ class TabState(str, Enum):
 
 
 class StudioNavBar(QFrame):
-    """Navigation ribbon containing Project Hub, workspace tabs, and enterprise security badge."""
+    """Navigation ribbon with one entry per stage of the production pipeline."""
 
     tab_selected = Signal(str)  # StudioTab value
     grid_toggled = Signal(bool)
@@ -45,11 +53,14 @@ class StudioNavBar(QFrame):
 
     TABS = [
         (StudioTab.HUB, "Project Hub"),
-        (StudioTab.TEMPLATES, "Templates Library"),
-        (StudioTab.DESIGNER, "Template Designer"),
-        (StudioTab.DATA_MAPPING, "Data Mapping"),
-        (StudioTab.GENERATE_PREVIEW, "Batch Queue"),
-        (StudioTab.EXPORT_PRINT, "Export & Print"),
+        (StudioTab.DATA_SOURCE, "Data Source"),
+        (StudioTab.PHOTOS, "Photos"),
+        (StudioTab.TEMPLATES, "Templates"),
+        (StudioTab.DESIGNER, "Designer"),
+        (StudioTab.GENERATE, "Generate"),
+        (StudioTab.REVIEW, "Review"),
+        (StudioTab.EXPORT, "Export"),
+        (StudioTab.SETTINGS, "Settings"),
     ]
 
     def __init__(self, parent=None):

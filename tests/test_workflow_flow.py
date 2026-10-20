@@ -8,6 +8,7 @@ been finished.
 import pytest
 
 from id_card_generator.core.constants import WorkflowStep
+from id_card_generator.ui import workflow
 from id_card_generator.ui.components.studio_nav_bar import StudioTab, TabState
 from id_card_generator.ui.main_window import MainWindow
 
@@ -59,16 +60,64 @@ def test_pipeline_navigation_walks_back(app_window: MainWindow):
 def test_step_progress_is_tracked(app_window: MainWindow):
     """Finishing a step is remembered and reflected in the ribbon."""
     app_window.switch_page(WorkflowStep.DASHBOARD)
-    assert app_window.studio_nav._states[StudioTab.DATA_MAPPING] == TabState.IDLE
+    assert app_window.studio_nav._states[StudioTab.DATA_SOURCE] == TabState.IDLE
 
     app_window._mark_step_completed(WorkflowStep.DATA_SOURCE, True)
-    assert app_window.studio_nav._states[StudioTab.DATA_MAPPING] == TabState.PARTIAL
+    assert app_window.studio_nav._states[StudioTab.DATA_SOURCE] == TabState.DONE
 
     app_window._mark_step_completed(WorkflowStep.PHOTOS, True)
-    assert app_window.studio_nav._states[StudioTab.DATA_MAPPING] == TabState.DONE
+    assert app_window.studio_nav._states[StudioTab.PHOTOS] == TabState.DONE
 
-    # A workspace whose prerequisites are missing is blocked, not available.
-    assert app_window.studio_nav._states[StudioTab.EXPORT_PRINT] == TabState.BLOCKED
+    # A step whose prerequisites are missing is blocked, not available.
+    assert app_window.studio_nav._states[StudioTab.EXPORT] == TabState.BLOCKED
+
+
+def test_ribbon_exposes_every_pipeline_step(app_window: MainWindow):
+    """The ribbon is the pipeline: every stage can be reached from it."""
+    tabs = {tab.value for tab in app_window.studio_nav._buttons}
+    for step in workflow.PIPELINE:
+        assert workflow.tab_for(step) in tabs
+
+    # Clicking a ribbon entry switches to the matching page.
+    app_window.studio_nav._buttons[StudioTab.PHOTOS].click()
+    assert app_window.stack.currentIndex() == 2  # Photo Library
+
+
+def test_hub_guides_to_the_next_step(app_window: MainWindow):
+    """The hub shows the open project and offers the next step."""
+    from id_card_generator.core.models import ProjectConfiguration
+
+    app_window.set_project(ProjectConfiguration(project_name="Flow Project"))
+    app_window.switch_page(WorkflowStep.DASHBOARD)
+
+    hub = app_window.page_dashboard
+    assert hub.lbl_flow_title.text() == "Flow Project"
+    assert "Data Source" in hub.lbl_flow_next.text()
+    assert hub.btn_flow_continue.isEnabled()
+
+    hub.btn_flow_continue.click()
+    assert app_window.stack.currentIndex() == 1  # Data Source
+
+
+def test_new_project_lands_on_the_data_source_step(app_window: MainWindow):
+    """Creating a project continues with the spreadsheet upload."""
+    from id_card_generator.core.models import ProjectConfiguration
+
+    app_window.set_project(ProjectConfiguration(project_name="Fresh"))
+    app_window.switch_page(WorkflowStep.DASHBOARD)
+
+    # The hub hands the project over to the data source step.
+    app_window.page_dashboard.btn_flow_continue.click()
+    assert app_window.stack.currentIndex() == 1
+
+
+def test_preset_starts_the_project_at_the_data_source(app_window: MainWindow):
+    """A preset must not skip the spreadsheet upload."""
+    app_window.switch_page(WorkflowStep.DASHBOARD)
+    app_window.page_dashboard._on_preset_selected("corporate_cr80")
+
+    assert app_window.stack.currentIndex() == 1  # Data Source, not Templates
+    assert app_window.active_template is not None
 
 
 def test_broken_spreadsheet_is_reported_inline(qtbot, tmp_path):

@@ -357,17 +357,19 @@ class MainWindow(QMainWindow):
         # Update top stepper
         self.workflow_nav.set_active_step(step)
 
-        # Update studio nav bar active tab
+        # Update studio nav bar active tab - the ribbon is the pipeline.
         if hasattr(self, "studio_nav"):
-            workspace = workflow.workspace_for(step)
             for tab in StudioTab:
-                if tab.value == workspace:
+                if tab.value == workflow.tab_for(step):
                     self.studio_nav.set_active_tab(tab)
                     break
             self.studio_nav.set_designer_tools_visible(
                 step == WorkflowStep.CANVAS_EDITOR
             )
             self._refresh_tab_states()
+
+        # Keep the hub's flow anchor in sync with the current position.
+        self._refresh_hub_flow_state()
 
         # Context updates on page entry
         if step == WorkflowStep.CANVAS_EDITOR:
@@ -406,39 +408,84 @@ class MainWindow(QMainWindow):
 
         self._refresh_status_bar()
 
+    def _refresh_hub_flow_state(self) -> None:
+        """Tell the hub where the open project currently is."""
+        if not hasattr(self, "page_dashboard"):
+            return
+
+        project_name = ""
+        if self.current_project_config:
+            project_name = self.current_project_config.project_name
+        elif self.current_project_path:
+            project_name = self.current_project_path.stem
+
+        if not project_name:
+            self.page_dashboard.update_flow_state()
+            return
+
+        # The next step is the first stage that is not finished yet.
+        next_step = None
+        next_label = ""
+        for step in workflow.PIPELINE:
+            if not workflow.step_completed(step, self._completed_steps):
+                next_step = step
+                next_label = workflow.stage_for(step).title
+                break
+
+        hint = (
+            f"{workflow.step_badge(self._current_step)} · "
+            f"{workflow.subtitle_for(self._current_step)}"
+        )
+        if self._current_step == WorkflowStep.DASHBOARD and next_step is not None:
+            # On the hub the interesting information is the step to do next.
+            hint = (
+                f"{workflow.step_badge(next_step)} · "
+                f"{workflow.subtitle_for(next_step)}"
+            )
+
+        self.page_dashboard.update_flow_state(
+            project_name=project_name,
+            step_title=workflow.title_for(self._current_step),
+            step_hint=hint,
+            next_step=next_step.value if next_step else None,
+        )
+        if next_step:
+            self.page_dashboard.lbl_flow_next.setText(
+                f"{hint}   →   Next: {next_label}"
+            )
+            self.page_dashboard.btn_flow_continue.setText(f"{next_label}  ➔")
+
     def _refresh_tab_states(self) -> None:
-        """Badge every workspace tab with its progress state."""
+        """Badge every ribbon entry with its progress state."""
         if not hasattr(self, "studio_nav"):
             return
 
+        # The step right after the current one stays available so the user
+        # always sees what to do next, even before its prerequisites are met.
+        upcoming = workflow.next_step(self._current_step)
+
         states: Dict[StudioTab, TabState] = {}
         for tab in StudioTab:
-            steps = workflow.workspace_steps(tab.value)
-            if not steps:
+            step = workflow.step_for_tab(tab.value)
+            if step is None:
                 states[tab] = TabState.IDLE
                 continue
 
-            if any(step == self._current_step for step in steps):
+            if step == self._current_step:
                 states[tab] = TabState.ACTIVE
                 continue
 
-            finished = [
-                workflow.step_completed(step, self._completed_steps) for step in steps
-            ]
-            if all(finished):
+            if workflow.step_completed(step, self._completed_steps):
                 states[tab] = TabState.DONE
                 continue
 
-            if any(finished):
-                states[tab] = TabState.PARTIAL
+            if step != upcoming and workflow.missing_requirements(
+                step, self._completed_steps
+            ):
+                states[tab] = TabState.BLOCKED
                 continue
 
-            blocked = bool(
-                workflow.missing_requirements(
-                    steps[0], self._completed_steps
-                )
-            )
-            states[tab] = TabState.BLOCKED if blocked else TabState.IDLE
+            states[tab] = TabState.IDLE
 
         self.studio_nav.set_tab_states(states)
 
@@ -447,6 +494,7 @@ class MainWindow(QMainWindow):
         self._completed_steps[step] = completed
         self.workflow_nav.mark_step_completed(step, completed)
         self._refresh_tab_states()
+        self._refresh_hub_flow_state()
 
     def _on_data_loaded(self, columns: List[str], records: List[SourceRecord], report) -> None:
         self.columns = columns
@@ -657,18 +705,10 @@ class MainWindow(QMainWindow):
             self.page_editor.scene.undo_manager.redo()
 
     def _on_studio_tab_selected(self, tab_str: str) -> None:
-        if tab_str == StudioTab.HUB.value:
-            self.switch_page(WorkflowStep.DASHBOARD)
-        elif tab_str == StudioTab.TEMPLATES.value:
-            self.switch_page(WorkflowStep.TEMPLATES)
-        elif tab_str == StudioTab.DESIGNER.value:
-            self.switch_page(WorkflowStep.CANVAS_EDITOR)
-        elif tab_str == StudioTab.DATA_MAPPING.value:
-            self.switch_page(WorkflowStep.DATA_SOURCE)
-        elif tab_str == StudioTab.GENERATE_PREVIEW.value:
-            self.switch_page(WorkflowStep.GENERATE)
-        elif tab_str == StudioTab.EXPORT_PRINT.value:
-            self.switch_page(WorkflowStep.EXPORT)
+        """Navigate to the pipeline stage behind a ribbon entry."""
+        step = workflow.step_for_tab(tab_str)
+        if step is not None:
+            self.switch_page(step)
 
     def _on_studio_grid_toggled(self, checked: bool) -> None:
         if hasattr(self.page_editor, "view"):

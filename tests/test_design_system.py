@@ -135,13 +135,13 @@ def test_gating_reports_missing_prerequisites():
     assert workflow.step_completed(WorkflowStep.GENERATE, completed) is False
 
 
-def test_every_step_belongs_to_a_workspace():
-    """Each stage maps to one of the ribbon workspaces."""
-    workspaces = {tab.value for tab in __import__(
-        "id_card_generator.ui.components.studio_nav_bar", fromlist=["StudioTab"]
-    ).StudioTab}
+def test_every_step_has_a_ribbon_entry():
+    """Each stage maps to one entry of the workspace ribbon."""
+    from id_card_generator.ui.components.studio_nav_bar import StudioTab
+
+    tabs = {tab.value for tab in StudioTab}
     for stage in workflow.STAGES:
-        assert stage.workspace in workspaces
+        assert stage.tab in tabs
         assert stage.title
         assert stage.subtitle
 
@@ -243,20 +243,16 @@ def test_empty_state(qtbot):
 # Shell & ribbon state
 # ---------------------------------------------------------------------------
 def test_ribbon_reflects_step_progress(app_window: MainWindow):
-    """The ribbon badges a workspace with its progress state."""
+    """The ribbon badges every pipeline step with its progress state."""
     from id_card_generator.ui.components.studio_nav_bar import StudioTab
 
     app_window.switch_page(WorkflowStep.DASHBOARD)
 
-    # One finished step inside a two step workspace -> partial progress.
+    # A finished step is badged as done.
     app_window._mark_step_completed(WorkflowStep.DATA_SOURCE, True)
-    assert app_window.studio_nav._states[StudioTab.DATA_MAPPING] == TabState.PARTIAL
+    assert app_window.studio_nav._states[StudioTab.DATA_SOURCE] == TabState.DONE
 
-    # Both steps finished -> the workspace is done.
-    app_window._mark_step_completed(WorkflowStep.PHOTOS, True)
-    assert app_window.studio_nav._states[StudioTab.DATA_MAPPING] == TabState.DONE
-
-    # The workspace the user is in is always marked active.
+    # The step the user is in is always marked active.
     app_window.switch_page(WorkflowStep.CANVAS_EDITOR)
     assert app_window.studio_nav._states[StudioTab.DESIGNER] == TabState.ACTIVE
 

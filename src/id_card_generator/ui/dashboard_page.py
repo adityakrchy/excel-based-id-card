@@ -291,6 +291,7 @@ class DashboardPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_project_config: Optional[ProjectConfiguration] = None
+        self._flow_next_step: Optional[str] = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -362,6 +363,55 @@ class DashboardPage(QWidget):
 
         hero_layout.addLayout(action_btns)
         layout.addLayout(hero_layout)
+
+        # -------------------------------------------------------------
+        # 1b. Current Project / Next Step Anchor
+        # -------------------------------------------------------------
+        self.flow_card = QFrame()
+        self.flow_card.setObjectName("flow_anchor")
+        self.flow_card.setStyleSheet(
+            f"QFrame#flow_anchor {{"
+            f"  background-color: {SURFACE_CONTAINER};"
+            f"  border: 1px solid {BORDER_DEFAULT};"
+            f"  border-left: 3px solid {PRIMARY};"
+            f"  border-radius: 8px;"
+            f"}}"
+        )
+        flow_layout = QHBoxLayout(self.flow_card)
+        flow_layout.setContentsMargins(18, 14, 18, 14)
+        flow_layout.setSpacing(16)
+
+        flow_text = QVBoxLayout()
+        flow_text.setSpacing(3)
+
+        self.lbl_flow_eyebrow = QLabel("CURRENT PROJECT")
+        self.lbl_flow_eyebrow.setStyleSheet(
+            f"color: {PRIMARY}; font-family: {FONT_FAMILY_MONO}; "
+            f"font-size: 10px; font-weight: 700; letter-spacing: 0.1em;"
+        )
+        flow_text.addWidget(self.lbl_flow_eyebrow)
+
+        self.lbl_flow_title = QLabel("No project open")
+        self.lbl_flow_title.setStyleSheet(
+            f"color: #FFFFFF; font-size: 15px; font-weight: 700;"
+        )
+        flow_text.addWidget(self.lbl_flow_title)
+
+        self.lbl_flow_next = QLabel("Create a project to start the production flow.")
+        self.lbl_flow_next.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        flow_text.addWidget(self.lbl_flow_next)
+
+        flow_layout.addLayout(flow_text, stretch=1)
+
+        self.btn_flow_continue = QPushButton("Continue  ➔")
+        self.btn_flow_continue.setObjectName("btn_primary")
+        self.btn_flow_continue.setFixedHeight(32)
+        self.btn_flow_continue.setCursor(Qt.PointingHandCursor)
+        self.btn_flow_continue.setEnabled(False)
+        self.btn_flow_continue.clicked.connect(self._on_flow_continue)
+        flow_layout.addWidget(self.btn_flow_continue)
+
+        layout.addWidget(self.flow_card)
 
         # -------------------------------------------------------------
         # 2. "Start from a Template" Section (4 Preset Cards Grid)
@@ -597,9 +647,13 @@ class DashboardPage(QWidget):
             self.policy_changed.emit(data)
 
     def _on_preset_selected(self, preset_key: str) -> None:
-        """Trigger navigation directly into Template Designer or Data Source."""
+        """Start a project from a preset.
+
+        The shell decides where the user lands (the data source step), so the
+        hub must not navigate on its own - that would skip the spreadsheet
+        upload and break the production flow.
+        """
         self.preset_selected.emit(preset_key)
-        self.navigate_requested.emit(WorkflowStep.TEMPLATES.value)
 
     def _open_recent_project(self, path_str: str) -> None:
         self.open_project_requested.emit()
@@ -608,6 +662,34 @@ class DashboardPage(QWidget):
         self.current_project_config = config
         if config and config.workspace_dir:
             self.lbl_ws_title.setText(f"📁 Project Workspace: {config.project_name}")
+
+    def update_flow_state(
+        self,
+        project_name: str = "",
+        step_title: str = "",
+        step_hint: str = "",
+        next_step: Optional[str] = None,
+    ) -> None:
+        """Show where the open project currently is in the production flow."""
+        if not project_name:
+            self.lbl_flow_title.setText("No project open")
+            self.lbl_flow_next.setText("Create a project to start the production flow.")
+            self.btn_flow_continue.setEnabled(False)
+            return
+
+        self.lbl_flow_title.setText(project_name)
+        self.lbl_flow_next.setText(step_hint or step_title)
+        self._flow_next_step = next_step
+        self.btn_flow_continue.setEnabled(bool(next_step))
+        if next_step:
+            self.btn_flow_continue.setText(f"Continue to {next_step}  ➔")
+        else:
+            self.btn_flow_continue.setText("Continue  ➔")
+
+    def _on_flow_continue(self) -> None:
+        """Jump to the next step of the production flow."""
+        if self._flow_next_step:
+            self.navigate_requested.emit(self._flow_next_step)
 
     def update_metrics(self, *args, **kwargs) -> None:
         """Update metrics for compatibility."""

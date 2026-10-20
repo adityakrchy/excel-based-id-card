@@ -25,7 +25,7 @@ class WorkflowStage:
     step: WorkflowStep
     title: str
     subtitle: str
-    workspace: str
+    tab: str
     nav_label: str
     requires: Tuple[WorkflowStep, ...] = field(default_factory=tuple)
 
@@ -35,13 +35,16 @@ class WorkflowStage:
         return self.step != WorkflowStep.DASHBOARD
 
 
-# Workspace identifiers (kept as plain strings to avoid import cycles).
-WORKSPACE_HUB = "hub"
-WORKSPACE_TEMPLATES = "templates"
-WORKSPACE_DESIGNER = "designer"
-WORKSPACE_DATA_MAPPING = "data_mapping"
-WORKSPACE_GENERATE_PREVIEW = "generate_preview"
-WORKSPACE_EXPORT_PRINT = "export_print"
+# Ribbon identifiers (kept as plain strings to avoid import cycles).
+TAB_HUB = "hub"
+TAB_DATA_SOURCE = "data_source"
+TAB_PHOTOS = "photos"
+TAB_TEMPLATES = "templates"
+TAB_DESIGNER = "designer"
+TAB_GENERATE = "generate"
+TAB_REVIEW = "review"
+TAB_EXPORT = "export"
+TAB_SETTINGS = "settings"
 
 
 STAGES: Tuple[WorkflowStage, ...] = (
@@ -49,21 +52,21 @@ STAGES: Tuple[WorkflowStage, ...] = (
         step=WorkflowStep.DASHBOARD,
         title="Project Hub",
         subtitle="Start a new project, reopen a recent one, or jump into a workspace.",
-        workspace=WORKSPACE_HUB,
+        tab=TAB_HUB,
         nav_label="Hub",
     ),
     WorkflowStage(
         step=WorkflowStep.DATA_SOURCE,
         title="Data Source",
         subtitle="Connect a spreadsheet and map its columns to card fields.",
-        workspace=WORKSPACE_DATA_MAPPING,
+        tab=TAB_DATA_SOURCE,
         nav_label="Data Source",
     ),
     WorkflowStage(
         step=WorkflowStep.PHOTOS,
         title="Photo Library",
         subtitle="Match record photos and resolve missing images.",
-        workspace=WORKSPACE_DATA_MAPPING,
+        tab=TAB_PHOTOS,
         nav_label="Photo Library",
         requires=(WorkflowStep.DATA_SOURCE,),
     ),
@@ -71,14 +74,14 @@ STAGES: Tuple[WorkflowStage, ...] = (
         step=WorkflowStep.TEMPLATES,
         title="Templates",
         subtitle="Pick or build the card layout for this project.",
-        workspace=WORKSPACE_TEMPLATES,
+        tab=TAB_TEMPLATES,
         nav_label="Templates",
     ),
     WorkflowStage(
         step=WorkflowStep.CANVAS_EDITOR,
         title="Template Designer",
         subtitle="Place and style every element on the card canvas.",
-        workspace=WORKSPACE_DESIGNER,
+        tab=TAB_DESIGNER,
         nav_label="Template Designer",
         requires=(WorkflowStep.TEMPLATES,),
     ),
@@ -86,7 +89,7 @@ STAGES: Tuple[WorkflowStage, ...] = (
         step=WorkflowStep.GENERATE,
         title="Generate Cards",
         subtitle="Render one card per record into the staging area.",
-        workspace=WORKSPACE_GENERATE_PREVIEW,
+        tab=TAB_GENERATE,
         nav_label="Generate",
         requires=(WorkflowStep.DATA_SOURCE, WorkflowStep.CANVAS_EDITOR),
     ),
@@ -94,7 +97,7 @@ STAGES: Tuple[WorkflowStage, ...] = (
         step=WorkflowStep.REVIEW,
         title="Review Cards",
         subtitle="Approve or flag each generated card before export.",
-        workspace=WORKSPACE_GENERATE_PREVIEW,
+        tab=TAB_REVIEW,
         nav_label="Review",
         requires=(WorkflowStep.GENERATE,),
     ),
@@ -102,7 +105,7 @@ STAGES: Tuple[WorkflowStage, ...] = (
         step=WorkflowStep.EXPORT,
         title="Export & Print",
         subtitle="Impose approved cards on sheets and write the manifest.",
-        workspace=WORKSPACE_EXPORT_PRINT,
+        tab=TAB_EXPORT,
         nav_label="Export",
         requires=(WorkflowStep.REVIEW,),
     ),
@@ -110,7 +113,7 @@ STAGES: Tuple[WorkflowStage, ...] = (
         step=WorkflowStep.SETTINGS,
         title="Settings",
         subtitle="Theme, output defaults and application preferences.",
-        workspace=WORKSPACE_HUB,
+        tab=TAB_SETTINGS,
         nav_label="Settings",
     ),
 )
@@ -138,9 +141,9 @@ def subtitle_for(step: WorkflowStep) -> str:
     return _BY_STEP[step].subtitle
 
 
-def workspace_for(step: WorkflowStep) -> str:
-    """Return the workspace a step belongs to."""
-    return _BY_STEP[step].workspace
+def tab_for(step: WorkflowStep) -> str:
+    """Return the ribbon entry a step belongs to."""
+    return _BY_STEP[step].tab
 
 
 def pipeline_position(step: WorkflowStep) -> Tuple[int, int]:
@@ -191,9 +194,12 @@ def missing_requirements(
     ]
 
 
-def workspace_steps(workspace: str) -> List[WorkflowStep]:
-    """Return every step that belongs to a workspace."""
-    return [stage.step for stage in STAGES if stage.workspace == workspace]
+def step_for_tab(tab: str) -> Optional[WorkflowStep]:
+    """Return the step a ribbon entry belongs to."""
+    for stage in STAGES:
+        if stage.tab == tab:
+            return stage.step
+    return None
 
 
 def step_completed(
