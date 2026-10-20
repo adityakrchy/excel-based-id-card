@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PIL import Image
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -92,7 +93,28 @@ class CardPreviewWidget(QWidget):
         self.image_path = image_path
         self.caption = caption
         self.sub_caption = sub_caption
+        if sub_caption and image_path:
+            self.sub_caption = f"{sub_caption} · {self._describe(image_path)}"
         self.update()
+
+    @staticmethod
+    def _describe(image_path: str) -> str:
+        """Describe the card: pixel size, DPI and the physical size."""
+        try:
+            with Image.open(image_path) as image:
+                width, height = image.size
+                dpi = image.info.get("dpi", (300, 300))
+        except Exception:
+            return ""
+
+        try:
+            dpi_x = float(dpi[0]) or 300.0
+        except (TypeError, ValueError, IndexError):
+            dpi_x = 300.0
+
+        mm_w = width / dpi_x * 25.4
+        mm_h = height / dpi_x * 25.4
+        return f"{width} × {height} px · {dpi_x:.0f} DPI · {mm_w:.1f} × {mm_h:.1f} mm"
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -572,7 +594,7 @@ class ExportPage(QWidget):
             source = self.source_records_map.get(first.record_id)
             name = ExportManager.build_filename(config, first, source, 0)
             details = ""
-            if source is not None and first.rendered_image_path:
+            if first.rendered_image_path:
                 details = f"{first.pin} · {first.name or 'Unnamed'}"
             self.card_preview.set_card(first.rendered_image_path, name, details)
         else:
