@@ -369,13 +369,25 @@ class PhotoLibraryPage(QWidget):
         super().closeEvent(event)
 
     def set_columns(self, columns: List[str]) -> None:
-        """Set available spreadsheet columns in lookup combo."""
-        self.columns = columns
+        """Offer every spreadsheet column as a lookup key.
+
+        The photos can be found by the PIN, by an employee id or by any other
+        column of the sheet, so all of them are offered here.
+        """
+        self.columns = list(columns)
+        previous = self.cmb_key_col.currentData()
+
         self.cmb_key_col.blockSignals(True)
         self.cmb_key_col.clear()
-        self.cmb_key_col.addItem("Auto-Detect (PIN / ID)", "")
-        for col in columns:
+        self.cmb_key_col.addItem("Auto-detect (PIN / ID)", "")
+        for col in self.columns:
             self.cmb_key_col.addItem(col, col)
+
+        # Keep the chosen column when the sheet is re-imported.
+        if previous:
+            index = self.cmb_key_col.findData(previous)
+            if index >= 0:
+                self.cmb_key_col.setCurrentIndex(index)
         self.cmb_key_col.blockSignals(False)
 
     def set_records(self, records: List[SourceRecord]) -> None:

@@ -475,6 +475,20 @@ class DataSourcePage(QWidget):
             ("Errors", self._error_count, SEMANTIC_ERROR if self._error_count else None),
         ])
 
+    def _refresh_stat_line(self) -> None:
+        """Refresh the quiet line of numbers below the source bar."""
+        mapped_count = sum(
+            1 for token in self.template_tokens if self.field_mappings.get(token)
+        )
+        unmapped = len(self.template_tokens) - mapped_count
+        self.stat_line.set_stats([
+            ("Fields", len(self.template_tokens)),
+            ("Mapped", mapped_count, SEMANTIC_SUCCESS if mapped_count else None),
+            ("Unmapped", unmapped, SEMANTIC_WARNING if unmapped else None),
+            ("Records", len(self.records)),
+            ("Errors", self._error_count, SEMANTIC_ERROR if self._error_count else None),
+        ])
+
     def _toggle_rules(self) -> None:
         """Show or hide the rarely used field rules."""
         self.rules_box.setVisible(not self.rules_box.isVisible())
@@ -604,9 +618,11 @@ class DataSourcePage(QWidget):
                 f"ERRORS: {self._error_count}",
                 color=SEMANTIC_ERROR if self._error_count > 0 else SEMANTIC_SUCCESS,
             )
-            self._refresh_stat_line()
 
+            # Publish the data first - the counters are only decoration.
             self.data_loaded.emit(cols, records, report)
+
+            self._refresh_stat_line()
 
         except Exception as e:
             logger.error("Import failed: %s", e)
