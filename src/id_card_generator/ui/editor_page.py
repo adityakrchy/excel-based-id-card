@@ -682,6 +682,39 @@ class EditorPage(QWidget):
         # Default to Left
         self.ctx_btn_align_left.setChecked(True)
 
+        # ── Data Binding ─────────────────────────────────────────────────────
+        sep_bind = QFrame()
+        sep_bind.setFrameShape(QFrame.Shape.VLine)
+        sep_bind.setFrameShadow(QFrame.Shadow.Sunken)
+        sep_bind.setStyleSheet("color: #3F3F46; max-height: 20px;")
+        layout.addWidget(sep_bind)
+
+        lbl_bind = QLabel("Bind:")
+        lbl_bind.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        layout.addWidget(lbl_bind)
+
+        self.ctx_cmb_binding = QComboBox()
+        self.ctx_cmb_binding.setFixedHeight(28)
+        self.ctx_cmb_binding.setMinimumWidth(120)
+        self.ctx_cmb_binding.setMaximumWidth(180)
+        self.ctx_cmb_binding.setToolTip("Bind element to a spreadsheet column")
+        self.ctx_cmb_binding.currentIndexChanged.connect(self._on_ctx_binding_changed)
+        layout.addWidget(self.ctx_cmb_binding)
+
+        lbl_static = QLabel("Static:")
+        lbl_static.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        layout.addWidget(lbl_static)
+
+        self.ctx_txt_static = QLineEdit()
+        self.ctx_txt_static.setFixedHeight(28)
+        self.ctx_txt_static.setMinimumWidth(100)
+        self.ctx_txt_static.setMaximumWidth(160)
+        self.ctx_txt_static.setPlaceholderText("Static text…")
+        self.ctx_txt_static.setToolTip("Fallback static text when no column is bound")
+        self.ctx_txt_static.textChanged.connect(self._on_ctx_static_changed)
+        layout.addWidget(self.ctx_txt_static)
+        # ─────────────────────────────────────────────────────────────────────
+
         layout.addStretch()
         return widget
 
@@ -946,6 +979,7 @@ class EditorPage(QWidget):
         self.columns = columns
         self.inspector.set_available_columns(columns)
         self.mapping_panel.set_dataset(columns, records, match_results)
+        self._refresh_ctx_binding_combo()
         self.sample_index = 0
         self._update_sample_preview()
 
@@ -1001,6 +1035,17 @@ class EditorPage(QWidget):
             self._set_ctx_align_ui(elem.style.text_align)
             self._current_font_color = elem.style.font_color
             self.ctx_btn_color.setIcon(self._create_color_icon(elem.style.font_color))
+            # Sync binding combo
+            self._refresh_ctx_binding_combo()
+            binding_val = elem.binding or ""
+            idx = self.ctx_cmb_binding.findData(binding_val)
+            if idx < 0:
+                idx = 0
+            if self.ctx_cmb_binding.currentIndex() != idx:
+                self.ctx_cmb_binding.setCurrentIndex(idx)
+            # Sync static text
+            if not self.ctx_txt_static.hasFocus() and self.ctx_txt_static.text() != (elem.static_content or ""):
+                self.ctx_txt_static.setText(elem.static_content or "")
         elif elem.type in ("rect", "round_rect", "line"):
             self.stack_context.setCurrentIndex(2)
             self._current_fill_color = elem.style.background_color
@@ -1116,6 +1161,35 @@ class EditorPage(QWidget):
         self.scene.template_modified.emit()
 
     # Contextual Options Handlers
+    def _refresh_ctx_binding_combo(self) -> None:
+        """Rebuild the top-bar binding dropdown from the current available columns."""
+        self.ctx_cmb_binding.blockSignals(True)
+        self.ctx_cmb_binding.clear()
+        self.ctx_cmb_binding.addItem("(None)", "")
+        self.ctx_cmb_binding.addItem("Profile Photo [photo]", "photo")
+        self.ctx_cmb_binding.addItem("PIN Number [pin]", "PIN Number")
+        for col in getattr(self, "columns", []):
+            self.ctx_cmb_binding.addItem(col, col)
+        self.ctx_cmb_binding.blockSignals(False)
+
+    def _on_ctx_binding_changed(self) -> None:
+        if self._updating_context_bar:
+            return
+        val = self.ctx_cmb_binding.currentData()
+        def _do_bind(it):
+            it.element.binding = val if val else None
+        self._apply_context_change(_do_bind, "Change Binding")
+        # Also push live preview update
+        self._update_sample_preview()
+
+    def _on_ctx_static_changed(self, text: str) -> None:
+        if self._updating_context_bar:
+            return
+        self._apply_context_change(
+            lambda it: setattr(it.element, "static_content", text),
+            "Change Static Text",
+        )
+
     def _on_ctx_font_changed(self, font: QFont) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "font_family", font.family()), "Change Font Family")
 

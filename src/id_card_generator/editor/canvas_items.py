@@ -125,6 +125,59 @@ class CanvasItem(QGraphicsObject):
         self._cached_pixmap = None
         self.update()
 
+    def _get_text_natural_size(self) -> tuple:
+        """Return the natural (w, h) in document pixels needed to fully display the text content.
+
+        Used as minimum size during resize so the box cannot be dragged smaller
+        than the actual text, preventing it from being clipped/hidden.
+        """
+        elem = self.element
+        if elem.type not in ("static_text", "dynamic_text", "pin_field"):
+            return (10.0, 10.0)
+
+        # Resolve display text (same logic as _paint_text)
+        if elem.type == "static_text":
+            text = elem.static_content or elem.name
+        elif elem.type == "pin_field":
+            text = elem.binding or "PIN-100001"
+        else:
+            col = elem.binding or elem.name
+            if self._sample_record:
+                text = self._sample_record.get_value(col, f"[{col}]")
+            else:
+                text = f"[{col}]"
+
+        if not text:
+            return (10.0, 10.0)
+
+        scene = self.scene()
+        dpi = DEFAULT_DPI
+        if scene and hasattr(scene, "template") and scene.template:
+            dpi = getattr(scene.template, "dpi", DEFAULT_DPI) or DEFAULT_DPI
+
+        font_size_pt = float(elem.style.font_size)
+        doc_px = points_to_document_pixels(font_size_pt, dpi)
+
+        chosen = elem.style.font_family or "Arial"
+        font = QFont(chosen)
+        font.setBold(elem.style.font_bold)
+        font.setItalic(elem.style.font_italic)
+        font.setPixelSize(max(1, int(round(doc_px))))
+
+        fm = QFontMetrics(font)
+        flags = Qt.TextIncludeTrailingSpaces
+        if elem.style.wrap and "\n" in text:
+            flags |= Qt.TextWordWrap
+            br = fm.boundingRect(
+                QRect(0, 0, int(self._rect.width()), 32767), flags, text
+            )
+        else:
+            br = fm.boundingRect(QRect(0, 0, 32767, 32767), flags, text)
+
+        padding = 4.0  # small breathing room so text isn't right at the edge
+        return (max(10.0, float(br.width()) + padding),
+                max(10.0, float(br.height()) + padding))
+
     def _get_handle_rects(self) -> Dict[int, QRectF]:
         """Compute the 8 resize handle bounding rectangles in local coordinates."""
         r = self._rect
@@ -252,9 +305,36 @@ class CanvasItem(QGraphicsObject):
                     scene.set_active_guides(snap_res.guides, snap_res.spacing_badges)
                 scene.update()
 
-            # Enforce minimum size
-            if new_rect.width() >= 10.0 and new_rect.height() >= 10.0:
+            # Enforce minimum size: at least 10 px, and for text elements
+            # never smaller than the natural rendered text size so the box
+            # cannot "swallow" the text content.
+            elem = self.element
+            if elem.type in ("static_text", "dynamic_text", "pin_field"):
+                min_w, min_h = self._get_text_natural_size()
+            else:
+                min_w, min_h = 10.0, 10.0
+
+            # Clamp: if the resize would make the box smaller than the minimum,
+            # hold the constrained edge in place (don't apply the resize).
+            if new_rect.width() >= min_w and new_rect.height() >= min_h:
                 self.set_rect(new_rect)
+            elif new_rect.width() >= min_w:
+                # height is too small — keep current height edge
+                clamped = QRectF(new_rect)
+                if handle in (0, 1, 2):  # top handles
+                    clamped.setTop(clamped.bottom() - min_h)
+                else:
+                    clamped.setHeight(min_h)
+                self.set_rect(clamped)
+            elif new_rect.height() >= min_h:
+                # width is too small — keep current width edge
+                clamped = QRectF(new_rect)
+                if handle in (0, 6, 7):  # left handles
+                    clamped.setLeft(clamped.right() - min_w)
+                else:
+                    clamped.setWidth(min_w)
+                self.set_rect(clamped)
+            # else: both dimensions too small — don't resize at all
             event.accept()
             return
 
@@ -499,41 +579,36 @@ class CanvasItem(QGraphicsObject):
             else:
                 text = f"[{col}]"
 
-        # Determine document DPI from scene template
+        font_size_pt = float(elem.style.font_size)
+        has_devanagari = any(0x0900 <= ord(c) <= 0x097F for c in text)
+
+        # Determine document DPI from scene template (canvas is in document pixels)
         scene = self.scene()
         dpi = DEFAULT_DPI
         if scene and hasattr(scene, "template") and scene.template and getattr(scene.template, "dpi", None):
             dpi = scene.template.dpi
 
-        font_size_pt = float(elem.style.font_size)
-        has_devanagari = any(0x0900 <= ord(c) <= 0x097F for c in text)
-        is_latin_default = elem.style.font_family.lower() in (
-            "arial", "segoe ui", "helvetica", "helvetica neue", "sans-serif", "times new roman", "roboto", "inter"
-        )
-        if has_devanagari and is_latin_default:
-            families = [
-                "Devanagari Sangam MN",
-                "Mangal",
-                "Nirmala UI",
-                "Kohinoor Devanagari",
-                "Noto Sans Devanagari",
-                elem.style.font_family,
-            ]
-        else:
-            families = [
-                elem.style.font_family,
-                "Devanagari Sangam MN",
-                "Mangal",
-                "Nirmala UI",
-                "Kohinoor Devanagari",
-                "Noto Sans Devanagari",
-                "Arial",
-            ]
+        # ── Font family ──────────────────────────────────────────────────────
+        # The user's chosen font ALWAYS goes first.  Devanagari fonts are
+        # appended as unicode fallbacks only — never prepended ahead of the
+        # selected family (that was what broke font switching post-unicode PR).
+        chosen = elem.style.font_family or "Arial"
+        devanagari_fallbacks = [
+            "Devanagari Sangam MN",
+            "Mangal",
+            "Nirmala UI",
+            "Kohinoor Devanagari",
+            "Noto Sans Devanagari",
+        ]
+        families = [chosen] + [f for f in devanagari_fallbacks if f != chosen] + ["Arial"]
+        # ────────────────────────────────────────────────────────────────────
         font = QFont(families[0])
         font.setFamilies(families)
         font.setBold(elem.style.font_bold)
         font.setItalic(elem.style.font_italic)
-        font.setStyleStrategy(QFont.PreferAntialias)
+        font.setStyleStrategy(QFont.StyleStrategy(
+            QFont.PreferAntialias | QFont.PreferMatch
+        ))
 
         flags = Qt.TextIncludeTrailingSpaces
         if elem.style.text_align == "center":
@@ -553,7 +628,10 @@ class CanvasItem(QGraphicsObject):
         if elem.style.wrap:
             flags |= Qt.TextWordWrap
 
-        # Auto-shrink in point units to match TextLayout / Photoshop
+        # ── Font sizing (document-pixel space) ─────────────────────────────────
+        # Canvas coordinates are document pixels (at 300 DPI).  We must
+        # convert pt → document pixels so the font appears the correct
+        # physical size when the card is viewed at its natural zoom.
         if elem.style.overflow_policy == TextOverflowPolicy.AUTO_SHRINK and text:
             cur_pt = font_size_pt
             min_pt = 4.0
@@ -570,8 +648,10 @@ class CanvasItem(QGraphicsObject):
                     break
                 cur_pt -= 0.5
         else:
+            # CLIP / TRUNCATE / WRAP: render at the exact specified pt size
             doc_px = points_to_document_pixels(font_size_pt, dpi)
             font.setPixelSize(max(1, int(round(doc_px))))
+        # ─────────────────────────────────────────────────────────────────
 
         draw_rect = QRectF(rect)
         fm = QFontMetrics(font)
@@ -587,9 +667,12 @@ class CanvasItem(QGraphicsObject):
             else:
                 draw_rect.setHeight(line_h)
 
+        painter.save()
+        painter.setClipRect(rect)  # prevent text from visually overflowing the bounding box
         painter.setFont(font)
         painter.setPen(QColor(elem.style.font_color or "#000000"))
         painter.drawText(draw_rect, flags, text)
+        painter.restore()
 
     def _paint_selection(self, painter: QPainter):
         """Draw professional Transform Box (TBox) with outer contrast halo, crisp accent border, 8 resize handles, and element tag."""

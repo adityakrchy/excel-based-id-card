@@ -69,7 +69,7 @@ class CanvasElementStyle(BaseModel):
     vertical_align: str = "top"  # top, middle, bottom
     line_spacing: float = 1.2
     wrap: bool = True
-    overflow_policy: TextOverflowPolicy = TextOverflowPolicy.AUTO_SHRINK
+    overflow_policy: TextOverflowPolicy = TextOverflowPolicy.CLIP
     fit_mode: ImageFitMode = ImageFitMode.COVER
     mask_shape: str = "rect"  # rect, circle, rounded
     opacity: float = 1.0
@@ -127,7 +127,7 @@ class RenderSettings(BaseModel):
     output_format: OutputFormat = OutputFormat.PNG
     jpeg_quality: int = 95
     missing_photo_policy: MissingPhotoPolicy = MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER
-    text_overflow_policy: TextOverflowPolicy = TextOverflowPolicy.AUTO_SHRINK
+    text_overflow_policy: TextOverflowPolicy = TextOverflowPolicy.AUTO_SHRINK  # export renderer still auto-shrinks by default
 
 
 class RenderResult(BaseModel):

@@ -78,6 +78,7 @@ class MissingPhotoPolicy(str, Enum):
 
 class TextOverflowPolicy(str, Enum):
     """Policy for text overflow."""
+    CLIP = "clip"          # Render at full pt size, clip to box (default)
     AUTO_SHRINK = "auto_shrink"
     TRUNCATE = "truncate"
     WRAP = "wrap"
