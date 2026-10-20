@@ -392,6 +392,12 @@ QPushButton#btn_danger:hover {
     color: $on_error;
 }
 
+QPushButton#btn_danger:disabled {
+    background-color: $surface_low;
+    color: $text_muted;
+    border-color: $border_subtle;
+}
+
 QPushButton#btn_success {
     background-color: $tertiary_container;
     color: $on_tertiary_container;
@@ -546,6 +552,7 @@ QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
 /* --- Tables, lists, trees ----------------------------------------- */
 QTableWidget, QTableView, QListWidget, QTreeWidget, QTreeView {
     background-color: $surface_low;
+    alternate-background-color: $surface_lowest;
     border: 1px solid $border;
     border-radius: $radius_sm;
     gridline-color: $border_subtle;
@@ -836,6 +843,48 @@ QLabel[role="monoMuted"] {
     color: $text_muted;
     font-family: $mono_font;
     font-size: 11px;
+}
+
+QLabel[role="tableTitle"] {
+    color: $on_surface;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QLabel[role="tableSubtitle"] {
+    color: $text_muted;
+    font-size: 11px;
+}
+
+QLabel[role="tableCell"] {
+    color: $on_surface_variant;
+    font-size: 11px;
+}
+
+QLabel[role="tableMono"] {
+    color: $text_muted;
+    font-family: $mono_font;
+    font-size: 11px;
+}
+
+QLabel[role="badgeMuted"] {
+    background-color: $surface_high;
+    color: $on_surface_variant;
+    border: 1px solid $border_subtle;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 6px;
+}
+
+QLabel[role="badgeAccent"] {
+    background-color: $surface_high;
+    color: $primary;
+    border: 1px solid $border_subtle;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 6px;
 }
 
 QLabel[role="badge"] {
