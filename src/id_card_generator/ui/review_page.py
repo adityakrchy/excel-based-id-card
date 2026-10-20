@@ -108,9 +108,7 @@ class ReviewPage(QWidget):
         # ---------------------------------------------------------
         top_card = QFrame()
         top_card.setObjectName("card_panel")
-        top_card.setStyleSheet(
-            f"QFrame#card_panel {{ background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 4px; }}"
-        )
+        top_card.setObjectName("workspace_panel")
         top_layout = QVBoxLayout(top_card)
         top_layout.setContentsMargins(8, 8, 8, 8)
         top_layout.setSpacing(8)
@@ -196,9 +194,7 @@ class ReviewPage(QWidget):
 
         # Card Preview Container
         preview_panel = QFrame()
-        preview_panel.setStyleSheet(
-            f"background-color: {SURFACE_LOWEST}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
-        )
+        preview_panel.setObjectName("recessed_panel")
         prev_panel_layout = QVBoxLayout(preview_panel)
         prev_panel_layout.setContentsMargins(12, 12, 12, 12)
 
@@ -225,9 +221,7 @@ class ReviewPage(QWidget):
         # Right Inspector & Navigation Card
         right_panel = QFrame()
         right_panel.setObjectName("card_panel")
-        right_panel.setStyleSheet(
-            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
-        )
+        right_panel.setObjectName("workspace_panel")
         right_panel.setMinimumWidth(320)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(10, 10, 10, 10)

@@ -237,9 +237,7 @@ class ExportPage(QWidget):
         # ---------------------------------------------------------
         top_ribbon = QFrame()
         top_ribbon.setObjectName("card_panel")
-        top_ribbon.setStyleSheet(
-            f"QFrame#card_panel {{ background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 4px; }}"
-        )
+        top_ribbon.setObjectName("workspace_panel")
         ribbon_layout = QHBoxLayout(top_ribbon)
         ribbon_layout.setContentsMargins(8, 8, 8, 8)
         ribbon_layout.setSpacing(8)
@@ -275,9 +273,7 @@ class ExportPage(QWidget):
         # Right Inspector Panel
         right_panel = QFrame()
         right_panel.setObjectName("card_panel")
-        right_panel.setStyleSheet(
-            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
-        )
+        right_panel.setObjectName("workspace_panel")
         right_panel.setMinimumWidth(340)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(10, 10, 10, 10)

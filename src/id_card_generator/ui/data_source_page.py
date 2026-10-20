@@ -220,9 +220,7 @@ class DataSourcePage(QWidget):
 
         # --- LEFT COLUMN: Template Placeholders List ---
         left_panel = QFrame()
-        left_panel.setStyleSheet(
-            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
-        )
+        left_panel.setObjectName("workspace_panel")
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(6)
@@ -248,9 +246,7 @@ class DataSourcePage(QWidget):
 
         # --- CENTER COLUMN: Spreadsheet Controls & Data Preview Table ---
         center_panel = QFrame()
-        center_panel.setStyleSheet(
-            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
-        )
+        center_panel.setObjectName("workspace_panel")
         center_layout = QVBoxLayout(center_panel)
         center_layout.setContentsMargins(8, 8, 8, 8)
         center_layout.setSpacing(8)
@@ -319,9 +315,7 @@ class DataSourcePage(QWidget):
 
         # --- RIGHT COLUMN: Field Mapping & Selected Record Inspector ---
         right_panel = QFrame()
-        right_panel.setStyleSheet(
-            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
-        )
+        right_panel.setObjectName("workspace_panel")
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(6, 6, 6, 6)
         right_layout.setSpacing(6)

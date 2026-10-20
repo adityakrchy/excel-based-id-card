@@ -135,9 +135,7 @@ class GenerationPage(QWidget):
         # ---------------------------------------------------------
         self.checklist_frame = QFrame()
         self.checklist_frame.setObjectName("card_panel")
-        self.checklist_frame.setStyleSheet(
-            f"QFrame#card_panel {{ background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 6px; }}"
-        )
+        self.checklist_frame.setObjectName("workspace_panel")
         chk_layout = QVBoxLayout(self.checklist_frame)
         chk_layout.setContentsMargins(10, 8, 10, 8)
         chk_layout.setSpacing(6)
@@ -200,9 +198,7 @@ class GenerationPage(QWidget):
         # ---------------------------------------------------------
         prog_frame = QFrame()
         prog_frame.setObjectName("card_panel")
-        prog_frame.setStyleSheet(
-            f"background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px;"
-        )
+        prog_frame.setObjectName("workspace_panel")
         prog_layout = QVBoxLayout(prog_frame)
         prog_layout.setContentsMargins(10, 10, 10, 10)
         prog_layout.setSpacing(8)

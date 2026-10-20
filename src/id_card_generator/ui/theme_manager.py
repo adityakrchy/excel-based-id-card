@@ -278,6 +278,18 @@ QFrame#studio_nav_bar, QFrame#page_footer, QFrame#page_header {
     border-radius: $radius;
 }
 
+QFrame#workspace_panel {
+    background-color: $surface_low;
+    border: 1px solid $border;
+    border-radius: $radius;
+}
+
+QFrame#recessed_panel {
+    background-color: $surface_lowest;
+    border: 1px solid $border;
+    border-radius: $radius;
+}
+
 QFrame#studio_header_bar {
     background-color: $surface_dim;
     border-top-left-radius: 0px;
@@ -844,7 +856,7 @@ QToolTip {
             "mono_font": TYPOGRAPHY.FONT_FAMILY_MONO,
             "surface": p.SURFACE,
             "surface_dim": p.SURFACE_DIM,
-            "surface_dim": p.SURFACE_DIM,
+            "surface_lowest": p.SURFACE_LOWEST,
             "surface_low": p.SURFACE_LOW,
             "surface_container": p.SURFACE_CONTAINER,
             "surface_high": p.SURFACE_HIGH,
