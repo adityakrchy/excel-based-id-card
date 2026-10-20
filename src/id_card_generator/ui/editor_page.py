@@ -49,7 +49,8 @@ from id_card_generator.editor.field_mapping_panel import FieldMappingPanel
 from id_card_generator.editor.layers_panel import LayersPanel
 from id_card_generator.templates.template_manager import TemplateManager
 from id_card_generator.ui.dialogs.template_cleanup_dialog import TemplateCleanupDialog
-from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -84,48 +85,44 @@ class EditorPage(QWidget):
         main_layout.setContentsMargins(6, 6, 6, 6)
         main_layout.setSpacing(6)
 
-        # 0. Top Template Management Bar
-        self.template_bar = QFrame()
-        self.template_bar.setObjectName("card_panel")
-        self.template_bar.setFixedHeight(42)
-        tmpl_bar_layout = QHBoxLayout(self.template_bar)
-        tmpl_bar_layout.setContentsMargins(10, 4, 10, 4)
-        tmpl_bar_layout.setSpacing(8)
+        # 0. Page header with the template management actions
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.CANVAS_EDITOR)
+        self.page_header = PageHeader(title, subtitle, badge, height=56)
+        main_layout.addWidget(self.page_header)
 
-        tmpl_icon = QLabel("📐")
-        tmpl_icon.setStyleSheet("font-size: 15px;")
-        tmpl_bar_layout.addWidget(tmpl_icon)
-
-        self.lbl_tmpl_name = QLabel("<b>Template:</b> Default Template")
-        self.lbl_tmpl_name.setStyleSheet("color: #F8FAFC; font-size: 13px;")
-        tmpl_bar_layout.addWidget(self.lbl_tmpl_name)
+        self.lbl_tmpl_name = QLabel("Default Template")
+        self.lbl_tmpl_name.setStyleSheet("color: #F8FAFC; font-size: 13px; font-weight: 600;")
+        self.page_header.add_action(self.lbl_tmpl_name)
 
         self.lbl_tmpl_badge = QLabel("Built-in")
         self.lbl_tmpl_badge.setStyleSheet(
             "color: #94A3B8; font-size: 10px; font-weight: bold; padding: 2px 6px; background: #27272A; border-radius: 4px;"
         )
-        tmpl_bar_layout.addWidget(self.lbl_tmpl_badge)
-
-        tmpl_bar_layout.addStretch()
+        self.page_header.add_action(self.lbl_tmpl_badge)
 
         self.btn_tmpl_save = QPushButton("💾 Save Template")
         self.btn_tmpl_save.setToolTip("Save canvas design to custom saved templates")
         self.btn_tmpl_save.clicked.connect(self._save_current_template)
-        tmpl_bar_layout.addWidget(self.btn_tmpl_save)
+        self.page_header.add_action(self.btn_tmpl_save)
 
-        self.btn_tmpl_delete = QPushButton("🗑 Delete Template")
+        self.btn_tmpl_delete = QPushButton("🗑 Delete")
         self.btn_tmpl_delete.setObjectName("btn_danger")
         self.btn_tmpl_delete.setToolTip("Delete this custom saved template from disk (built-in templates cannot be deleted)")
         self.btn_tmpl_delete.setEnabled(False)
         self.btn_tmpl_delete.clicked.connect(self._delete_current_template)
-        tmpl_bar_layout.addWidget(self.btn_tmpl_delete)
+        self.page_header.add_action(self.btn_tmpl_delete)
 
-        self.btn_tmpl_cleanup = QPushButton("🧹 Clean Up Older Templates...")
+        self.btn_tmpl_cleanup = QPushButton("🧹 Clean Up...")
         self.btn_tmpl_cleanup.setToolTip("Open template cleanup manager to search, delete, and clean up older saved templates")
         self.btn_tmpl_cleanup.clicked.connect(self._open_cleanup_dialog)
-        tmpl_bar_layout.addWidget(self.btn_tmpl_cleanup)
+        self.page_header.add_action(self.btn_tmpl_cleanup)
 
-        main_layout.addWidget(self.template_bar)
+        # Non blocking feedback area (errors / warnings stay in context).
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 0, 16, 0)
+        notice_row.addWidget(self.notice)
+        main_layout.addLayout(notice_row)
 
         # 1. Top Contextual Options Bar
         self.options_bar = QFrame()
@@ -250,10 +247,11 @@ class EditorPage(QWidget):
         main_layout.addWidget(self.status_bar_frame)
 
         # 4. Bottom Step Navigation Bar
-        self.nav_bar = StepNavBar(
-            prev_label="Choose Template",
-            next_label="Batch Generate",
-            step_badge="Step 4 of 7: Canvas Editor & Field Mapping",
+        back_label, next_label, badge = workflow.footer_labels(WorkflowStep.CANVAS_EDITOR)
+        self.nav_bar = PageFooter(
+            prev_label=back_label,
+            next_label=next_label,
+            step_badge=badge,
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.TEMPLATES.value))
@@ -1477,7 +1475,7 @@ class EditorPage(QWidget):
             return
         tmpl = self.scene.template
         is_built = self.template_manager.is_builtin(tmpl.id)
-        self.lbl_tmpl_name.setText(f"<b>Template:</b> {tmpl.name}")
+        self.lbl_tmpl_name.setText(tmpl.name)
         if is_built:
             self.lbl_tmpl_badge.setText("Built-in")
             self.lbl_tmpl_badge.setStyleSheet(

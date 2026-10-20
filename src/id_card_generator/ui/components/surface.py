@@ -1,0 +1,158 @@
+"""Surface containers and metric tiles used across the ID Studio pages."""
+
+from typing import Optional
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+from id_card_generator.ui.studio_tokens import (
+    FONT_FAMILY_MONO,
+    FONT_FAMILY_UI,
+    SURFACE_CONTAINER,
+    SURFACE_HIGH,
+    TEXT_MUTED,
+    TYPOGRAPHY,
+)
+
+
+class SurfaceCard(QFrame):
+    """A titled panel used to group related controls on a page."""
+
+    def __init__(
+        self,
+        title: str = "",
+        subtitle: str = "",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setObjectName("surface_card")
+        self.setFrameShape(QFrame.NoFrame)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self.header = QHBoxLayout()
+        self.header.setContentsMargins(14, 10, 14, 8)
+        self.header.setSpacing(8)
+        self.header.setVisible(bool(title or subtitle))
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(1)
+
+        self.lbl_title = QLabel(title)
+        self.lbl_title.setStyleSheet(
+            f"color: #FFFFFF; font-family: {FONT_FAMILY_UI}; "
+            f"font-size: {TYPOGRAPHY.SIZE_TITLE}px; font-weight: 700;"
+        )
+        text_col.addWidget(self.lbl_title)
+
+        self.lbl_subtitle = QLabel(subtitle)
+        self.lbl_subtitle.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        self.lbl_subtitle.setVisible(bool(subtitle))
+        text_col.addWidget(self.lbl_subtitle)
+
+        self.header.addLayout(text_col)
+        self.header.addStretch(1)
+
+        # Optional header actions (added via add_header_action).
+        self.header_actions = QHBoxLayout()
+        self.header_actions.setContentsMargins(0, 0, 0, 0)
+        self.header_actions.setSpacing(6)
+        self.header.addLayout(self.header_actions)
+
+        outer.addLayout(self.header)
+
+        self.divider = QFrame()
+        self.divider.setFixedHeight(1)
+        self.divider.setStyleSheet(f"background-color: {SURFACE_HIGH};")
+        self.divider.setVisible(bool(title or subtitle))
+        outer.addWidget(self.divider)
+
+        self.content = QVBoxLayout()
+        self.content.setContentsMargins(14, 12, 14, 12)
+        self.content.setSpacing(10)
+        outer.addLayout(self.content)
+
+    # -- content ----------------------------------------------------
+    def add_header_action(self, widget: QWidget) -> None:
+        self.header_actions.addWidget(widget)
+
+    def add(self, widget: QWidget, stretch: int = 0) -> None:
+        """Add a widget to the card body."""
+        self.content.addWidget(widget, stretch)
+
+    def add_layout(self, layout) -> None:
+        """Add a layout to the card body."""
+        self.content.addLayout(layout)
+
+    def set_title(self, title: str) -> None:
+        self.lbl_title.setText(title)
+        self.header.setVisible(bool(title or self.lbl_subtitle.text()))
+        self.divider.setVisible(self.header.isVisible())
+
+    def set_subtitle(self, subtitle: str) -> None:
+        self.lbl_subtitle.setText(subtitle)
+        self.lbl_subtitle.setVisible(bool(subtitle))
+        self.header.setVisible(bool(self.lbl_title.text() or subtitle))
+        self.divider.setVisible(self.header.isVisible())
+
+
+class StatTile(QFrame):
+    """Compact metric tile (caption + value) used on dashboards."""
+
+    def __init__(
+        self,
+        caption: str = "",
+        value: str = "0",
+        accent: Optional[str] = None,
+        hint: str = "",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setObjectName("surface_card")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumHeight(76)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(4)
+
+        self.lbl_caption = QLabel(caption)
+        self.lbl_caption.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;"
+        )
+        layout.addWidget(self.lbl_caption)
+
+        self.lbl_value = QLabel(value)
+        self.lbl_value.setStyleSheet(
+            f"color: {accent or '#FFFFFF'}; font-family: {FONT_FAMILY_MONO}; "
+            f"font-size: 22px; font-weight: 700;"
+        )
+        layout.addWidget(self.lbl_value)
+
+        self.lbl_hint = QLabel(hint)
+        self.lbl_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        self.lbl_hint.setVisible(bool(hint))
+        layout.addWidget(self.lbl_hint)
+
+    def set_value(self, value) -> None:
+        self.lbl_value.setText(str(value))
+
+    def set_hint(self, hint: str) -> None:
+        self.lbl_hint.setText(hint)
+        self.lbl_hint.setVisible(bool(hint))
+
+    def set_accent(self, accent: Optional[str]) -> None:
+        self.lbl_value.setStyleSheet(
+            f"color: {accent or '#FFFFFF'}; font-family: {FONT_FAMILY_MONO}; "
+            f"font-size: 22px; font-weight: 700;"
+        )

@@ -165,7 +165,8 @@ def test_editor_page_template_bar(qtbot, monkeypatch):
 
     # Load built-in template
     editor.load_template(builtin)
-    assert editor.lbl_tmpl_name.text() == f"<b>Template:</b> {builtin.name}"
+    # The template name is shown in the page header next to the stage title.
+    assert editor.lbl_tmpl_name.text() == builtin.name
     assert editor.lbl_tmpl_badge.text() == "Built-in"
     assert not editor.btn_tmpl_delete.isEnabled()
 
@@ -180,7 +181,7 @@ def test_editor_page_template_bar(qtbot, monkeypatch):
     )
     editor.template_manager.save_user_template(custom_tmpl)
     editor.load_template(custom_tmpl)
-    assert editor.lbl_tmpl_name.text() == f"<b>Template:</b> {custom_tmpl.name}"
+    assert editor.lbl_tmpl_name.text() == custom_tmpl.name
     assert editor.lbl_tmpl_badge.text() == "Custom Saved"
     assert editor.btn_tmpl_delete.isEnabled()
 

@@ -33,7 +33,8 @@ from id_card_generator.core.models import (
 from id_card_generator.generation.batch_generator import GenerationSummary
 from id_card_generator.generation.generation_worker import GenerationWorker
 from id_card_generator.ui.components.status_pill import StatusPill
-from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -81,8 +82,26 @@ class GenerationPage(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ---------------------------------------------------------
+        # Page header (step badge, title, subtitle)
+        # ---------------------------------------------------------
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.GENERATE)
+        self.page_header = PageHeader(title, subtitle, badge)
+        layout.addWidget(self.page_header)
+
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 8, 16, 0)
+        notice_row.addWidget(self.notice)
+        layout.addLayout(notice_row)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 12, 16, 12)
+        body.setSpacing(12)
+        layout.addLayout(body, stretch=1)
 
         # Header Title Row
         hdr_row = QHBoxLayout()
@@ -93,7 +112,7 @@ class GenerationPage(QWidget):
 
         self.pill_engine_state = StatusPill("ENGINE READY", color=SEMANTIC_SUCCESS)
         hdr_row.addWidget(self.pill_engine_state)
-        layout.addLayout(hdr_row)
+        body.addLayout(hdr_row)
 
         # ---------------------------------------------------------
         # 1. KPI Telemetry Grid (Cards Rendered, Time, Rate, Workers)
@@ -130,7 +149,7 @@ class GenerationPage(QWidget):
         kpi_row.addWidget(self.card_time)
         kpi_row.addWidget(self.card_rate)
         kpi_row.addWidget(self.card_workers)
-        layout.addLayout(kpi_row)
+        body.addLayout(kpi_row)
 
         # ---------------------------------------------------------
         # 2. Pre-Flight Checklist Panel
@@ -166,7 +185,7 @@ class GenerationPage(QWidget):
         self.grid_checklist.addWidget(self.lbl_chk_output, 1, 1)
 
         chk_layout.addLayout(self.grid_checklist)
-        layout.addWidget(self.checklist_frame)
+        body.addWidget(self.checklist_frame)
 
         # ---------------------------------------------------------
         # 3. Action Buttons Row
@@ -195,7 +214,7 @@ class GenerationPage(QWidget):
         action_row.addWidget(self.btn_cancel)
         action_row.addStretch()
         action_row.addWidget(self.btn_goto_review)
-        layout.addLayout(action_row)
+        body.addLayout(action_row)
 
         # ---------------------------------------------------------
         # 4. Progress & Telemetry Terminal Console
@@ -233,15 +252,16 @@ class GenerationPage(QWidget):
         )
         prog_layout.addWidget(self.log_output)
 
-        layout.addWidget(prog_frame, stretch=1)
+        body.addWidget(prog_frame, stretch=1)
 
         # ---------------------------------------------------------
         # 5. Bottom Step Navigation Bar (Preserved for compatibility)
         # ---------------------------------------------------------
-        self.nav_bar = StepNavBar(
-            prev_label="Canvas Editor",
-            next_label="Review Generated Cards",
-            step_badge="Step 5 of 7: Batch Generation",
+        back_label, next_label, badge = workflow.footer_labels(WorkflowStep.GENERATE)
+        self.nav_bar = PageFooter(
+            prev_label=back_label,
+            next_label=next_label,
+            step_badge=badge,
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.CANVAS_EDITOR.value))
@@ -281,11 +301,15 @@ class GenerationPage(QWidget):
 
     def _start_generation(self) -> None:
         if not self.template:
-            QMessageBox.warning(self, "No Template", "Please select or create an ID card template first.")
+            self.notice.set_message(
+                "Select or create an ID card template first.", severity="warning"
+            )
             return
 
         if not self.records:
-            QMessageBox.warning(self, "No Records", "Please import an Excel spreadsheet with records.")
+            self.notice.set_message(
+                "Import an Excel spreadsheet with records first.", severity="warning"
+            )
             return
 
         self.btn_generate.setEnabled(False)

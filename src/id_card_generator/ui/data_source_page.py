@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QSpinBox,
     QSplitter,
@@ -41,8 +40,9 @@ from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.data_validator import DataValidator, ValidationReport
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.data.hindi_converter import HindiConverter
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.components.status_pill import StatusPill
-from id_card_generator.ui.step_nav_bar import StepNavBar
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -113,17 +113,33 @@ class DataSourcePage(QWidget):
 
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # ---------------------------------------------------------
+        # 0. Page Header (step badge, title, contextual actions)
+        # ---------------------------------------------------------
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.DATA_SOURCE)
+        self.page_header = PageHeader(title, subtitle, badge)
+        main_layout.addWidget(self.page_header)
+
+        # Non blocking feedback area (errors / warnings stay in context).
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 8, 16, 0)
+        notice_row.addWidget(self.notice)
+        main_layout.addLayout(notice_row)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(12, 12, 12, 12)
+        body.setSpacing(10)
+        main_layout.addLayout(body, stretch=1)
 
         # ---------------------------------------------------------
         # 1. Top Ribbon Bar (File Connection + Global Actions)
         # ---------------------------------------------------------
         top_card = QFrame()
         top_card.setObjectName("card_panel")
-        top_card.setStyleSheet(
-            f"QFrame#card_panel {{ background-color: {SURFACE_LOW}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 4px; }}"
-        )
         top_layout = QVBoxLayout(top_card)
         top_layout.setContentsMargins(8, 8, 8, 8)
         top_layout.setSpacing(6)
@@ -195,7 +211,7 @@ class DataSourcePage(QWidget):
         metrics_row.addStretch()
         top_layout.addLayout(metrics_row)
 
-        main_layout.addWidget(top_card)
+        body.addWidget(top_card)
 
         # ---------------------------------------------------------
         # 2. Main 3-Column Workstation Splitter
@@ -394,15 +410,16 @@ class DataSourcePage(QWidget):
         self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setStretchFactor(2, 0)
-        main_layout.addWidget(self.main_splitter, stretch=1)
+        body.addWidget(self.main_splitter, stretch=1)
 
         # ---------------------------------------------------------
-        # 3. Bottom Step Navigation Bar (Preserved for compatibility)
+        # 3. Bottom Step Navigation Bar (drives the pipeline)
         # ---------------------------------------------------------
-        self.nav_bar = StepNavBar(
-            prev_label="Dashboard & Settings",
-            next_label="Photo Library",
-            step_badge="Step 1 of 7: Data Source",
+        back_label, next_label, badge = workflow.footer_labels(WorkflowStep.DATA_SOURCE)
+        self.nav_bar = PageFooter(
+            prev_label=back_label,
+            next_label=next_label,
+            step_badge=badge,
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.DASHBOARD.value))
@@ -481,7 +498,9 @@ class DataSourcePage(QWidget):
         except Exception as e:
             logger.error("Failed to inspect sheets in %s: %s", file_path, e)
             self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
-            QMessageBox.critical(self, "Import Error", f"Could not inspect spreadsheet: {e}")
+            self.notice.set_message(
+                f"Could not inspect spreadsheet: {e}", severity="error"
+            )
 
     def _on_sheet_changed(self) -> None:
         self._import_current()
@@ -526,6 +545,10 @@ class DataSourcePage(QWidget):
             # Auto-map initial common tokens if not already mapped
             self._auto_map_columns(silent=True)
 
+            # The import succeeded - drop any previous problem report.
+            if self.notice.severity in ("error", "warning"):
+                self.notice.clear_message()
+
             # Check if Hindi/Devanagari text is present in columns or data
             has_hindi = (
                 any(HindiConverter.is_unicode_devanagari(c) for c in cols)
@@ -556,13 +579,16 @@ class DataSourcePage(QWidget):
         except Exception as e:
             logger.error("Import failed: %s", e)
             self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
-            QMessageBox.critical(self, "Data Import Error", f"Failed to import records: {e}")
+            self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
+            self.notice.set_message(f"Failed to import records: {e}", severity="error")
 
     def _auto_map_columns(self, silent: bool = False) -> None:
         """Heuristic auto-mapping between template tokens and spreadsheet column names."""
         if not self.columns:
             if not silent:
-                QMessageBox.information(self, "Auto-Map", "No spreadsheet columns available to map.")
+                self.notice.set_message(
+                    "No spreadsheet columns available to map.", severity="warning"
+                )
             return
 
         mapped_new = 0
@@ -578,15 +604,16 @@ class DataSourcePage(QWidget):
         self._refresh_placeholders_list()
         self.mappings_changed.emit(self.field_mappings)
         if not silent:
-            QMessageBox.information(
-                self,
-                "Auto-Map Complete",
-                f"Successfully mapped {len(self.field_mappings)} placeholders to columns.",
+            self.notice.set_message(
+                f"Auto-mapped {len(self.field_mappings)} placeholders to spreadsheet columns.",
+                severity="success",
             )
 
     def _validate_all_records(self) -> None:
         if not self.records:
-            QMessageBox.information(self, "Validation", "No records loaded to validate.")
+            self.notice.set_message(
+                "No records loaded - import a spreadsheet first.", severity="warning"
+            )
             return
         report = DataValidator.validate_records(self.records)
         self.validation_report = report
@@ -594,14 +621,13 @@ class DataSourcePage(QWidget):
             f"ERRORS: {report.missing_pins + len(report.duplicate_pins)}",
             color=SEMANTIC_ERROR if (report.missing_pins + len(report.duplicate_pins)) > 0 else SEMANTIC_SUCCESS,
         )
-        msg = (
-            f"Validation Completed:\n\n"
-            f"• Total Records: {len(self.records):,}\n"
-            f"• Valid Records: {report.valid_records:,}\n"
-            f"• Missing PINs: {report.missing_pins}\n"
-            f"• Duplicate PINs: {len(report.duplicate_pins)}\n"
+        severity = "error" if (report.missing_pins + len(report.duplicate_pins)) else "success"
+        self.notice.set_message(
+            f"Validation complete - {len(self.records):,} records, "
+            f"{report.valid_records:,} valid, {report.missing_pins} missing PIN, "
+            f"{len(report.duplicate_pins)} duplicate.",
+            severity=severity,
         )
-        QMessageBox.information(self, "Validation Report", msg)
 
     def _on_source_column_changed(self) -> None:
         pass

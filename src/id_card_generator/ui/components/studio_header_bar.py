@@ -72,30 +72,25 @@ class StudioHeaderBar(QFrame):
         self.lbl_dirty_dot.setVisible(False)
         left_layout.addWidget(self.lbl_dirty_dot)
 
-        # Hidden/Compact action buttons kept for compatibility
-        self.btn_new = self._create_icon_btn("📄", "New Project (Ctrl+N)")
+        # Document actions - always visible so the shell is self explanatory.
+        self.btn_new = self._create_icon_btn("＋", "New Project (Ctrl+N)")
         self.btn_new.clicked.connect(self.new_requested.emit)
-        self.btn_new.setVisible(False)
         left_layout.addWidget(self.btn_new)
 
-        self.btn_open = self._create_icon_btn("📁", "Open Project (Ctrl+O)")
+        self.btn_open = self._create_icon_btn("📂", "Open Project (Ctrl+O)")
         self.btn_open.clicked.connect(self.open_requested.emit)
-        self.btn_open.setVisible(False)
         left_layout.addWidget(self.btn_open)
 
         self.btn_save = self._create_icon_btn("💾", "Save Project (Ctrl+S)")
         self.btn_save.clicked.connect(self.save_requested.emit)
-        self.btn_save.setVisible(False)
         left_layout.addWidget(self.btn_save)
 
         self.btn_undo = self._create_icon_btn("↶", "Undo (Ctrl+Z)")
         self.btn_undo.clicked.connect(self.undo_requested.emit)
-        self.btn_undo.setVisible(False)
         left_layout.addWidget(self.btn_undo)
 
         self.btn_redo = self._create_icon_btn("↷", "Redo (Ctrl+Y)")
         self.btn_redo.clicked.connect(self.redo_requested.emit)
-        self.btn_redo.setVisible(False)
         left_layout.addWidget(self.btn_redo)
 
         layout.addLayout(left_layout)
@@ -148,19 +143,23 @@ class StudioHeaderBar(QFrame):
         btn = QToolButton()
         btn.setText(icon_char)
         btn.setToolTip(tooltip)
-        btn.setFixedSize(22, 22)
+        btn.setFixedSize(24, 24)
+        btn.setCursor(Qt.PointingHandCursor)
         btn.setStyleSheet(
             f"QToolButton {{"
             f"  background: transparent;"
             f"  color: {COLORS.ON_SURFACE_VARIANT};"
             f"  border: 1px solid transparent;"
             f"  border-radius: 3px;"
-            f"  font-size: 11px;"
+            f"  font-size: 12px;"
             f"}}"
             f"QToolButton:hover {{"
             f"  background-color: {COLORS.SURFACE_HIGH};"
             f"  color: {COLORS.ON_SURFACE};"
             f"  border-color: {COLORS.BORDER_HAIRLINE};"
+            f"}}"
+            f"QToolButton:pressed {{"
+            f"  background-color: {COLORS.SURFACE_LOW};"
             f"}}"
         )
         return btn

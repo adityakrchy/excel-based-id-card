@@ -25,6 +25,15 @@ class StudioTab(str, Enum):
     EXPORT_PRINT = "export_print"
 
 
+class TabState(str, Enum):
+    """Progress state of a workspace tab."""
+
+    IDLE = "idle"        # available, nothing produced yet
+    ACTIVE = "active"    # the workspace the user is in
+    DONE = "done"        # the workspace produced a finished result
+    BLOCKED = "blocked"  # prerequisites are missing
+
+
 class StudioNavBar(QFrame):
     """Navigation ribbon containing Project Hub, workspace tabs, and enterprise security badge."""
 
@@ -47,6 +56,8 @@ class StudioNavBar(QFrame):
         self.setObjectName("studio_nav_bar")
         self.setFixedHeight(44)
         self._buttons: Dict[StudioTab, QPushButton] = {}
+        self._state_dots: Dict[StudioTab, QLabel] = {}
+        self._states: Dict[StudioTab, TabState] = {}
         self._active_tab = StudioTab.HUB
 
         layout = QHBoxLayout(self)
@@ -85,6 +96,13 @@ class StudioNavBar(QFrame):
         tabs_layout.setSpacing(4)
 
         for tab_id, label in self.TABS:
+            dot = QLabel("")
+            dot.setFixedWidth(10)
+            dot.setAlignment(Qt.AlignCenter)
+            dot.setStyleSheet(f"color: {COLORS.TEXT_MUTED}; font-size: 10px;")
+            tabs_layout.addWidget(dot)
+            self._state_dots[tab_id] = dot
+
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setFixedHeight(44)
@@ -221,6 +239,31 @@ class StudioNavBar(QFrame):
         if tab in self._buttons:
             self._buttons[tab].setChecked(True)
             self._active_tab = tab
+
+    def set_tab_state(self, tab: StudioTab, state: TabState) -> None:
+        """Show the progress state of a workspace tab (done / active / blocked)."""
+        self._states[tab] = state
+        dot = self._state_dots.get(tab)
+        if dot is None:
+            return
+
+        if state == TabState.DONE:
+            dot.setText("✓")
+            dot.setStyleSheet(f"color: {COLORS.TERTIARY}; font-size: 11px; font-weight: 700;")
+        elif state == TabState.ACTIVE:
+            dot.setText("●")
+            dot.setStyleSheet(f"color: {COLORS.PRIMARY_CONTAINER}; font-size: 10px;")
+        elif state == TabState.BLOCKED:
+            dot.setText("○")
+            dot.setStyleSheet(f"color: #5A5E68; font-size: 10px;")
+        else:
+            dot.setText("○")
+            dot.setStyleSheet(f"color: {COLORS.TEXT_MUTED}; font-size: 10px;")
+
+    def set_tab_states(self, states: Dict[StudioTab, TabState]) -> None:
+        """Apply a complete set of tab states at once."""
+        for tab, state in states.items():
+            self.set_tab_state(tab, state)
 
     def set_designer_tools_visible(self, visible: bool) -> None:
         self.btn_grid.setVisible(visible)

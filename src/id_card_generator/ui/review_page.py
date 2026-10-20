@@ -39,7 +39,8 @@ from id_card_generator.generation.batch_generator import BatchGenerator
 from id_card_generator.rendering.pillow_renderer import PillowRenderer
 from id_card_generator.review.review_manager import ReviewManager
 from id_card_generator.ui.components.status_pill import StatusPill
-from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -81,8 +82,26 @@ class ReviewPage(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ---------------------------------------------------------
+        # Page header (step badge, title, subtitle)
+        # ---------------------------------------------------------
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.REVIEW)
+        self.page_header = PageHeader(title, subtitle, badge)
+        layout.addWidget(self.page_header)
+
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 8, 16, 0)
+        notice_row.addWidget(self.notice)
+        layout.addLayout(notice_row)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 12, 16, 12)
+        body.setSpacing(12)
+        layout.addLayout(body, stretch=1)
 
         # ---------------------------------------------------------
         # 1. Top Ribbon: Status metrics, Filter buttons, Batch actions
@@ -168,7 +187,7 @@ class ReviewPage(QWidget):
         row2.addStretch()
         top_layout.addLayout(row2)
 
-        layout.addWidget(top_card)
+        body.addWidget(top_card)
 
         # ---------------------------------------------------------
         # 2. Main Workstation Splitter (Preview Center, Inspector Right)
@@ -302,15 +321,16 @@ class ReviewPage(QWidget):
 
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, stretch=1)
+        body.addWidget(splitter, stretch=1)
 
         # ---------------------------------------------------------
         # 3. Bottom Step Navigation Bar (Preserved for compatibility)
         # ---------------------------------------------------------
-        self.nav_bar = StepNavBar(
-            prev_label="Batch Generate",
-            next_label="Export Approved Cards",
-            step_badge="Step 6 of 7: Review Cards",
+        back_label, next_label, badge = workflow.footer_labels(WorkflowStep.REVIEW)
+        self.nav_bar = PageFooter(
+            prev_label=back_label,
+            next_label=next_label,
+            step_badge=badge,
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value))
@@ -428,10 +448,10 @@ class ReviewPage(QWidget):
         count = self.manager.batch_approve_valid()
         self.review_updated.emit(self.manager)
         self._update_display()
-        QMessageBox.information(
-            self,
-            "Batch Approval",
-            f"Approved {count} valid cards automatically.\nCards with missing photos or critical errors remain pending review.",
+        self.notice.set_message(
+            f"Approved {count} valid cards. Cards with missing photos or critical "
+            f"errors stay pending review.",
+            severity="success",
         )
 
     def _regenerate_current(self) -> None:
@@ -453,12 +473,16 @@ class ReviewPage(QWidget):
                 self.manager.set_status(rec.record_id, ReviewStatus.PENDING)
                 self.review_updated.emit(self.manager)
                 self._update_display()
-                QMessageBox.information(self, "Regenerated", f"Successfully re-rendered card for PIN {rec.pin}.")
+                self.notice.set_message(
+                    f"Re-rendered the card for PIN {rec.pin}.", severity="success"
+                )
             else:
-                QMessageBox.critical(self, "Render Error", f"Failed to re-render: {res.error_message}")
+                self.notice.set_message(
+                    f"Failed to re-render: {res.error_message}", severity="error"
+                )
         except Exception as e:
             logger.error("Failed to regenerate card: %s", e)
-            QMessageBox.critical(self, "Error", f"Failed to re-render card: {e}")
+            self.notice.set_message(f"Failed to re-render card: {e}", severity="error")
 
     def _on_search_changed(self, text: str) -> None:
         self.manager.filter_text = text

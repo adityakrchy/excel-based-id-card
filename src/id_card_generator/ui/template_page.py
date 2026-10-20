@@ -40,7 +40,8 @@ from id_card_generator.ui.dialogs.blank_canvas_dialog import (
     CanvasPropertiesDialog,
 )
 from id_card_generator.ui.dialogs.template_cleanup_dialog import TemplateCleanupDialog
-from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +153,26 @@ class TemplatePage(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ---------------------------------------------------------
+        # Page header (step badge, title, subtitle)
+        # ---------------------------------------------------------
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.TEMPLATES)
+        self.page_header = PageHeader(title, subtitle, badge)
+        layout.addWidget(self.page_header)
+
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 8, 16, 0)
+        notice_row.addWidget(self.notice)
+        layout.addLayout(notice_row)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 12, 16, 12)
+        body.setSpacing(12)
+        layout.addLayout(body, stretch=1)
 
         # Header & Action Bar
         top_bar = QHBoxLayout()
@@ -182,7 +201,7 @@ class TemplatePage(QWidget):
         self.btn_cleanup.clicked.connect(self._open_cleanup_dialog)
         top_bar.addWidget(self.btn_cleanup)
 
-        layout.addLayout(top_bar)
+        body.addLayout(top_bar)
 
         # Main Splitter: Left List (templates) vs Right Workspace (preview + properties)
         main_splitter = QSplitter(Qt.Horizontal)
@@ -362,13 +381,14 @@ class TemplatePage(QWidget):
 
         main_splitter.setStretchFactor(0, 1)
         main_splitter.setStretchFactor(1, 4)
-        layout.addWidget(main_splitter, stretch=1)
+        body.addWidget(main_splitter, stretch=1)
 
         # Bottom Step Navigation Bar
-        self.nav_bar = StepNavBar(
-            prev_label="Photo Library",
-            next_label="Canvas Editor & Field Mapping",
-            step_badge="Step 3 of 7: Template",
+        back_label, next_label, badge = workflow.footer_labels(WorkflowStep.TEMPLATES)
+        self.nav_bar = PageFooter(
+            prev_label=back_label,
+            next_label=next_label,
+            step_badge=badge,
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.PHOTOS.value))

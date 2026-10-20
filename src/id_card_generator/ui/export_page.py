@@ -44,7 +44,8 @@ from id_card_generator.core.models import (
 )
 from id_card_generator.export.export_manager import ExportManager
 from id_card_generator.ui.components.status_pill import StatusPill
-from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -210,8 +211,26 @@ class ExportPage(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ---------------------------------------------------------
+        # Page header (step badge, title, subtitle)
+        # ---------------------------------------------------------
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.EXPORT)
+        self.page_header = PageHeader(title, subtitle, badge)
+        layout.addWidget(self.page_header)
+
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 8, 16, 0)
+        notice_row.addWidget(self.notice)
+        layout.addLayout(notice_row)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 12, 16, 12)
+        body.setSpacing(12)
+        layout.addLayout(body, stretch=1)
 
         # ---------------------------------------------------------
         # 1. Top Preflight Context Ribbon
@@ -242,7 +261,7 @@ class ExportPage(QWidget):
         self.btn_run_preflight.clicked.connect(self._verify_preflight)
         ribbon_layout.addWidget(self.btn_run_preflight)
 
-        layout.addWidget(top_ribbon)
+        body.addWidget(top_ribbon)
 
         # ---------------------------------------------------------
         # 2. Main Workstation Splitter (A4 Canvas Left, Settings Right)
@@ -393,15 +412,16 @@ class ExportPage(QWidget):
 
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
-        layout.addWidget(splitter, stretch=1)
+        body.addWidget(splitter, stretch=1)
 
         # ---------------------------------------------------------
         # 3. Bottom Step Navigation Bar (Preserved for compatibility)
         # ---------------------------------------------------------
-        self.nav_bar = StepNavBar(
-            prev_label="Review Cards",
-            next_label="Complete & Return to Dashboard",
-            step_badge="Step 7 of 7: Export Cards",
+        back_label, next_label, badge = workflow.footer_labels(WorkflowStep.EXPORT)
+        self.nav_bar = PageFooter(
+            prev_label=back_label,
+            next_label=next_label,
+            step_badge=badge,
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.REVIEW.value))
@@ -421,19 +441,20 @@ class ExportPage(QWidget):
     def _verify_preflight(self) -> None:
         if not self.review_records:
             self.pill_preflight.set_status("PREFLIGHT: NO DATA", color=SEMANTIC_WARNING)
-            QMessageBox.warning(self, "Preflight", "No cards loaded in review session to verify.")
+            self.notice.set_message(
+                "No cards loaded in the review session to verify.", severity="warning"
+            )
             return
 
         approved = sum(1 for r in self.review_records if r.status.value == "approved")
         self.pill_preflight.set_status(f"PREFLIGHT: {approved} READY", color=SEMANTIC_SUCCESS)
-        QMessageBox.information(
-            self,
-            "Preflight Verification",
-            f"Preflight Checks Passed:\n\n"
-            f"• Printable Sheet: ISO 216 A4 (210 × 297 mm) @ 300 DPI\n"
-            f"• Imposition Layout: {self.spin_cols.value()} × {self.spin_rows.value()} ({self.spin_cols.value() * self.spin_rows.value()} cards/sheet)\n"
-            f"• Crop Marks: {'Enabled' if self.chk_crop_marks.isChecked() else 'Disabled'}\n"
-            f"• Approved Cards Ready: {approved} of {len(self.review_records)}",
+        self.notice.set_message(
+            f"Preflight passed - A4 210 × 297 mm @ 300 DPI, "
+            f"{self.spin_cols.value()} × {self.spin_rows.value()} layout "
+            f"({self.spin_cols.value() * self.spin_rows.value()} cards/sheet), "
+            f"crop marks {'on' if self.chk_crop_marks.isChecked() else 'off'}, "
+            f"{approved} of {len(self.review_records)} cards ready.",
+            severity="success",
         )
 
     def set_export_context(
@@ -463,11 +484,15 @@ class ExportPage(QWidget):
 
     def _run_export(self) -> None:
         if not self.last_export_dir:
-            QMessageBox.warning(self, "No Destination", "Please choose an output directory first.")
+            self.notice.set_message(
+                "Choose an output directory before exporting.", severity="warning"
+            )
             return
 
         if not self.review_records:
-            QMessageBox.warning(self, "No Records", "No reviewed records available to export.")
+            self.notice.set_message(
+                "No reviewed records available to export.", severity="warning"
+            )
             return
 
         is_jpeg = self.cmb_format.currentIndex() == 1
@@ -503,11 +528,14 @@ class ExportPage(QWidget):
             self.btn_open_folder.setVisible(True)
             self.export_completed.emit(result)
 
-            QMessageBox.information(self, "Export Successful", f"Successfully exported {result.exported_count} ID cards.")
+            self.notice.set_message(
+                f"Exported {result.exported_count} ID cards to {self.last_export_dir.name}.",
+                severity="success",
+            )
 
         except Exception as e:
             logger.error("Export error: %s", e)
-            QMessageBox.critical(self, "Export Error", f"Export failed: {e}")
+            self.notice.set_message(f"Export failed: {e}", severity="error")
 
     def _open_in_explorer(self) -> None:
         if not self.last_export_dir or not self.last_export_dir.exists():

@@ -27,7 +27,8 @@ from id_card_generator.core.models import PhotoMatchResult, ProjectConfiguration
 from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.photo_matcher import MatchSummary, PhotoMatcher
 from id_card_generator.tasks.photo_indexing_worker import PhotoIndexingWorker
-from id_card_generator.ui.step_nav_bar import StepNavBar
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,24 @@ class PhotoLibraryPage(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Page header ---------------------------------------------------------
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.PHOTOS)
+        self.page_header = PageHeader(title, subtitle, badge)
+        layout.addWidget(self.page_header)
+
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 8, 16, 0)
+        notice_row.addWidget(self.notice)
+        layout.addLayout(notice_row)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 12, 16, 12)
+        body.setSpacing(10)
+        layout.addLayout(body, stretch=1)
 
         # 1. Directory Selection Card
         top_card = QFrame()
@@ -89,7 +106,7 @@ class PhotoLibraryPage(QWidget):
         self.lbl_workspace_photos.setVisible(False)
         top_vlayout.addWidget(self.lbl_workspace_photos)
 
-        layout.addWidget(top_card)
+        body.addWidget(top_card)
 
         # 2. Live Background Queue & Indexing Banner (Visible during scanning)
         self.queue_card = QFrame()
@@ -121,7 +138,7 @@ class PhotoLibraryPage(QWidget):
         self.progress_queue.setVisible(False)
         queue_layout.addWidget(self.progress_queue)
 
-        layout.addWidget(self.queue_card)
+        body.addWidget(self.queue_card)
 
         # 3. Matching Rules Card (Generic Column, Prefix, Suffix)
         rules_card = QFrame()
@@ -152,7 +169,7 @@ class PhotoLibraryPage(QWidget):
         rules_layout.addWidget(self.txt_suffix)
 
         rules_layout.addStretch()
-        layout.addWidget(rules_card)
+        body.addWidget(rules_card)
 
         # 4. Tabbed Workspace: Record Associations vs Live Photo Stream
         self.tabs = QTabWidget()
@@ -241,13 +258,14 @@ class PhotoLibraryPage(QWidget):
         tab_stream_layout.addWidget(self.table_stream)
         self.tabs.addTab(tab_stream, "Live Photo Queue (0)")
 
-        layout.addWidget(self.tabs, stretch=1)
+        body.addWidget(self.tabs, stretch=1)
 
         # 5. Bottom Step Navigation Bar
-        self.nav_bar = StepNavBar(
-            prev_label="Data Source",
-            next_label="Choose Template",
-            step_badge="Step 2 of 7: Photo Library",
+        back_label, next_label, badge = workflow.footer_labels(WorkflowStep.PHOTOS)
+        self.nav_bar = PageFooter(
+            prev_label=back_label,
+            next_label=next_label,
+            step_badge=badge,
             parent=self,
         )
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.DATA_SOURCE.value))

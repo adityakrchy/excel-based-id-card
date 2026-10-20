@@ -40,6 +40,7 @@ from id_card_generator.resources.resource_loader import get_resource_path
 from id_card_generator.tasks.task_manager import TaskManager
 from id_card_generator.templates.template_manager import TemplateManager
 from id_card_generator.ui.components import StudioHeaderBar, StudioNavBar, StudioTab
+from id_card_generator.ui.components.studio_nav_bar import TabState
 from id_card_generator.ui.dashboard_page import DashboardPage
 from id_card_generator.ui.data_source_page import DataSourcePage
 from id_card_generator.ui.dialogs.new_project_dialog import NewProjectDialog
@@ -49,12 +50,12 @@ from id_card_generator.ui.editor_page import EditorPage
 from id_card_generator.ui.export_page import ExportPage
 from id_card_generator.ui.generation_page import GenerationPage
 from id_card_generator.ui.photo_library_page import PhotoLibraryPage
-from id_card_generator.ui.project_hub_view import ProjectHubView
 from id_card_generator.ui.review_page import ReviewPage
 from id_card_generator.ui.settings_page import SettingsPage
 from id_card_generator.ui.studio_tokens import COLORS
 from id_card_generator.ui.template_page import TemplatePage
 from id_card_generator.ui.theme_manager import ThemeManager
+from id_card_generator.ui import workflow
 from id_card_generator.ui.workflow_nav import WorkflowNav
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,12 @@ class MainWindow(QMainWindow):
         self.settings = RenderSettings()
         self.last_generation_summary: Optional[GenerationSummary] = None
         self.template_manager = TemplateManager()
+
+        # Progress of every pipeline step, used to badge the workspace ribbon.
+        self._completed_steps: Dict[WorkflowStep, bool] = {
+            stage.step: False for stage in workflow.STAGES
+        }
+        self._current_step: WorkflowStep = WorkflowStep.DASHBOARD
 
         self._setup_ui()
         self._setup_menus()
@@ -146,6 +153,9 @@ class MainWindow(QMainWindow):
         self.cmb_toolbar_theme.currentIndexChanged.connect(self._on_toolbar_theme_changed)
         self.top_toolbar.addWidget(self.cmb_toolbar_theme)
 
+        # Legacy sidebar: kept as an off-canvas state mirror of the workflow so
+        # external code can still query which step is active.  It is never
+        # added to the visible layout - the studio ribbon is the navigation.
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
         self.nav_buttons: Dict[WorkflowStep, QPushButton] = {}
@@ -338,8 +348,9 @@ class MainWindow(QMainWindow):
         """Switch workspace page and synchronize navigation indicators."""
         idx = self.step_to_index.get(step, 0)
         self.stack.setCurrentIndex(idx)
+        self._current_step = step
 
-        # Update sidebar buttons
+        # Update sidebar buttons (state mirror kept for compatibility)
         for s, btn in self.nav_buttons.items():
             btn.setChecked(s == step)
 
@@ -348,24 +359,15 @@ class MainWindow(QMainWindow):
 
         # Update studio nav bar active tab
         if hasattr(self, "studio_nav"):
-            if step == WorkflowStep.DASHBOARD:
-                self.studio_nav.set_active_tab(StudioTab.HUB)
-                self.studio_nav.set_designer_tools_visible(False)
-            elif step == WorkflowStep.TEMPLATES:
-                self.studio_nav.set_active_tab(StudioTab.TEMPLATES)
-                self.studio_nav.set_designer_tools_visible(False)
-            elif step == WorkflowStep.CANVAS_EDITOR:
-                self.studio_nav.set_active_tab(StudioTab.DESIGNER)
-                self.studio_nav.set_designer_tools_visible(True)
-            elif step in (WorkflowStep.DATA_SOURCE, WorkflowStep.PHOTOS):
-                self.studio_nav.set_active_tab(StudioTab.DATA_MAPPING)
-                self.studio_nav.set_designer_tools_visible(False)
-            elif step in (WorkflowStep.GENERATE, WorkflowStep.REVIEW):
-                self.studio_nav.set_active_tab(StudioTab.GENERATE_PREVIEW)
-                self.studio_nav.set_designer_tools_visible(False)
-            elif step == WorkflowStep.EXPORT:
-                self.studio_nav.set_active_tab(StudioTab.EXPORT_PRINT)
-                self.studio_nav.set_designer_tools_visible(False)
+            workspace = workflow.workspace_for(step)
+            for tab in StudioTab:
+                if tab.value == workspace:
+                    self.studio_nav.set_active_tab(tab)
+                    break
+            self.studio_nav.set_designer_tools_visible(
+                step == WorkflowStep.CANVAS_EDITOR
+            )
+            self._refresh_tab_states()
 
         # Context updates on page entry
         if step == WorkflowStep.CANVAS_EDITOR:
@@ -404,10 +406,44 @@ class MainWindow(QMainWindow):
 
         self._refresh_status_bar()
 
+    def _refresh_tab_states(self) -> None:
+        """Badge every workspace tab with its progress state."""
+        if not hasattr(self, "studio_nav"):
+            return
+
+        states: Dict[StudioTab, TabState] = {}
+        for tab in StudioTab:
+            steps = workflow.workspace_steps(tab.value)
+            if not steps:
+                states[tab] = TabState.IDLE
+                continue
+
+            if any(step == self._current_step for step in steps):
+                states[tab] = TabState.ACTIVE
+                continue
+
+            if all(workflow.step_completed(step, self._completed_steps) for step in steps):
+                states[tab] = TabState.DONE
+                continue
+
+            blocked = any(
+                workflow.missing_requirements(step, self._completed_steps)
+                for step in steps
+            )
+            states[tab] = TabState.BLOCKED if blocked else TabState.IDLE
+
+        self.studio_nav.set_tab_states(states)
+
+    def _mark_step_completed(self, step: WorkflowStep, completed: bool = True) -> None:
+        """Record the progress of a pipeline step and refresh the ribbon."""
+        self._completed_steps[step] = completed
+        self.workflow_nav.mark_step_completed(step, completed)
+        self._refresh_tab_states()
+
     def _on_data_loaded(self, columns: List[str], records: List[SourceRecord], report) -> None:
         self.columns = columns
         self.records = records
-        self.workflow_nav.mark_step_completed(WorkflowStep.DATA_SOURCE, True)
+        self._mark_step_completed(WorkflowStep.DATA_SOURCE, True)
         self.page_photos.set_columns(columns)
         self.page_photos.set_records(records)
         self.page_templates.set_sample_record(records[0] if records else None)
@@ -416,29 +452,29 @@ class MainWindow(QMainWindow):
 
     def _on_matching_updated(self, match_results: Dict[str, PhotoMatchResult], summary) -> None:
         self.match_results = match_results
-        self.workflow_nav.mark_step_completed(WorkflowStep.PHOTOS, summary.matched_count > 0)
+        self._mark_step_completed(WorkflowStep.PHOTOS, summary.matched_count > 0)
         self._refresh_dashboard_metrics()
         self.status_bar.showMessage(f"Photos updated: {summary.matched_count} matched, {summary.missing_count} missing.")
 
     def _on_template_selected(self, template: TemplateDefinition) -> None:
         self.active_template = template
-        self.workflow_nav.mark_step_completed(WorkflowStep.TEMPLATES, True)
+        self._mark_step_completed(WorkflowStep.TEMPLATES, True)
         self._refresh_dashboard_metrics()
         self.status_bar.showMessage(f"Active template set: {template.name}")
 
     def _on_editor_template_updated(self, template: TemplateDefinition) -> None:
         self.active_template = template
-        self.workflow_nav.mark_step_completed(WorkflowStep.CANVAS_EDITOR, True)
+        self._mark_step_completed(WorkflowStep.CANVAS_EDITOR, True)
 
     def _on_generation_completed(self, summary: GenerationSummary) -> None:
         self.last_generation_summary = summary
-        self.workflow_nav.mark_step_completed(WorkflowStep.GENERATE, summary.completed_count > 0)
+        self._mark_step_completed(WorkflowStep.GENERATE, summary.completed_count > 0)
         self._refresh_dashboard_metrics()
         self.status_bar.showMessage(f"Generation finished: {summary.completed_count} cards produced in staging.")
 
     def _on_review_updated(self, review_manager) -> None:
         c = review_manager.counts
-        self.workflow_nav.mark_step_completed(WorkflowStep.REVIEW, c["approved"] > 0)
+        self._mark_step_completed(WorkflowStep.REVIEW, c["approved"] > 0)
         self._refresh_dashboard_metrics()
 
     def _on_policy_changed(self, policy: MissingPhotoPolicy) -> None:
@@ -721,17 +757,14 @@ class MainWindow(QMainWindow):
                     return False
 
             self.set_project(cfg, workspace_path=file_path)
-            if not os.environ.get("PYTEST_CURRENT_TEST"):
-                QMessageBox.information(
-                    self,
-                    "Project Loaded",
-                    f"Project '{cfg.project_name}' loaded successfully from:\n{file_path.name}",
-                )
+            self.status_bar.showMessage(f"Project '{cfg.project_name}' loaded from {file_path.name}")
             return True
         except Exception as e:
             logger.error("Failed to load project: %s", e)
             if not os.environ.get("PYTEST_CURRENT_TEST"):
                 QMessageBox.critical(self, "Load Error", f"Could not load project from {file_path.name}:\n{e}")
+            else:
+                self.status_bar.showMessage(f"Load error: {e}")
             return False
 
     def _save_project(self) -> None:
@@ -793,8 +826,10 @@ class MainWindow(QMainWindow):
 
             self._refresh_status_bar()
             self._refresh_dashboard_metrics()
-            if not os.environ.get("PYTEST_CURRENT_TEST"):
-                QMessageBox.information(self, "Project Saved", f"Project successfully saved to:\n{path.name}")
+            # Non-blocking confirmation - a modal dialog would stall the flow.
+            self.status_bar.showMessage(f"Project saved to {path.name}")
         except Exception as e:
             logger.error("Failed to save project: %s", e)
-            QMessageBox.critical(self, "Save Error", f"Could not save project: {e}")
+            self.status_bar.showMessage(f"Save failed: {e}")
+            if not os.environ.get("PYTEST_CURRENT_TEST"):
+                QMessageBox.critical(self, "Save Error", f"Could not save project: {e}")
