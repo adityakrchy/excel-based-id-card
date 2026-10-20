@@ -222,7 +222,13 @@ def footer_labels(step: WorkflowStep) -> Tuple[Optional[str], Optional[str], str
     else:
         next_label = None
 
-    back_label = _BY_STEP[previous].nav_label if previous is not None else None
+    if previous is not None:
+        back_label = _BY_STEP[previous].nav_label
+    elif step != WorkflowStep.DASHBOARD:
+        # The first pipeline step still offers a way back to the hub.
+        back_label = _BY_STEP[WorkflowStep.DASHBOARD].nav_label
+    else:
+        back_label = None
     return back_label, next_label, step_badge(step)
 
 

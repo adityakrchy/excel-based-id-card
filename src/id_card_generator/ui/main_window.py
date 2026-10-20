@@ -422,13 +422,21 @@ class MainWindow(QMainWindow):
                 states[tab] = TabState.ACTIVE
                 continue
 
-            if all(workflow.step_completed(step, self._completed_steps) for step in steps):
+            finished = [
+                workflow.step_completed(step, self._completed_steps) for step in steps
+            ]
+            if all(finished):
                 states[tab] = TabState.DONE
                 continue
 
-            blocked = any(
-                workflow.missing_requirements(step, self._completed_steps)
-                for step in steps
+            if any(finished):
+                states[tab] = TabState.PARTIAL
+                continue
+
+            blocked = bool(
+                workflow.missing_requirements(
+                    steps[0], self._completed_steps
+                )
             )
             states[tab] = TabState.BLOCKED if blocked else TabState.IDLE
 

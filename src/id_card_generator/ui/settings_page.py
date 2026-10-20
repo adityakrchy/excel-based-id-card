@@ -9,15 +9,21 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from id_card_generator.core.constants import APP_NAME, APP_VERSION, MissingPhotoPolicy
+from id_card_generator.core.constants import (
+    APP_NAME,
+    APP_VERSION,
+    MissingPhotoPolicy,
+    WorkflowStep,
+)
 from id_card_generator.core.logging_config import export_diagnostic_logs, get_current_log_path
+from id_card_generator.ui import workflow
+from id_card_generator.ui.components.page_scaffold import InlineNotice, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +40,23 @@ class SettingsPage(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        layout.addWidget(QLabel("<h2>Application Settings & Diagnostics</h2>"))
+        badge, title, subtitle = workflow.page_header_text(WorkflowStep.SETTINGS)
+        self.page_header = PageHeader(title, subtitle, badge)
+        layout.addWidget(self.page_header)
+
+        self.notice = InlineNotice()
+        notice_row = QHBoxLayout()
+        notice_row.setContentsMargins(16, 8, 16, 0)
+        notice_row.addWidget(self.notice)
+        layout.addLayout(notice_row)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(24, 20, 24, 24)
+        body.setSpacing(16)
+        layout.addLayout(body, stretch=1)
 
         # 1. UI Appearance
         app_card = QFrame()
@@ -60,7 +79,7 @@ class SettingsPage(QWidget):
         theme_row.addWidget(self.cmb_theme)
         theme_row.addStretch()
         app_layout.addLayout(theme_row)
-        layout.addWidget(app_card)
+        body.addWidget(app_card)
 
         # 2. Processing Defaults
         proc_card = QFrame()
@@ -88,7 +107,7 @@ class SettingsPage(QWidget):
         dpi_row.addStretch()
         proc_layout.addLayout(dpi_row)
 
-        layout.addWidget(proc_card)
+        body.addWidget(proc_card)
 
         # 3. Diagnostics & Logs
         diag_card = QFrame()
@@ -104,7 +123,7 @@ class SettingsPage(QWidget):
         self.btn_export_logs = QPushButton("Export Diagnostic Logs...")
         self.btn_export_logs.clicked.connect(self._export_logs)
         diag_layout.addWidget(self.btn_export_logs)
-        layout.addWidget(diag_card)
+        body.addWidget(diag_card)
 
         # 4. About Info
         about_card = QFrame()
@@ -118,9 +137,9 @@ class SettingsPage(QWidget):
         )
         lbl_about.setStyleSheet("color: #64748B; font-size: 12px;")
         about_layout.addWidget(lbl_about)
-        layout.addWidget(about_card)
+        body.addWidget(about_card)
 
-        layout.addStretch()
+        body.addStretch()
 
     def _on_theme_changed(self, idx: int) -> None:
         theme = self.cmb_theme.currentData() or "black"
@@ -137,7 +156,9 @@ class SettingsPage(QWidget):
         if dest:
             try:
                 export_diagnostic_logs(Path(dest))
-                QMessageBox.information(self, "Logs Exported", f"Diagnostic logs exported to {dest}.")
+                self.notice.set_message(
+                    f"Diagnostic logs exported to {dest}.", severity="success"
+                )
             except Exception as e:
                 logger.error("Failed to export logs: %s", e)
-                QMessageBox.critical(self, "Log Export Error", f"Failed to export logs: {e}")
+                self.notice.set_message(f"Failed to export logs: {e}", severity="error")

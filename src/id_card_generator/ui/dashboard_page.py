@@ -343,11 +343,6 @@ class DashboardPage(QWidget):
         self.btn_new_project.setObjectName("btn_primary")
         self.btn_new_project.setCursor(Qt.PointingHandCursor)
         self.btn_new_project.setFixedHeight(34)
-        self.btn_new_project.setStyleSheet(
-            f"QPushButton {{ background-color: {PRIMARY}; color: #FFFFFF; font-weight: 700; "
-            f"border: none; border-radius: 4px; padding: 0 14px; font-size: 12px; }}"
-            f"QPushButton:hover {{ background-color: #85A3FF; }}"
-        )
         self.btn_new_project.clicked.connect(lambda: self.new_project_requested.emit())
         action_btns.addWidget(self.btn_new_project)
 
@@ -355,11 +350,6 @@ class DashboardPage(QWidget):
         self.btn_open_project = QPushButton("📁 Open Project...  ⌘O")
         self.btn_open_project.setCursor(Qt.PointingHandCursor)
         self.btn_open_project.setFixedHeight(34)
-        self.btn_open_project.setStyleSheet(
-            f"QPushButton {{ background-color: {SURFACE_CONTAINER}; color: #FFFFFF; font-weight: 600; "
-            f"border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 0 14px; font-size: 12px; }}"
-            f"QPushButton:hover {{ background-color: {SURFACE_HIGH}; border-color: #6C8CFF; }}"
-        )
         self.btn_open_project.clicked.connect(lambda: self.open_project_requested.emit())
         action_btns.addWidget(self.btn_open_project)
 
@@ -367,11 +357,6 @@ class DashboardPage(QWidget):
         self.btn_import = QPushButton("⬆ Import")
         self.btn_import.setCursor(Qt.PointingHandCursor)
         self.btn_import.setFixedHeight(34)
-        self.btn_import.setStyleSheet(
-            f"QPushButton {{ background-color: {SURFACE_CONTAINER}; color: #FFFFFF; font-weight: 600; "
-            f"border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; padding: 0 12px; font-size: 12px; }}"
-            f"QPushButton:hover {{ background-color: {SURFACE_HIGH}; border-color: #6C8CFF; }}"
-        )
         self.btn_import.clicked.connect(lambda: self.navigate_requested.emit(WorkflowStep.DATA_SOURCE.value))
         action_btns.addWidget(self.btn_import)
 

@@ -39,10 +39,12 @@ class SurfaceCard(QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        self.header = QHBoxLayout()
+        # The header row is a real widget so it can be shown / hidden.
+        self.header_widget = QWidget()
+        self.header = QHBoxLayout(self.header_widget)
         self.header.setContentsMargins(14, 10, 14, 8)
         self.header.setSpacing(8)
-        self.header.setVisible(bool(title or subtitle))
+        self.header_widget.setVisible(bool(title or subtitle))
 
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
@@ -69,7 +71,7 @@ class SurfaceCard(QFrame):
         self.header_actions.setSpacing(6)
         self.header.addLayout(self.header_actions)
 
-        outer.addLayout(self.header)
+        outer.addWidget(self.header_widget)
 
         self.divider = QFrame()
         self.divider.setFixedHeight(1)
@@ -96,14 +98,17 @@ class SurfaceCard(QFrame):
 
     def set_title(self, title: str) -> None:
         self.lbl_title.setText(title)
-        self.header.setVisible(bool(title or self.lbl_subtitle.text()))
-        self.divider.setVisible(self.header.isVisible())
+        self._sync_header_visibility()
 
     def set_subtitle(self, subtitle: str) -> None:
         self.lbl_subtitle.setText(subtitle)
         self.lbl_subtitle.setVisible(bool(subtitle))
-        self.header.setVisible(bool(self.lbl_title.text() or subtitle))
-        self.divider.setVisible(self.header.isVisible())
+        self._sync_header_visibility()
+
+    def _sync_header_visibility(self) -> None:
+        visible = bool(self.lbl_title.text() or self.lbl_subtitle.text())
+        self.header_widget.setVisible(visible)
+        self.divider.setVisible(visible)
 
 
 class StatTile(QFrame):

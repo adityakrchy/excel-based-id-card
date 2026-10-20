@@ -87,7 +87,7 @@ class EditorPage(QWidget):
 
         # 0. Page header with the template management actions
         badge, title, subtitle = workflow.page_header_text(WorkflowStep.CANVAS_EDITOR)
-        self.page_header = PageHeader(title, subtitle, badge, height=56)
+        self.page_header = PageHeader(title, subtitle, badge, height=64)
         main_layout.addWidget(self.page_header)
 
         self.lbl_tmpl_name = QLabel("Default Template")

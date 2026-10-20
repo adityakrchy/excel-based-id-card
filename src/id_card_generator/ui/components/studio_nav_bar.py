@@ -30,6 +30,7 @@ class TabState(str, Enum):
 
     IDLE = "idle"        # available, nothing produced yet
     ACTIVE = "active"    # the workspace the user is in
+    PARTIAL = "partial"  # some steps of the workspace are finished
     DONE = "done"        # the workspace produced a finished result
     BLOCKED = "blocked"  # prerequisites are missing
 
@@ -250,6 +251,9 @@ class StudioNavBar(QFrame):
         if state == TabState.DONE:
             dot.setText("✓")
             dot.setStyleSheet(f"color: {COLORS.TERTIARY}; font-size: 11px; font-weight: 700;")
+        elif state == TabState.PARTIAL:
+            dot.setText("◐")
+            dot.setStyleSheet(f"color: {COLORS.WARNING}; font-size: 11px;")
         elif state == TabState.ACTIVE:
             dot.setText("●")
             dot.setStyleSheet(f"color: {COLORS.PRIMARY_CONTAINER}; font-size: 10px;")
