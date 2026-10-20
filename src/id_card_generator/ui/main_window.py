@@ -39,7 +39,12 @@ from id_card_generator.generation.batch_generator import GenerationSummary
 from id_card_generator.resources.resource_loader import get_resource_path
 from id_card_generator.tasks.task_manager import TaskManager
 from id_card_generator.templates.template_manager import TemplateManager
-from id_card_generator.ui.components import StudioHeaderBar, StudioNavBar, StudioTab
+from id_card_generator.ui.components import (
+    StudioHeaderBar,
+    StudioNavBar,
+    StudioTab,
+    normalize_control_heights,
+)
 from id_card_generator.ui.components.studio_nav_bar import TabState
 from id_card_generator.ui.dashboard_page import DashboardPage
 from id_card_generator.ui.data_source_page import DataSourcePage
@@ -215,6 +220,12 @@ class MainWindow(QMainWindow):
             WorkflowStep.EXPORT: 7,
             WorkflowStep.SETTINGS: 8,
         }
+
+        # Every input control shares one height so the rows read evenly.
+        for index in range(self.stack.count()):
+            page = self.stack.widget(index)
+            if page is not None:
+                normalize_control_heights(page)
 
         main_layout.addWidget(self.stack)
 

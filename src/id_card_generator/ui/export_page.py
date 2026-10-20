@@ -46,6 +46,7 @@ from id_card_generator.export.export_manager import ExportManager
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
+from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -66,6 +67,9 @@ from id_card_generator.ui.studio_tokens import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Every control in a toolbar row uses the same height.
+CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
 
 
 class A4SheetPreviewWidget(QWidget):
@@ -387,7 +391,8 @@ class ExportPage(QWidget):
         # Action Execution Box
         self.btn_execute_export = QPushButton("⚡ Export Cards & Generate Sheets")
         self.btn_execute_export.setObjectName("btn_success")
-        self.btn_execute_export.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
+        self.btn_execute_export.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_execute_export.setStyleSheet("font-size: 13px; font-weight: bold; padding: 4px 12px;")
         self.btn_execute_export.clicked.connect(self._run_export)
         right_layout.addWidget(self.btn_execute_export)
 

@@ -221,6 +221,17 @@ class ThemeManager(QObject):
     # Stylesheet generation
     # ------------------------------------------------------------------
     @classmethod
+    def chevron_icon(cls, down: bool = True, theme: str = "black"):
+        """Return the chevron icon used by dropdown buttons."""
+        from PySide6.QtGui import QIcon
+
+        if down:
+            name = "chevron_down_dark.svg" if theme == "black" else "chevron_down_light.svg"
+        else:
+            name = "chevron_up_dark.svg" if theme == "black" else "chevron_up_light.svg"
+        return QIcon(cls._get_asset_path(name).as_posix())
+
+    @classmethod
     def build_stylesheet(cls, theme: str = "black") -> str:
         """Return the full application stylesheet for the given theme."""
         palette = palette_for(theme)
@@ -326,10 +337,10 @@ QPushButton {
     color: $on_surface;
     border: 1px solid $border;
     border-radius: $radius_sm;
-    padding: 5px 12px;
+    padding: 4px 12px;
     font-size: 12px;
     font-weight: 500;
-    min-height: 20px;
+    min-height: 18px;
 }
 
 QPushButton:hover {
@@ -404,14 +415,34 @@ QPushButton#btn_ghost:hover {
     color: $on_surface;
 }
 
+/* Compact square buttons (zoom steppers, record stepper, ...) */
+QPushButton#btn_stepper, QToolButton#btn_stepper {
+    background-color: $surface_container;
+    color: $on_surface;
+    border: 1px solid $border;
+    border-radius: $radius_sm;
+    padding: 0px;
+    font-size: 13px;
+    font-weight: 700;
+    min-height: 18px;
+}
+
+QPushButton#btn_stepper:hover, QToolButton#btn_stepper:hover {
+    background-color: $surface_high;
+    border-color: $primary_container;
+    color: $on_surface;
+}
+
 /* --- Tool buttons ------------------------------------------------ */
 QToolButton {
     background-color: $surface_container;
     color: $on_surface_variant;
     border: 1px solid $border;
     border-radius: $radius_sm;
-    padding: 4px 8px;
+    padding: 3px 9px;
     font-size: 12px;
+    min-height: 20px;
+    icon-size: 10px 7px;
 }
 
 QToolButton:hover {
@@ -676,25 +707,38 @@ QFrame#ctx_align_rect, QFrame#insp_align_rect, QFrame#segmented {
     border-radius: $radius_sm;
 }
 
-QFrame#ctx_align_rect QToolButton, QFrame#insp_align_rect QToolButton, QFrame#segmented QToolButton {
+QFrame#ctx_align_rect QToolButton, QFrame#insp_align_rect QToolButton,
+QFrame#segmented QToolButton, QFrame#segmented QPushButton {
     background-color: transparent;
     color: $on_surface_variant;
     border: none;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
+    padding: 2px 10px;
+    min-height: 20px;
 }
 
 QFrame#ctx_align_rect QToolButton:hover, QFrame#insp_align_rect QToolButton:hover,
-QFrame#segmented QToolButton:hover {
+QFrame#segmented QToolButton:hover, QFrame#segmented QPushButton:hover {
     background-color: $surface_high;
     color: $on_surface;
 }
 
 QFrame#ctx_align_rect QToolButton:checked, QFrame#insp_align_rect QToolButton:checked,
-QFrame#segmented QToolButton:checked {
+QFrame#segmented QToolButton:checked, QFrame#segmented QPushButton:checked {
     background-color: $primary_container;
-    color: #FFFFFF;
+    color: $on_primary_container;
     font-weight: 600;
+}
+
+QFrame#segmented QLabel {
+    background-color: transparent;
+    color: $on_surface;
+    border: none;
+    font-family: $mono_font;
+    font-size: 11px;
+    padding: 2px 8px;
+    min-height: 20px;
 }
 
 QToolButton#ctx_bold_btn, QToolButton#ctx_italic_btn, QToolButton#ctx_color_btn,

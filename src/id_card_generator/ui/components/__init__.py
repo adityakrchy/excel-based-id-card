@@ -1,5 +1,7 @@
 """ID Studio specialized UI component library."""
 
+from id_card_generator.ui.components.controls import normalize_control_heights
+from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.numeric_well import NumericWell
 from id_card_generator.ui.components.page_scaffold import (
     EmptyState,
@@ -13,6 +15,7 @@ from id_card_generator.ui.components.studio_nav_bar import StudioNavBar, StudioT
 from id_card_generator.ui.components.surface import StatTile, SurfaceCard
 
 __all__ = [
+    "ElidedLabel",
     "EmptyState",
     "InlineNotice",
     "NumericWell",
@@ -24,4 +27,5 @@ __all__ = [
     "StudioNavBar",
     "StudioTab",
     "SurfaceCard",
+    "normalize_control_heights",
 ]

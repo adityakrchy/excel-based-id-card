@@ -50,9 +50,16 @@ from id_card_generator.editor.layers_panel import LayersPanel
 from id_card_generator.templates.template_manager import TemplateManager
 from id_card_generator.ui.dialogs.template_cleanup_dialog import TemplateCleanupDialog
 from id_card_generator.ui import workflow
+from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
+from id_card_generator.ui.studio_tokens import SIZES
+from id_card_generator.ui.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
+
+# Every control in the editor bars uses the same height so the toolbar reads
+# as one even row instead of a set of mismatched boxes.
+CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
 
 
 class EditorPage(QWidget):
@@ -127,7 +134,7 @@ class EditorPage(QWidget):
         # 1. Top Contextual Options Bar
         self.options_bar = QFrame()
         self.options_bar.setObjectName("card_panel")
-        self.options_bar.setFixedHeight(48)
+        self.options_bar.setFixedHeight(36)
         self.opt_layout = QHBoxLayout(self.options_bar)
         self.opt_layout.setContentsMargins(8, 4, 8, 4)
         self.opt_layout.setSpacing(8)
@@ -291,7 +298,7 @@ class EditorPage(QWidget):
             btn.setText(icon_char)
             btn.setToolTip(tooltip)
             btn.setCheckable(True)
-            btn.setFixedSize(38, 34)
+            btn.setFixedSize(38, CONTROL_HEIGHT)
             if tool_id == "select":
                 btn.setChecked(True)
             btn.clicked.connect(lambda checked, tid=tool_id: self._on_tool_selected(tid))
@@ -309,14 +316,14 @@ class EditorPage(QWidget):
         btn_fit = QToolButton()
         btn_fit.setText("⛶")
         btn_fit.setToolTip("Fit Card to View")
-        btn_fit.setFixedSize(38, 32)
+        btn_fit.setFixedSize(38, CONTROL_HEIGHT)
         btn_fit.clicked.connect(self.view.fit_to_view)
         layout.addWidget(btn_fit)
 
         btn_100 = QToolButton()
         btn_100.setText("1:1")
         btn_100.setToolTip("Zoom 100%")
-        btn_100.setFixedSize(38, 32)
+        btn_100.setFixedSize(38, CONTROL_HEIGHT)
         btn_100.clicked.connect(self.view.reset_zoom)
         layout.addWidget(btn_100)
 
@@ -331,13 +338,19 @@ class EditorPage(QWidget):
 
         self.btn_strip_fill = QToolButton()
         self.btn_strip_fill.setFixedSize(22, 20)
-        self.btn_strip_fill.setStyleSheet("background-color: #6c8cff; border: 1px solid #ffffff; border-radius: 2px;")
+        self.btn_strip_fill.setStyleSheet(
+            "QToolButton { background-color: #6c8cff; border: 1px solid #ffffff; "
+            "border-radius: 2px; padding: 0px; min-height: 0px; }"
+        )
         self.btn_strip_fill.setToolTip("Active Fill Color")
         swatch_layout.addWidget(self.btn_strip_fill, alignment=Qt.AlignLeft)
 
         self.btn_strip_stroke = QToolButton()
         self.btn_strip_stroke.setFixedSize(22, 20)
-        self.btn_strip_stroke.setStyleSheet("background-color: transparent; border: 2px solid #383d47; border-radius: 2px;")
+        self.btn_strip_stroke.setStyleSheet(
+            "QToolButton { background-color: transparent; border: 2px solid #383d47; "
+            "border-radius: 2px; padding: 0px; min-height: 0px; }"
+        )
         self.btn_strip_stroke.setToolTip("Active Stroke Color")
         swatch_layout.addWidget(self.btn_strip_stroke, alignment=Qt.AlignRight)
 
@@ -353,7 +366,7 @@ class EditorPage(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
         # Document Preset Pill
-        self.lbl_ctx_doc_dims = QLabel("CR80 Standard")
+        self.lbl_ctx_doc_dims = ElidedLabel("CR80 Standard")
         self.lbl_ctx_doc_dims.setStyleSheet(
             "background-color: #111317; border: 1px solid #383d47; border-radius: 4px; "
             "padding: 3px 8px; color: #b6c4ff; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;"
@@ -362,32 +375,37 @@ class EditorPage(QWidget):
 
         layout.addSpacing(4)
 
-        # Zoom Cluster: [-] [ 100% ] [+] [Fit]
-        btn_zoom_out = QPushButton("-")
-        btn_zoom_out.setFixedSize(24, 26)
+        # Zoom Cluster (segmented control): [-] [ 100% ] [+] [Fit]
+        zoom_cluster = QFrame()
+        zoom_cluster.setObjectName("segmented")
+        zoom_layout = QHBoxLayout(zoom_cluster)
+        zoom_layout.setContentsMargins(2, 2, 2, 2)
+        zoom_layout.setSpacing(2)
+
+        btn_zoom_out = QPushButton("\u2212")
         btn_zoom_out.setToolTip("Zoom Out")
+        btn_zoom_out.setFixedSize(26, 24)
         btn_zoom_out.clicked.connect(self.view.zoom_out)
-        layout.addWidget(btn_zoom_out)
+        zoom_layout.addWidget(btn_zoom_out)
 
         self.lbl_zoom_readout = QLabel("100%")
-        self.lbl_zoom_readout.setStyleSheet(
-            "background-color: #111317; border: 1px solid #383d47; border-radius: 4px; "
-            "padding: 2px 6px; color: #e2e2e8; font-family: 'JetBrains Mono', monospace; font-size: 11px; min-width: 40px;"
-        )
         self.lbl_zoom_readout.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.lbl_zoom_readout)
+        self.lbl_zoom_readout.setMinimumWidth(46)
+        zoom_layout.addWidget(self.lbl_zoom_readout)
 
         btn_zoom_in = QPushButton("+")
-        btn_zoom_in.setFixedSize(24, 26)
         btn_zoom_in.setToolTip("Zoom In")
+        btn_zoom_in.setFixedSize(26, 24)
         btn_zoom_in.clicked.connect(self.view.zoom_in)
-        layout.addWidget(btn_zoom_in)
+        zoom_layout.addWidget(btn_zoom_in)
 
         btn_zoom_fit = QPushButton("Fit")
-        btn_zoom_fit.setFixedHeight(26)
         btn_zoom_fit.setToolTip("Fit Card to View")
+        btn_zoom_fit.setFixedHeight(24)
         btn_zoom_fit.clicked.connect(self.view.fit_to_view)
-        layout.addWidget(btn_zoom_fit)
+        zoom_layout.addWidget(btn_zoom_fit)
+
+        layout.addWidget(zoom_cluster)
 
         layout.addSpacing(6)
 
@@ -399,9 +417,10 @@ class EditorPage(QWidget):
         self.btn_bleed_toggle.setText("Bleed: 3.0mm")
         self.btn_bleed_toggle.setCheckable(True)
         self.btn_bleed_toggle.setChecked(True)
-        self.btn_bleed_toggle.setFixedHeight(26)
+        self.btn_bleed_toggle.setFixedHeight(CONTROL_HEIGHT)
         self.btn_bleed_toggle.setStyleSheet(
-            "QToolButton { background-color: #111317; border: 1px solid #383d47; border-radius: 4px; padding: 2px 6px; font-size: 11px; color: #c4c5d5; }"
+            "QToolButton { background-color: #111317; border: 1px solid #383d47; border-radius: 4px; padding: 2px 8px; font-size: 11px; color: #c4c5d5; }"
+            "QToolButton:hover { background-color: #282a2e; border-color: #6c8cff; }"
             "QToolButton:checked { border-color: #6edba3; color: #6edba3; font-weight: 600; }"
         )
         self.btn_bleed_toggle.setToolTip("Toggle 3.0mm standard print bleed margin guidelines")
@@ -410,35 +429,41 @@ class EditorPage(QWidget):
 
         layout.addSpacing(6)
 
-        # Live Data Preview Stepper
+        # Live Data Preview Stepper (segmented control)
         lbl_data_tag = QLabel("Live Data:")
         lbl_data_tag.setStyleSheet("color: #8e909f; font-size: 11px;")
         layout.addWidget(lbl_data_tag)
 
+        record_cluster = QFrame()
+        record_cluster.setObjectName("segmented")
+        record_layout = QHBoxLayout(record_cluster)
+        record_layout.setContentsMargins(2, 2, 2, 2)
+        record_layout.setSpacing(2)
+
         self.btn_rec_prev = QToolButton()
-        self.btn_rec_prev.setText("◀")
-        self.btn_rec_prev.setFixedSize(22, 26)
+        self.btn_rec_prev.setText("\u25c0")
+        self.btn_rec_prev.setFixedSize(24, 24)
         self.btn_rec_prev.setToolTip("Previous Record")
         self.btn_rec_prev.clicked.connect(self._prev_record)
-        layout.addWidget(self.btn_rec_prev)
+        record_layout.addWidget(self.btn_rec_prev)
 
         self.lbl_rec_stepper = QLabel("No Data")
-        self.lbl_rec_stepper.setStyleSheet(
-            "background-color: #111317; border: 1px solid #383d47; border-radius: 4px; "
-            "padding: 2px 8px; color: #6edba3; font-family: 'JetBrains Mono', monospace; font-size: 11px;"
-        )
-        layout.addWidget(self.lbl_rec_stepper)
+        self.lbl_rec_stepper.setAlignment(Qt.AlignCenter)
+        self.lbl_rec_stepper.setMinimumWidth(74)
+        record_layout.addWidget(self.lbl_rec_stepper)
 
         self.btn_rec_next = QToolButton()
-        self.btn_rec_next.setText("▶")
-        self.btn_rec_next.setFixedSize(22, 26)
+        self.btn_rec_next.setText("\u25b6")
+        self.btn_rec_next.setFixedSize(24, 24)
         self.btn_rec_next.setToolTip("Next Record")
         self.btn_rec_next.clicked.connect(self._next_record)
-        layout.addWidget(self.btn_rec_next)
+        record_layout.addWidget(self.btn_rec_next)
+
+        layout.addWidget(record_cluster)
 
         layout.addSpacing(6)
-        self.btn_test_export = QPushButton("⚡ Test Render")
-        self.btn_test_export.setFixedHeight(26)
+        self.btn_test_export = QPushButton("\u26a1 Test Render")
+        self.btn_test_export.setFixedHeight(CONTROL_HEIGHT)
         self.btn_test_export.setToolTip("Render a high-resolution test preview of the active card")
         self.btn_test_export.clicked.connect(self._on_test_export_clicked)
         layout.addWidget(self.btn_test_export)
@@ -487,7 +512,7 @@ class EditorPage(QWidget):
         self.btn_guides_toggle.setText("⚡ Guides")
         self.btn_guides_toggle.setCheckable(True)
         self.btn_guides_toggle.setChecked(self.scene.snap_settings.smart_guides_enabled)
-        self.btn_guides_toggle.setFixedHeight(28)
+        self.btn_guides_toggle.setFixedHeight(CONTROL_HEIGHT)
         self.btn_guides_toggle.setToolTip("Toggle Smart Alignment Guides (Magenta Lines)")
         self.btn_guides_toggle.toggled.connect(self._on_guides_toggled)
         layout.addWidget(self.btn_guides_toggle)
@@ -497,20 +522,18 @@ class EditorPage(QWidget):
         self.btn_snap_toggle.setText("🧲 Snap")
         self.btn_snap_toggle.setCheckable(True)
         self.btn_snap_toggle.setChecked(self.scene.snap_settings.object_snapping_enabled)
-        self.btn_snap_toggle.setFixedHeight(28)
+        self.btn_snap_toggle.setFixedHeight(CONTROL_HEIGHT)
         self.btn_snap_toggle.setToolTip("Toggle Magnetic Object Snapping (Hold Alt while dragging to bypass)")
         self.btn_snap_toggle.toggled.connect(self._on_snap_toggled)
         layout.addWidget(self.btn_snap_toggle)
 
         # 3. Settings dropdown menu
-        self.btn_snap_menu = QToolButton()
-        self.btn_snap_menu.setText("Snapping ▾")
-        self.btn_snap_menu.setFixedHeight(28)
-        self.btn_snap_menu.setPopupMode(QToolButton.InstantPopup)
+        # A push button with a menu renders the native drop down indicator.
+        self.btn_snap_menu = QPushButton("Snapping")
+        self.btn_snap_menu.setFixedHeight(CONTROL_HEIGHT)
         self.btn_snap_menu.setToolTip("Smart Alignment, Spacing, and Grid Snapping Options")
 
         menu = QMenu(self.btn_snap_menu)
-        menu.setStyleSheet("font-size: 13px; padding: 4px;")
 
         self.act_guides = menu.addAction("Smart Guides (Magenta)")
         self.act_guides.setCheckable(True)

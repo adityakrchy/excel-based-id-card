@@ -36,6 +36,7 @@ from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.components.surface import StatTile
+from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -56,6 +57,9 @@ from id_card_generator.ui.studio_tokens import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Every control in a toolbar row uses the same height.
+CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
 
 
 class GenerationPage(QWidget):
@@ -172,19 +176,22 @@ class GenerationPage(QWidget):
 
         self.btn_generate = QPushButton("▶ Launch Batch Generation")
         self.btn_generate.setObjectName("btn_primary")
-        self.btn_generate.setStyleSheet(f"font-size: 13px; font-weight: bold; padding: 8px 20px;")
+        self.btn_generate.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_generate.setStyleSheet(f"font-size: 13px; font-weight: bold; padding: 4px 16px;")
         self.btn_generate.clicked.connect(self._start_generation)
 
         self.btn_cancel = QPushButton("⏹ Cancel Run")
         self.btn_cancel.setObjectName("btn_danger")
         self.btn_cancel.setEnabled(False)
-        self.btn_cancel.setStyleSheet(f"font-size: 13px; padding: 8px 16px;")
+        self.btn_cancel.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_cancel.setStyleSheet(f"font-size: 13px; padding: 4px 16px;")
         self.btn_cancel.clicked.connect(self._cancel_generation)
 
         self.btn_goto_review = QPushButton("Proceed to Sequential Review ▶")
         self.btn_goto_review.setObjectName("btn_success")
         self.btn_goto_review.setEnabled(False)
-        self.btn_goto_review.setStyleSheet(f"font-size: 13px; font-weight: bold; padding: 8px 20px;")
+        self.btn_goto_review.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_goto_review.setStyleSheet(f"font-size: 13px; font-weight: bold; padding: 4px 16px;")
         self.btn_goto_review.clicked.connect(lambda: self.goto_review_requested.emit())
 
         action_row.addWidget(self.btn_generate)

@@ -41,6 +41,7 @@ from id_card_generator.review.review_manager import ReviewManager
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
+from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
     BORDER_SUBTLE,
@@ -60,6 +61,9 @@ from id_card_generator.ui.studio_tokens import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Every control in a toolbar row uses the same height.
+CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
 
 
 class ReviewPage(QWidget):
@@ -173,7 +177,7 @@ class ReviewPage(QWidget):
             btn.setCheckable(True)
             btn.setFixedHeight(24)
             btn.setStyleSheet(
-                f"QPushButton {{ background-color: {SURFACE_LOWEST}; border: 1px solid {BORDER_SUBTLE}; color: {TEXT_SECONDARY}; font-size: 11px; padding: 2px 8px; border-radius: 3px; }}"
+                f"QPushButton {{ background-color: {SURFACE_LOWEST}; border: 1px solid {BORDER_SUBTLE}; color: {TEXT_SECONDARY}; font-size: 11px; padding: 4px 10px; border-radius: 3px; }}"
                 f"QPushButton:checked {{ background-color: {SURFACE_HIGH}; border: 1px solid {PRIMARY}; color: {PRIMARY}; font-weight: 600; }}"
             )
             if fid == "all":
@@ -273,26 +277,30 @@ class ReviewPage(QWidget):
 
         self.btn_approve = QPushButton("✓ Approve Card")
         self.btn_approve.setObjectName("btn_success")
-        self.btn_approve.setStyleSheet("font-weight: 600; padding: 6px;")
+        self.btn_approve.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_approve.setStyleSheet("font-weight: 600; padding: 4px 10px;")
         self.btn_approve.clicked.connect(lambda: self._set_current_status(ReviewStatus.APPROVED))
         act_box.addWidget(self.btn_approve)
 
         self.btn_reject = QPushButton("✗ Reject Card")
         self.btn_reject.setObjectName("btn_danger")
-        self.btn_reject.setStyleSheet("font-weight: 600; padding: 6px;")
+        self.btn_reject.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_reject.setStyleSheet("font-weight: 600; padding: 4px 10px;")
         self.btn_reject.clicked.connect(lambda: self._set_current_status(ReviewStatus.REJECTED))
         act_box.addWidget(self.btn_reject)
 
         self.btn_correction = QPushButton("⚠ Mark for Correction")
-        self.btn_correction.setStyleSheet(f"border-color: {SEMANTIC_WARNING}; color: {SEMANTIC_WARNING}; padding: 6px;")
+        self.btn_correction.setStyleSheet(f"border-color: {SEMANTIC_WARNING}; color: {SEMANTIC_WARNING}; padding: 4px 10px;")
         self.btn_correction.clicked.connect(lambda: self._set_current_status(ReviewStatus.CORRECTION))
         act_box.addWidget(self.btn_correction)
 
         self.btn_skip = QPushButton("Skip Card")
+        self.btn_skip.setFixedHeight(CONTROL_HEIGHT)
         self.btn_skip.clicked.connect(lambda: self._set_current_status(ReviewStatus.SKIPPED))
         act_box.addWidget(self.btn_skip)
 
         self.btn_regen = QPushButton("⟳ Regenerate Card")
+        self.btn_regen.setFixedHeight(CONTROL_HEIGHT)
         self.btn_regen.clicked.connect(self._regenerate_current)
         act_box.addWidget(self.btn_regen)
 
