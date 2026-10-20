@@ -241,6 +241,20 @@ class MainWindow(QMainWindow):
 
         self.switch_page(WorkflowStep.DASHBOARD)
 
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        """Stop the background workers before the window goes away.
+
+        A worker thread that is still running when its parent is destroyed
+        crashes the application.
+        """
+        for page in (getattr(self, "page_photos", None),):
+            if page is not None and hasattr(page, "shutdown"):
+                try:
+                    page.shutdown()
+                except RuntimeError:
+                    pass
+        super().closeEvent(event)
+
     def _setup_menus(self) -> None:
         menubar = self.menuBar()
 

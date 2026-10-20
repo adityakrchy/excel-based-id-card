@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
-from PySide6.QtCore import QThreadPool, Qt, Signal
+from PySide6.QtCore import QThread, QThreadPool, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -69,6 +69,10 @@ class PhotoLibraryPage(QWidget):
 
         # Incremented for every match request so stale results are dropped.
         self._match_generation = 0
+
+        # Workers that are still shutting down.  Their reference must not be
+        # dropped: destroying a QThread while it is running crashes the app.
+        self._retired_workers: List[QThread] = []
 
         self._setup_ui()
 
@@ -293,6 +297,22 @@ class PhotoLibraryPage(QWidget):
         self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.TEMPLATES.value))
         layout.addWidget(self.nav_bar)
 
+    def _retire_worker(self, worker: QThread) -> None:
+        """Hold on to a worker until it has finished.
+
+        A QThread that is destroyed while it is still running takes the
+        application down with it, so the reference is kept until the thread
+        reports that it is done.
+        """
+        self._retired_workers.append(worker)
+
+        def _release() -> None:
+            if worker in self._retired_workers:
+                self._retired_workers.remove(worker)
+            worker.deleteLater()
+
+        worker.finished.connect(_release)
+
     def shutdown(self) -> None:
         """Stop the background workers before the page is destroyed.
 
@@ -303,6 +323,9 @@ class PhotoLibraryPage(QWidget):
         self._stop_indexing()
         self._thread_pool.clear()
         self._thread_pool.waitForDone(2000)
+        for worker in list(self._retired_workers):
+            worker.wait(2000)
+        self._retired_workers.clear()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         self.shutdown()
@@ -360,11 +383,14 @@ class PhotoLibraryPage(QWidget):
         """
         worker = self._worker
         self._worker = None
-        if worker is not None and worker.isRunning():
-            worker.cancel()
-            worker.wait(3000)
         if worker is not None:
-            worker.deleteLater()
+            if worker.isRunning():
+                worker.cancel()
+                if not worker.wait(3000):
+                    # Still running: keep it alive until it terminates.
+                    self._retire_worker(worker)
+            else:
+                worker.deleteLater()
 
         self.progress_queue.setVisible(False)
         self.btn_stop_queue.setVisible(False)
@@ -482,11 +508,13 @@ class PhotoLibraryPage(QWidget):
         """Cancel and join the running match worker."""
         worker = self._match_worker
         self._match_worker = None
-        if worker is not None and worker.isRunning():
-            worker.cancel()
-            worker.wait(3000)
         if worker is not None:
-            worker.deleteLater()
+            if worker.isRunning():
+                worker.cancel()
+                if not worker.wait(3000):
+                    self._retire_worker(worker)
+            else:
+                worker.deleteLater()
 
     def _on_match_finished(
         self,
