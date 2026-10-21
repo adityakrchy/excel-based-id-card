@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -51,6 +51,7 @@ from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.data_validator import DataValidator, ValidationReport
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.data.hindi_converter import HindiConverter
+from id_card_generator.data.load_pipeline import LoadRequest, SpreadsheetLoadPipeline
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.column_filter import open_column_filter_menu
 from id_card_generator.ui.components.elided_label import ElidedLabel
@@ -157,7 +158,28 @@ class DataSourcePage(QWidget):
         self.photo_lookup_column: str = ""
         self._error_count = 0
 
+        self._import_busy = False
+        self._import_token = 0
+        self._pipeline_token = 0
+
         self._setup_ui()
+
+        # The load pipeline streams row chunks through worker nodes so the
+        # UI keeps painting while ~25k rows convert in the background.
+        self._pipeline = SpreadsheetLoadPipeline(self)
+        self._pipeline.import_started.connect(self._on_import_started)
+        self._pipeline.columns_ready.connect(self._on_import_columns)
+        self._pipeline.chunk_ready.connect(self._on_import_chunk)
+        self._pipeline.rows_loaded.connect(self._on_rows_loaded)
+        self._pipeline.import_finished.connect(self._on_import_finished)
+        self._pipeline.import_failed.connect(self._on_import_failed)
+        self._pipeline.import_cancelled.connect(self._on_import_cancelled)
+
+        # The header spin fires several times per drag; debounce the restarts.
+        self._header_debounce = QTimer(self)
+        self._header_debounce.setSingleShot(True)
+        self._header_debounce.setInterval(300)
+        self._header_debounce.timeout.connect(self._request_import)
 
     def set_project_config(self, config: Optional[ProjectConfiguration]) -> None:
         """Associate active project workspace configuration."""
@@ -806,7 +828,7 @@ class DataSourcePage(QWidget):
             self.cmb_sheets.clear()
             self.cmb_sheets.addItems(sheets)
             self.cmb_sheets.blockSignals(False)
-            self._import_current()
+            self._request_import()
         except Exception as e:
             logger.error("Failed to inspect sheets in %s: %s", file_path, e)
             self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
@@ -815,106 +837,240 @@ class DataSourcePage(QWidget):
             )
 
     def _on_sheet_changed(self) -> None:
-        self._import_current()
+        self._request_import()
 
     def _on_header_changed(self) -> None:
-        self._import_current()
+        self._header_debounce.start()
 
     def _on_hindi_mode_changed(self) -> None:
-        self._import_current()
+        self._request_import()
 
     def _reimport_data(self) -> None:
-        self._import_current()
+        self._request_import()
 
     def _import_current(self) -> None:
+        """Legacy alias for the streamed import request."""
+        self._request_import()
+
+    # -----------------------------------------------------------------
+    # Streamed import (worker nodes)
+    # -----------------------------------------------------------------
+    def _request_import(self) -> None:
+        """Start a streamed background import; the UI stays responsive."""
         if not self.current_file_path:
             return
 
-        sheet_name = self.cmb_sheets.currentText() or None
-        header_row = self.spin_header.value()
-        hindi_mode = self.cmb_hindi_mode.currentData() or "auto"
+        # A run that is already going is cancelled: the newest control state
+        # always wins, and the pipeline drops the superseded run silently.
+        request = LoadRequest(
+            file_path=self.current_file_path,
+            sheet_name=self.cmb_sheets.currentText() or None,
+            header_row=self.spin_header.value(),
+            hindi_mode=self.cmb_hindi_mode.currentData() or "auto",
+        )
 
-        try:
-            cols, records = ExcelImporter.import_data(
-                self.current_file_path,
-                sheet_name=sheet_name,
-                header_row=header_row,
-                hindi_font_mode=hindi_mode,
-            )
-            # Run data validator
-            report = DataValidator.validate_records(records)
+        self._import_token += 1
+        self._set_import_busy(True)
+        self.notice.set_message(
+            f"Loading {self.current_file_path.name}…", severity="info"
+        )
 
-            self.columns = cols
-            self.records = records
-            self.validation_report = report
-            self.column_types = self._infer_column_types(cols, records)
+        # The table starts over; the chunks stream in as they convert.
+        self.records = []
+        self.validation_report = None
+        self.record_model.set_columns(self.columns)
+        self._repaint_column()
 
-            # Update Source Column dropdown in Mapping Inspector
-            self.cmb_source_column.clear()
-            self.cmb_source_column.addItem("(None / Ignore)", "")
-            for col in cols:
+        # request_load returns the pipeline's run token; every pipeline event
+        # is matched against it so superseded runs cannot pollute the page.
+        self._pipeline_token = self._pipeline.request_load(request)
+        self._refresh_stat_line()
+
+    def _set_import_busy(self, busy: bool) -> None:
+        """Lock the controls that would restart the import mid-run."""
+        self._import_busy = busy
+        for widget in (self.btn_more, self.cmb_sheets, self.spin_header, self.cmb_hindi_mode):
+            widget.setEnabled(not busy)
+        if busy:
+            self.pill_connection.set_status("IMPORTING…", color=SEMANTIC_WARNING)
+        elif self.records:
+            self.pill_connection.set_status("CONNECTED", color=SEMANTIC_SUCCESS)
+        else:
+            self.pill_connection.set_status("NO DATA", color=TEXT_MUTED)
+
+    def _on_import_started(self, name: str) -> None:
+        """The pipeline accepted the run (kept for signal parity/logging)."""
+        logger.info("Streamed import started: %s", name)
+
+    def _on_import_columns(self, token: int, columns, total_rows: int) -> None:
+        """Stage A done: the columns are known, the records follow shortly."""
+        if token != self._pipeline_token:
+            return
+        self.columns = list(columns)
+        self.record_model.set_columns(self.columns)
+        self._rebuild_column_combos(with_types=False)
+        self._auto_map_columns(silent=True)
+        self.notice.set_message(f"Converting {total_rows:,} rows…", severity="info")
+
+    def _rebuild_column_combos(self, with_types: bool = False) -> None:
+        """Fill the mapping-inspector combos from the sheet columns."""
+        self.cmb_source_column.clear()
+        self.cmb_source_column.addItem("(None / Ignore)", "")
+        for col in self.columns:
+            if with_types:
                 self.cmb_source_column.addItem(
                     f"{col}  {self.column_types.get(col, '[String]')}", col
                 )
-
-            # The photo lookup offers every column of the sheet.
-            previous_lookup = self.photo_lookup_column
-            self.cmb_photo_lookup.blockSignals(True)
-            self.cmb_photo_lookup.clear()
-            self.cmb_photo_lookup.addItem("Auto-detect (PIN / ID)", "")
-            for col in cols:
-                self.cmb_photo_lookup.addItem(col, col)
-            if previous_lookup:
-                index = self.cmb_photo_lookup.findData(previous_lookup)
-                if index >= 0:
-                    self.cmb_photo_lookup.setCurrentIndex(index)
-            self.cmb_photo_lookup.blockSignals(False)
-
-            # Auto-map initial common tokens if not already mapped
-            self._auto_map_columns(silent=True)
-
-            # The import succeeded - drop any previous problem report.
-            if self.notice.severity in ("error", "warning"):
-                self.notice.clear_message()
-
-            # Check if Hindi/Devanagari text is present in columns or data
-            has_hindi = (
-                any(HindiConverter.is_unicode_devanagari(c) for c in cols)
-                or any(
-                    any(HindiConverter.is_unicode_devanagari(str(v)) for v in r.data.values())
-                    for r in records[:50]
-                )
-            )
-            if has_hindi and hindi_mode != "none":
-                self.lbl_hindi_badge.setText("✓ Hindi font detected & converted to Unicode Devanagari")
-                self.lbl_hindi_badge.setVisible(True)
             else:
-                self.lbl_hindi_badge.setVisible(False)
+                self.cmb_source_column.addItem(col, col)
 
-            self._populate_table(records)
-            self.lbl_summary.setText(
-                f"{len(records):,} records • {report.valid_records} valid • "
-                f"{report.missing_pins} missing PINs • {len(report.duplicate_pins)} duplicate PINs"
+        # The photo lookup offers every column of the sheet.
+        previous_lookup = self.photo_lookup_column
+        self.cmb_photo_lookup.blockSignals(True)
+        self.cmb_photo_lookup.clear()
+        self.cmb_photo_lookup.addItem("Auto-detect (PIN / ID)", "")
+        for col in self.columns:
+            self.cmb_photo_lookup.addItem(col, col)
+        if previous_lookup:
+            index = self.cmb_photo_lookup.findData(previous_lookup)
+            if index >= 0:
+                self.cmb_photo_lookup.setCurrentIndex(index)
+        self.cmb_photo_lookup.blockSignals(False)
+
+    def _on_import_chunk(self, token: int, start: int, records_chunk) -> None:
+        """Commit one converted chunk to the table (strictly ordered upstream)."""
+        if token != self._pipeline_token:
+            return
+        self.records.extend(records_chunk)
+        self.record_model.append_records(records_chunk)
+
+    def _on_rows_loaded(self, token: int, committed: int, total: int, message: str) -> None:
+        """Progress pulse from the pipeline."""
+        if not self._import_busy or token != self._pipeline_token:
+            return
+        self.lbl_summary.setText(f"Loading {committed:,} of {total:,} records…")
+
+    def _is_current_run(self, result) -> bool:
+        """True when the finished/failed/cancelled run is the page's request."""
+        return getattr(result, "run_id", -1) == self._pipeline_token
+
+    def _on_import_finished(self, result) -> None:
+        """Stage D arrived: apply validation and finalise the page state."""
+        if not self._is_current_run(result):
+            return
+        self._set_import_busy(False)
+
+        self.validation_report = result.report
+        self.column_types = self._infer_column_types(self.columns, self.records)
+        self._apply_validation_annotations(result)
+        self._rebuild_column_combos(with_types=True)
+
+        hindi_mode = self.cmb_hindi_mode.currentData() or "auto"
+        cols = self.columns
+        has_hindi = (
+            any(HindiConverter.is_unicode_devanagari(c) for c in cols)
+            or any(
+                any(HindiConverter.is_unicode_devanagari(str(v)) for v in r.data.values())
+                for r in self.records[:50]
             )
+        )
+        if has_hindi and hindi_mode != "none":
+            self.lbl_hindi_badge.setText("✓ Hindi font detected & converted to Unicode Devanagari")
+            self.lbl_hindi_badge.setVisible(True)
+        else:
+            self.lbl_hindi_badge.setVisible(False)
+
+        if self.notice.severity in ("error", "warning"):
+            self.notice.clear_message()
+
+        # The table streamed its rows in; apply the search filter and repaint.
+        self.record_model.set_filter(self.txt_search.text())
+        report = result.report
+        if report is not None:
+            self._apply_import_summary(report)
+
+        self._update_connection_label()
+        self.data_loaded.emit(cols, self.records, report)
+        self._refresh_stat_line()
+        # The column is painted again, the rows of the table have moved.
+        self._repaint_column()
+
+        if result.rows_per_second:
+            self.notice.set_message(
+                f"Loaded {result.committed_rows:,} records in {result.elapsed_seconds:.1f}s "
+                f"· {result.rows_per_second / 1000:.1f}k rows/s · "
+                f"{result.worker_count} workers ({result.backend})",
+                severity="success",
+            )
+
+    def _apply_import_summary(self, report: ValidationReport) -> None:
+        """Show the record counters the way the legacy import did."""
+        self.lbl_summary.setText(
+            f"{len(self.records):,} records • {report.valid_records} valid • "
+            f"{report.missing_pins} missing PINs • {len(report.duplicate_pins)} duplicate PINs"
+        )
+        self.pill_records.set_status(f"RECORDS: {len(self.records):,}", color=TEXT_SECONDARY)
+        self._error_count = report.missing_pins + len(report.duplicate_pins)
+        self.pill_errors.set_status(
+            f"ERRORS: {self._error_count}",
+            color=SEMANTIC_ERROR if self._error_count > 0 else SEMANTIC_SUCCESS,
+        )
+
+    def _apply_validation_annotations(self, result) -> None:
+        """Apply the worker-side validation annotations on the GUI thread.
+
+        The pipeline skips record mutation in the worker because the table
+        paints the status column from these very lists.
+        """
+        annotations = getattr(result, "annotations", None)
+        if not annotations:
+            return
+        for record, (errors, warnings) in zip(self.records, annotations):
+            record.validation_errors[:] = errors
+            record.validation_warnings[:] = warnings
+
+    def _on_import_failed(self, message: str, result=None) -> None:
+        """The run failed; partial data stays visible so work can continue."""
+        if not self._is_current_run(result):
+            return
+        self._set_import_busy(False)
+
+        partial = getattr(result, "committed_rows", 0) or 0
+        if partial and self.records:
+            self.notice.set_message(
+                f"{message} Showing {partial:,} loaded records.", severity="warning"
+            )
+            self.pill_records.set_status(f"RECORDS: {partial:,}", color=SEMANTIC_WARNING)
+            self.record_model.set_filter(self.txt_search.text())
             self._update_connection_label()
-            self.pill_records.set_status(f"RECORDS: {len(records):,}", color=TEXT_SECONDARY)
-            self._error_count = report.missing_pins + len(report.duplicate_pins)
-            self.pill_errors.set_status(
-                f"ERRORS: {self._error_count}",
-                color=SEMANTIC_ERROR if self._error_count > 0 else SEMANTIC_SUCCESS,
-            )
-
-            # Publish the data first - the counters are only decoration.
-            self.data_loaded.emit(cols, records, report)
-
-            self._refresh_stat_line()
-            # The column is painted again, the rows of the table have moved.
-            self._repaint_column()
-
-        except Exception as e:
-            logger.error("Import failed: %s", e)
+        else:
+            self.notice.set_message(f"Failed to import records: {message}", severity="error")
             self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
-            self.notice.set_message(f"Failed to import records: {e}", severity="error")
+        self._refresh_stat_line()
+        self._repaint_column()
+
+    def _on_import_cancelled(self, result=None) -> None:
+        """A cancelled run finishes quietly (a new run usually took over)."""
+        if self._pipeline.is_running() or not self._is_current_run(result):
+            return
+        self._set_import_busy(False)
+        partial = getattr(result, "committed_rows", 0) or len(self.records)
+        self.notice.set_message(
+            f"Import cancelled — {partial:,} records kept.", severity="info"
+        )
+        self._refresh_stat_line()
+
+    def _is_current_run(self, result) -> bool:
+        """True unless a newer import request already owns the page state."""
+        return True
+
+    def shutdown(self) -> None:
+        """Stop the streamed import (called from the main window on close)."""
+        self._pipeline.shutdown()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self.shutdown()
+        super().closeEvent(event)
 
     def _update_connection_label(self) -> None:
         """Show the state of the connection the way the plan describes it."""

@@ -41,6 +41,10 @@ def test_import_publishes_columns_and_records(qtbot, spreadsheet: Path):
     )
 
     page.load_file(spreadsheet, copy_to_workspace=False)
+    # The load streams through the pipeline; the publish signal closes it.
+    qtbot.waitUntil(
+        lambda: len(published.get("records", ())) == 2, timeout=20000
+    )
 
     assert published.get("columns"), "the columns were never published"
     assert "PIN Number" in published["columns"]
@@ -62,6 +66,8 @@ def test_photo_lookup_offers_every_column(qtbot, spreadsheet: Path):
 
     source.data_loaded.connect(_on_loaded)
     source.load_file(spreadsheet, copy_to_workspace=False)
+    # The load streams through the pipeline; the lookup fills on publish.
+    qtbot.waitUntil(lambda: photos.cmb_key_col.count() > 1, timeout=20000)
 
     combo = photos.cmb_key_col
     entries = [combo.itemText(i) for i in range(combo.count())]

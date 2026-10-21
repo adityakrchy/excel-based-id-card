@@ -46,6 +46,8 @@ def page(qtbot, spreadsheet: Path) -> DataSourcePage:
     connector = DataSourcePage()
     qtbot.addWidget(connector)
     connector.load_file(spreadsheet, copy_to_workspace=False)
+    # The load streams through the pipeline; poll until it is published.
+    qtbot.waitUntil(lambda: len(connector.records) > 0, timeout=20000)
     return connector
 
 

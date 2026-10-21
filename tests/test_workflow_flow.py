@@ -127,8 +127,14 @@ def test_broken_spreadsheet_is_reported_inline(qtbot, tmp_path):
     broken = tmp_path / "broken.xlsx"
     broken.write_text("this is not a spreadsheet")
 
-    # Must return without blocking on a message box.
+    # Must return without blocking on a message box; the failure shows up
+    # inline whether it hits the sheet inspection (sync) or the pipeline.
     page.load_file(broken)
+
+    qtbot.waitUntil(
+        lambda: (not page.notice.isHidden()) and page.notice.severity == "error",
+        timeout=10000,
+    )
 
     assert not page.notice.isHidden()
     assert page.notice.severity == "error"

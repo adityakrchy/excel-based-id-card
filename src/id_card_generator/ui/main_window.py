@@ -243,6 +243,7 @@ class MainWindow(QMainWindow):
         crashes the application.
         """
         for page in (
+            getattr(self, "page_data_source", None),
             getattr(self, "page_photos", None),
             getattr(self, "page_production", None),
         ):

@@ -84,9 +84,11 @@ def test_data_source_page_copies_excel_to_workspace(qtbot, temp_dir: Path):
     assert page.current_file_path is not None
     assert page.current_file_path.parent == (ws_path / "data").resolve()
     assert page.current_file_path.name == "class_records.csv"
-    assert len(page.records) == 2
+    # The import streams through the pipeline; poll until it is published.
+    qtbot.waitUntil(lambda: len(page.records) == 2, timeout=20000)
     assert not page.lbl_workspace_badge.isHidden()
     assert "data/class_records.csv" in page.lbl_workspace_badge.text()
+    assert len(page.records) == 2
 
 
 def test_copy_matched_photos_only(temp_dir: Path):

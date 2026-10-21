@@ -186,6 +186,37 @@ class RecordTableModel(FilterableTableModel):
         self._rebuild_visible()
         self.endResetModel()
 
+    def set_columns(self, columns: Sequence[str]) -> None:
+        """Adopt the column names before the records stream in."""
+        self.beginResetModel()
+        self._columns = list(columns)
+        self._data_columns = [c for c in self._columns if c.lower() != "pin number"]
+        self.endResetModel()
+
+    def append_records(self, records: Sequence[SourceRecord]) -> None:
+        """Append a chunk of records without resetting the whole table.
+
+        The streaming path appends consecutive chunks while the filters are
+        already cleared, so the visible mapping grows by plain identity. When
+        a search/filter is active anyway, a rebuild keeps the mapping sound.
+        """
+        if not records:
+            return
+        total = self._row_count()
+        if self._query or self._column_filters:
+            self._records.extend(records)
+            self._rebuild_visible()
+            if total != len(self._records):
+                self.beginResetModel()
+                self.endResetModel()
+            return
+        self.beginInsertRows(
+            QModelIndex(), total, total + len(records) - 1
+        )
+        self._records.extend(records)
+        self._visible.extend(range(total, len(self._records)))
+        self.endInsertRows()
+
     def _row_count(self) -> int:
         return len(self._records)
 
