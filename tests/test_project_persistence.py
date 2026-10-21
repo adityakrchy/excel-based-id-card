@@ -98,18 +98,65 @@ def test_main_window_idcrt_save_load(qtbot, temp_dir: Path):
     assert "Badge_Project_2026.idcrt" in window2.header_bar.lbl_project_name.text()
 
 
-def test_new_project_dialog(qtbot):
-    """Test NewProjectDialog creates configuration cleanly without workspace setup."""
+def test_new_project_dialog(qtbot, tmp_path: Path):
+    """The dialog creates the workspace in the folder the user picked."""
     from id_card_generator.ui.dialogs.new_project_dialog import NewProjectDialog
 
     dialog = NewProjectDialog()
     qtbot.addWidget(dialog)
 
+    location = tmp_path / "Summer Camp Badges"
     dialog.txt_project_name.setText("Summer Camp Badges")
+    dialog.txt_location.setText(str(location))
     dialog._on_create_clicked()
 
     assert dialog.result() == NewProjectDialog.Accepted
     assert dialog.created_config is not None
     assert dialog.created_config.project_name == "Summer Camp Badges"
-    assert dialog.created_config.workspace_dir is None
+    assert dialog.created_config.workspace_dir == str(location.resolve())
+
+    # The workspace holds the sheet, the photographs and the export.
+    assert (location / "data").is_dir()
+    assert (location / "photos").is_dir()
+    assert (location / "export").is_dir()
+    assert (location / "project.json").is_file()
+
+
+def test_the_new_project_uses_the_location_of_the_user(qtbot, tmp_path: Path):
+    """The project is saved where the user asked for it."""
+    from id_card_generator.ui.dialogs.new_project_dialog import NewProjectDialog
+
+    dialog = NewProjectDialog()
+    qtbot.addWidget(dialog)
+
+    # The location follows the name of the project.
+    dialog.txt_project_name.setText("Winter Badges")
+    assert dialog.txt_location.text().endswith("Winter Badges")
+
+    # A location of their own is kept, even when the name changes after it.
+    own = tmp_path / "Somewhere Else"
+    dialog.txt_location.setText(str(own))
+    dialog.txt_location.textEdited.emit(str(own))
+    dialog.txt_project_name.setText("Another Name")
+    assert dialog.txt_location.text() == str(own)
+
+    dialog._on_create_clicked()
+    assert dialog.created_config.workspace_dir == str(own.resolve())
+    assert (own / "project.json").is_file()
+
+
+def test_the_export_goes_into_the_workspace(qtbot, temp_dir: Path):
+    """The cards are written into the export folder of the workspace."""
+    from id_card_generator.core.project_manager import ProjectManager
+    from id_card_generator.ui.main_window import MainWindow
+
+    ws_path = temp_dir / "Export_Workspace"
+    config = ProjectManager.create_workspace("Export Workspace", ws_path)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.set_project(config, ws_path)
+
+    assert window.page_export.last_export_dir == (ws_path / "export").resolve()
+    assert str(ws_path / "export") in window.page_export.lbl_dest_dir.text()
 

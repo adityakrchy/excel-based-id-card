@@ -729,9 +729,9 @@ class MainWindow(QMainWindow):
             self.page_templates.active_template = config.template
 
         # Set export output directory
-        if config.exports_dir:
-            self.page_export.lbl_dest_dir.setText(str(config.exports_dir))
-            self.page_export.last_export_dir = config.exports_dir
+        if config.export_dir:
+            self.page_export.lbl_dest_dir.setText(str(config.export_dir))
+            self.page_export.last_export_dir = config.export_dir
         elif config.last_export_dir:
             self.page_export.lbl_dest_dir.setText(str(config.last_export_dir))
             self.page_export.last_export_dir = Path(config.last_export_dir)
@@ -781,7 +781,12 @@ class MainWindow(QMainWindow):
         )
 
     def _new_project(self) -> None:
-        """Create a new project document (.idcrt)."""
+        """Create a new project in the folder the user picked.
+
+        The dialog creates the workspace: the imported sheet goes into
+        ``data``, the matched photographs into ``photos`` and the exported
+        cards into ``export``.
+        """
         dialog = NewProjectDialog(self, template_manager=self.template_manager)
         if dialog.exec():
             if dialog.created_config:
@@ -791,7 +796,10 @@ class MainWindow(QMainWindow):
                 self.column_mappings = {}
                 self.active_template = dialog.created_config.template
                 self.last_generation_summary = None
-                self.set_project(dialog.created_config, workspace_path=None)
+                self.set_project(
+                    dialog.created_config,
+                    workspace_path=dialog.created_config.workspace_path,
+                )
                 if dialog.created_config.template:
                     if hasattr(self.page_editor, "load_template"):
                         self.page_editor.load_template(dialog.created_config.template)
@@ -817,17 +825,23 @@ class MainWindow(QMainWindow):
         if not tmpl and self.template_manager.list_templates():
             tmpl = self.template_manager.list_templates()[0]
 
-        cfg = ProjectConfiguration(
-            project_name=title,
-            template=tmpl,
-        )
+        # A preset is a project as well, so it gets a workspace in the
+        # default folder - the sheet, the photographs and the export have
+        # somewhere to live.
+        workspace = Path.home() / "IDCardProjects" / title.replace("/", "-")
+        try:
+            cfg = ProjectManager.create_workspace(title, workspace)
+        except Exception:
+            cfg = ProjectConfiguration(project_name=title, template=tmpl)
+
+        cfg.template = tmpl
         self.records = []
         self.columns = []
         self.match_results = {}
         self.column_mappings = {}
         self.active_template = tmpl
         self.last_generation_summary = None
-        self.set_project(cfg, workspace_path=None)
+        self.set_project(cfg, workspace_path=cfg.workspace_path)
         if tmpl:
             if hasattr(self.page_editor, "load_template"):
                 self.page_editor.load_template(tmpl)

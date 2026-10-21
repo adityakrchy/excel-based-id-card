@@ -1,7 +1,7 @@
 """Unit and integration tests for Project-based workspace workflow.
 
 Verifies:
-1. Creating a project workspace directory with data/, photos/, exports/, and project.json.
+1. Creating a project workspace directory with data/, photos/, export/, and project.json.
 2. Importing Excel spreadsheet copies the file into <workspace>/data/ for reuse.
 3. Photo matching copies ONLY matched photos into <workspace>/photos/, leaving unmatched photos untouched.
 4. Manual photo overrides copy the selected photo to <workspace>/photos/.
@@ -30,14 +30,14 @@ def test_create_workspace(temp_dir: Path):
     assert ws_path.exists()
     assert (ws_path / "data").is_dir()
     assert (ws_path / "photos").is_dir()
-    assert (ws_path / "exports").is_dir()
+    assert (ws_path / "export").is_dir()
     assert (ws_path / "project.json").is_file()
 
     assert config.project_name == "Student Badges 2026"
     assert config.workspace_path == ws_path.resolve()
     assert config.data_dir == (ws_path / "data").resolve()
     assert config.photos_dir == (ws_path / "photos").resolve()
-    assert config.exports_dir == (ws_path / "exports").resolve()
+    assert config.export_dir == (ws_path / "export").resolve()
 
 
 def test_copy_excel_to_workspace(temp_dir: Path):

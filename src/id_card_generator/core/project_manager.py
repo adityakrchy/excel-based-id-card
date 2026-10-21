@@ -30,19 +30,21 @@ class ProjectManager:
             workspace_path = Path(workspace_path).resolve()
             workspace_path.mkdir(parents=True, exist_ok=True)
 
+            # The folders of the workspace: the imported sheet, the matched
+            # photographs and the cards that are written.
             data_dir = workspace_path / "data"
             data_dir.mkdir(parents=True, exist_ok=True)
 
             photos_dir = workspace_path / "photos"
             photos_dir.mkdir(parents=True, exist_ok=True)
 
-            exports_dir = workspace_path / "exports"
-            exports_dir.mkdir(parents=True, exist_ok=True)
+            export_dir = workspace_path / "export"
+            export_dir.mkdir(parents=True, exist_ok=True)
 
             config = ProjectConfiguration(
                 project_name=project_name.strip() or "Untitled Project",
                 workspace_dir=str(workspace_path),
-                last_export_dir=str(exports_dir),
+                last_export_dir=str(export_dir),
             )
 
             project_file = workspace_path / "project.json"
@@ -262,9 +264,12 @@ class ProjectManager:
                         config.photo_dir_path = str(candidate_photos)
 
                 if not config.last_export_dir or not Path(config.last_export_dir).exists():
-                    candidate_exports = ws / "exports"
-                    if candidate_exports.exists():
-                        config.last_export_dir = str(candidate_exports)
+                    # The folder was renamed from "exports" to "export".
+                    for folder in ("export", "exports"):
+                        candidate = ws / folder
+                        if candidate.exists():
+                            config.last_export_dir = str(candidate)
+                            break
 
             logger.info("Project successfully loaded from %s", file_path)
             return config

@@ -217,8 +217,14 @@ class ProjectConfiguration(BaseModel):
         return (Path(self.workspace_dir) / "photos").resolve() if self.workspace_dir else None
 
     @property
+    def export_dir(self) -> Optional[Path]:
+        """The folder of the workspace the cards are written to."""
+        return (Path(self.workspace_dir) / "export").resolve() if self.workspace_dir else None
+
+    @property
     def exports_dir(self) -> Optional[Path]:
-        return (Path(self.workspace_dir) / "exports").resolve() if self.workspace_dir else None
+        """Kept for the projects that were made with the old folder name."""
+        return self.export_dir
 
     @property
     def project_file_path(self) -> Optional[Path]:
