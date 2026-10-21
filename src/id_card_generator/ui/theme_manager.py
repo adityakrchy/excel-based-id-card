@@ -431,8 +431,8 @@ QPushButton#btn_primary:hover {
 }
 
 QPushButton#btn_primary:pressed {
-    background-color: $on_primary_container;
-    color: $surface_container;
+    background-color: $primary_pressed;
+    color: $on_primary_container;
 }
 
 QPushButton#btn_danger {
@@ -452,6 +452,11 @@ QPushButton#btn_danger:disabled {
     border-color: $border_subtle;
 }
 
+QPushButton#btn_danger:pressed {
+    background-color: $error_pressed;
+    color: $on_error;
+}
+
 QPushButton#btn_success {
     background-color: $tertiary_container;
     color: $on_tertiary_container;
@@ -462,6 +467,11 @@ QPushButton#btn_success {
 QPushButton#btn_success:hover {
     background-color: $tertiary;
     color: $on_tertiary;
+}
+
+QPushButton#btn_success:pressed {
+    background-color: $tertiary_pressed;
+    color: $on_tertiary_container;
 }
 
 QPushButton#btn_ghost {
@@ -1229,6 +1239,7 @@ QToolTip {
             "outline_variant": p.OUTLINE_VARIANT,
             "primary": p.PRIMARY,
             "primary_container": p.PRIMARY_CONTAINER,
+            "primary_pressed": p.PRIMARY_PRESSED,
             "on_primary": p.ON_PRIMARY,
             "on_primary_container": p.ON_PRIMARY_CONTAINER,
             "on_surface": p.ON_SURFACE,
@@ -1236,11 +1247,13 @@ QToolTip {
             "text_muted": p.TEXT_MUTED,
             "tertiary": p.TERTIARY,
             "tertiary_container": p.TERTIARY_CONTAINER,
+            "tertiary_pressed": p.TERTIARY_PRESSED,
             "on_tertiary": p.ON_TERTIARY,
             "on_tertiary_container": p.ON_TERTIARY_CONTAINER,
             "warning": p.WARNING,
             "error": p.ERROR,
             "error_container": p.ERROR_CONTAINER,
+            "error_pressed": p.ERROR_PRESSED,
             "on_error": p.ON_ERROR,
             "radius": "6px",
             "radius_sm": "4px",

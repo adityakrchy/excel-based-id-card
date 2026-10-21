@@ -446,6 +446,39 @@ def test_the_header_buttons_are_visible(qtbot):
         )
 
 
+def test_a_pressed_blue_button_stays_blue(qtbot):
+    """The pressed state of a blue button is a darker blue, not black.
+
+    The rule for the pressed state used the colour of the text as the
+    background, so a blue button turned almost black while it was held
+    down.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QPushButton
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    button = QPushButton("Import Spreadsheet...")
+    button.setObjectName("btn_primary")
+    button.setFixedSize(200, 36)
+    qtbot.addWidget(button)
+    button.show()
+    qtbot.wait(20)
+
+    normal = button.grab().toImage().pixelColor(100, 4)
+
+    QTest.mousePress(button, Qt.LeftButton, Qt.NoModifier, button.rect().center())
+    qtbot.wait(20)
+    pressed = button.grab().toImage().pixelColor(100, 4)
+
+    assert pressed != normal, "the button does not react to the press"
+    # The blue stays a blue, it does not fall back to the text colour.
+    assert pressed.blue() > pressed.red()
+    assert pressed.value() > 40
+
+
 # ---------------------------------------------------------------------------
 # The other tabs of the dock
 # ---------------------------------------------------------------------------

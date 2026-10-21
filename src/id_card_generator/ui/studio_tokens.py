@@ -41,6 +41,9 @@ class StudioColors:
     PRIMARY_CONTAINER: str = "#6c8cff"
     ON_PRIMARY: str = "#002780"
     ON_PRIMARY_CONTAINER: str = "#002376"
+    # The shade a button takes while it is pressed - a darker blue, never
+    # the colour of its text.
+    PRIMARY_PRESSED: str = "#4a68d8"
 
     # Secondary muted accents
     SECONDARY: str = "#c4c6d1"
@@ -52,6 +55,7 @@ class StudioColors:
     TERTIARY_CONTAINER: str = "#34a673"
     ON_TERTIARY: str = "#003822"
     ON_TERTIARY_CONTAINER: str = "#00341f"
+    TERTIARY_PRESSED: str = "#2a8a5c"
 
     WARNING: str = "#e8b65b"
     WARNING_CONTAINER: str = "#3a2c10"
@@ -59,6 +63,7 @@ class StudioColors:
     ERROR: str = "#ffb4ab"
     ERROR_CONTAINER: str = "#93000a"
     ON_ERROR: str = "#690005"
+    ERROR_PRESSED: str = "#7a0008"
     INFO: str = "#9ecbff"
     INFO_CONTAINER: str = "#12325c"
     ON_INFO: str = "#cce5ff"
@@ -95,6 +100,7 @@ class LightStudioColors:
     PRIMARY_CONTAINER: str = "#0067c0"
     ON_PRIMARY: str = "#ffffff"
     ON_PRIMARY_CONTAINER: str = "#ffffff"
+    PRIMARY_PRESSED: str = "#00549c"
 
     SECONDARY: str = "#374151"
     SECONDARY_CONTAINER: str = "#e5e7eb"
@@ -104,6 +110,7 @@ class LightStudioColors:
     TERTIARY_CONTAINER: str = "#34a673"
     ON_TERTIARY: str = "#ffffff"
     ON_TERTIARY_CONTAINER: str = "#00341f"
+    TERTIARY_PRESSED: str = "#0b5f3c"
 
     WARNING: str = "#8a5a00"
     WARNING_CONTAINER: str = "#fdf1d8"
@@ -111,6 +118,7 @@ class LightStudioColors:
     ERROR: str = "#b3261e"
     ERROR_CONTAINER: str = "#fde3e1"
     ON_ERROR: str = "#690005"
+    ERROR_PRESSED: str = "#8f1d16"
     INFO: str = "#0b4a8f"
     INFO_CONTAINER: str = "#e3f0ff"
     ON_INFO: str = "#0a2a52"
