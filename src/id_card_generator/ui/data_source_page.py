@@ -322,14 +322,14 @@ class DataSourcePage(QWidget):
         # --- CENTER COLUMN: Spreadsheet Controls & Data Preview Table ---
         center_panel = QFrame()
         center_panel.setObjectName("workspace_panel")
-        center_layout = QVBoxLayout(center_panel)
-        center_layout.setContentsMargins(8, 8, 8, 8)
-        center_layout.setSpacing(8)
+        self.center_layout = QVBoxLayout(center_panel)
+        self.center_layout.setContentsMargins(8, 8, 8, 8)
+        self.center_layout.setSpacing(8)
 
         # The connection state of the spreadsheet.
         self.lbl_connection = QLabel("Not connected")
         self.lbl_connection.setProperty("role", "cardTitle")
-        center_layout.addWidget(self.lbl_connection)
+        self.center_layout.addWidget(self.lbl_connection)
 
         # Controls sub-bar (Worksheet, Header row, Hindi mode, Search)
         ctrl_bar = QHBoxLayout()
@@ -407,21 +407,25 @@ class DataSourcePage(QWidget):
         self.ctrl_scroll.setStyleSheet(
             "QScrollArea { border: none; background: transparent; }"
         )
-        center_layout.addWidget(self.ctrl_scroll)
+        self.center_layout.addWidget(self.ctrl_scroll)
 
         # Search & Summary Bar
         search_bar = QHBoxLayout()
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("Filter records (name, PIN, designation, dept)...")
         self.txt_search.setProperty("role", "fieldFlat")
+        self.txt_search.setFixedHeight(CONTROL_HEIGHT)
+        self.txt_search.setMinimumWidth(220)
         self.txt_search.textChanged.connect(self._filter_table)
         search_bar.addWidget(self.txt_search, stretch=1)
 
         self.lbl_summary = ElidedLabel("0 records loaded")
         self.lbl_summary.setProperty("role", "specKey")
         self.lbl_summary.setMinimumWidth(120)
+        # The summary may not push the field out of the column.
+        self.lbl_summary.setMaximumWidth(320)
         search_bar.addWidget(self.lbl_summary)
-        center_layout.addLayout(search_bar)
+        self.center_layout.addLayout(search_bar)
 
         # Data Table
         self.record_model = RecordTableModel(self)
@@ -443,7 +447,7 @@ class DataSourcePage(QWidget):
             f"QHeaderView::section {{ background-color: {SURFACE_HIGH}; color: {TEXT_SECONDARY}; border: 1px solid {BORDER_SUBTLE};"
             f" padding: 4px; font-weight: 600; font-size: 11px; }}"
         )
-        center_layout.addWidget(self.table)
+        self.center_layout.addWidget(self.table)
 
         self.main_splitter.addWidget(center_panel)
 
@@ -890,6 +894,8 @@ class DataSourcePage(QWidget):
             self.data_loaded.emit(cols, records, report)
 
             self._refresh_stat_line()
+            # The column is painted again, the rows of the table have moved.
+            self._repaint_column()
 
         except Exception as e:
             logger.error("Import failed: %s", e)
@@ -1077,6 +1083,18 @@ class DataSourcePage(QWidget):
             if visible != len(self.records)
             else f"{len(self.records):,} records loaded"
         )
+
+    def _repaint_column(self) -> None:
+        """Paint the centre column again.
+
+        The rows of the table move when the records are filled, and a screen
+        that is not painted again keeps the pixels of the old place.  That
+        showed as a second, half transparent copy of the search field.
+        """
+        self.center_layout.invalidate()
+        self.txt_search.update()
+        self.table.viewport().update()
+        self.update()
 
     def _on_row_selected(self) -> None:
         selected_rows = self.table.selectionModel().selectedRows()
