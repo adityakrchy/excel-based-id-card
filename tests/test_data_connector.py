@@ -334,6 +334,54 @@ def test_the_summary_counts_the_filters(page: DataSourcePage):
     assert "1 column filter" in page.lbl_summary.text()
 
 
+def test_the_filter_menu_waits_for_the_apply(page: DataSourcePage, qtbot):
+    """The menu stays open while the values are picked.
+
+    A menu that closes after the first click cannot pick more than one
+    value, so the filter is only applied with the button at the end.
+    """
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtWidgets import QListWidget, QPushButton
+
+    from id_card_generator.ui.components.column_filter import (
+        open_column_filter_menu,
+    )
+
+    model = page.record_model
+    column = _column_of(model, "Name")
+
+    menu = open_column_filter_menu(page, model, column, QPoint(10, 10))
+    qtbot.wait(30)
+
+    list_widget = None
+    apply_button = None
+    for action in menu.actions():
+        widget = action.defaultWidget()
+        if isinstance(widget, QListWidget):
+            list_widget = widget
+        elif isinstance(widget, QPushButton):
+            apply_button = widget
+
+    assert list_widget is not None, "the menu has no list of values"
+    assert apply_button is not None, "the menu has no apply button"
+
+    rows_before = model.rowCount()
+
+    # Unpick a value: nothing is filtered yet and the menu stays open.
+    list_widget.item(0).setCheckState(Qt.Unchecked)
+    qtbot.wait(20)
+
+    assert model.rowCount() == rows_before, "the filter was applied too early"
+    assert menu.isVisible(), "the menu closed while the values were picked"
+
+    # The button applies the filter.
+    apply_button.click()
+    qtbot.wait(30)
+
+    assert model.rowCount() < rows_before
+    menu.close()
+
+
 def test_the_mapping_tools_are_visible(page: DataSourcePage):
     """Auto-map and validate are real buttons on the screen."""
     assert not page.btn_automap.isHidden()
