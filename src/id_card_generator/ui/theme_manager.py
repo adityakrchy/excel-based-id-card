@@ -18,6 +18,7 @@ from PySide6.QtCore import QObject, QSettings, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication
 
+from id_card_generator.ui.font_scaling import scaled_point_size
 from id_card_generator.ui.studio_tokens import (
     LightStudioColors,
     StudioColors,
@@ -115,7 +116,8 @@ class ThemeManager(QObject):
         # The application font uses the same stack as the stylesheet, so a
         # widget that is painted by the style (a push button for example)
         # shows the same glyphs as one that is painted by the stylesheet.
-        font = QFont(self._ui_font_family(), 10)
+        # The base 10 pt grows with the screen aware font scale.
+        font = QFont(self._ui_font_family(), scaled_point_size(10))
         font.setStyleHint(QFont.SansSerif)
         app.setFont(font)
         app.setStyleSheet(self.build_stylesheet(effective_theme))
@@ -190,12 +192,17 @@ class ThemeManager(QObject):
             return
         original = widget.property("original_stylesheet")
         if original is None:
-            original = widget.styleSheet()
+            # The font scaling patch keeps the unscaled source of every
+            # applied stylesheet under this property - reading it back
+            # keeps the re-applied stylesheet from compounding the scale.
+            original = widget.property("unscaled_stylesheet")
+            if original is None:
+                original = widget.styleSheet()
             if not original:
                 return
             widget.setProperty("original_stylesheet", original)
         retargeted = cls.retarget_stylesheet(original, theme)
-        if retargeted != widget.styleSheet():
+        if retargeted != original:
             widget.setStyleSheet(retargeted)
 
     # Legacy dark palette values -> token names.

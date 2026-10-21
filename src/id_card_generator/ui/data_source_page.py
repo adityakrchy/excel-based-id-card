@@ -198,8 +198,10 @@ class DataSourcePage(QWidget):
         # 0. Page Header (step badge, title, contextual actions)
         # ---------------------------------------------------------
         badge, title, subtitle = workflow.page_header_text(WorkflowStep.DATA_SOURCE)
-        self.page_header = PageHeader(title, subtitle, badge)
-        main_layout.addWidget(self.page_header)
+        # The page header block is removed from the shell (its actions live in
+        # the app menu bar now).  Kept off-canvas as a state mirror for tests.
+        self.page_header = PageHeader(title, subtitle, badge, parent=self)
+        self.page_header.hide()
 
         # Non blocking feedback area (errors / warnings stay in context).
         self.notice = InlineNotice()
@@ -225,13 +227,9 @@ class DataSourcePage(QWidget):
         file_row = QHBoxLayout()
         file_row.setSpacing(10)
 
-        self.pill_connection = StatusPill("NO DATA", color=TEXT_MUTED)
-        file_row.addWidget(self.pill_connection)
-
-        self.lbl_path = QLabel("No spreadsheet connected")
-        self.lbl_path.setProperty("role", "monoMuted")
-        file_row.addWidget(self.lbl_path, stretch=1)
-
+        # The row reads from action to state: the primary import leads the
+        # row on the left, the overflow tools follow, and the connection
+        # state closes it on the right.
         self.btn_browse = QPushButton("Import Spreadsheet...")
         self.btn_browse.setObjectName("btn_primary")
         self.btn_browse.setFixedHeight(CONTROL_HEIGHT)
@@ -244,6 +242,13 @@ class DataSourcePage(QWidget):
         self.btn_more.add_action("Auto-map columns", self._auto_map_columns)
         self.btn_more.add_action("Validate all records", self._validate_all_records)
         file_row.addWidget(self.btn_more)
+
+        self.lbl_path = QLabel("No spreadsheet connected")
+        self.lbl_path.setProperty("role", "monoMuted")
+        file_row.addWidget(self.lbl_path, stretch=1)
+
+        self.pill_connection = StatusPill("NO DATA", color=TEXT_MUTED)
+        file_row.addWidget(self.pill_connection)
 
         top_layout.addLayout(file_row)
 
@@ -288,11 +293,13 @@ class DataSourcePage(QWidget):
         body.addWidget(top_card)
 
         # ---------------------------------------------------------
-        # 2. Main 3-Column Workstation Splitter
+        # 2. Main 3-Column Workstation Splitter (flipped: the mapping
+        #    inspector leads on the left, the placeholders close the
+        #    row on the right)
         # ---------------------------------------------------------
         self.main_splitter = QSplitter(Qt.Horizontal)
 
-        # --- LEFT COLUMN: Template Placeholders List ---
+        # --- TEMPLATE PLACEHOLDERS COLUMN (closes the row on the right) ---
         left_panel = QFrame()
         left_panel.setObjectName("workspace_panel")
         left_panel.setMinimumWidth(200)
@@ -321,8 +328,6 @@ class DataSourcePage(QWidget):
         self.lbl_token_summary = QLabel("")
         self.lbl_token_summary.setProperty("role", "specKey")
         left_layout.addWidget(self.lbl_token_summary)
-
-        self.main_splitter.addWidget(left_panel)
 
         # --- CENTER COLUMN: Spreadsheet Controls & Data Preview Table ---
         center_panel = QFrame()
@@ -455,9 +460,7 @@ class DataSourcePage(QWidget):
         )
         self.center_layout.addWidget(self.table)
 
-        self.main_splitter.addWidget(center_panel)
-
-        # --- RIGHT COLUMN: Field Mapping & Selected Record Inspector ---
+        # --- MAPPING & RECORD INSPECTOR COLUMN (leads the row on the left) ---
         right_panel = QFrame()
         right_panel.setObjectName("workspace_panel")
         right_panel.setMinimumWidth(250)
@@ -640,10 +643,15 @@ class DataSourcePage(QWidget):
         self.right_tabs.addTab(self.inspector, "Record")
         right_layout.addWidget(self.right_tabs)
 
+        # The workstation is flipped: mapping inspector on the left edge
+        # (next to the import actions), data table holds the middle, and
+        # the template placeholder list closes the row on the right edge.
         self.main_splitter.addWidget(right_panel)
+        self.main_splitter.addWidget(center_panel)
+        self.main_splitter.addWidget(left_panel)
 
-        # Set Splitter Initial Proportions: Left ~280, Center ~620, Right ~320
-        self.main_splitter.setSizes([280, 620, 320])
+        # Splitter Initial Proportions: Mapping ~320, Center ~620, Placeholders ~280
+        self.main_splitter.setSizes([320, 620, 280])
         self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setStretchFactor(2, 0)

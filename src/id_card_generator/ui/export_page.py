@@ -55,6 +55,7 @@ from id_card_generator.ui.components.column_filter import open_column_filter_men
 from id_card_generator.ui.components.record_table import FilterableTableModel
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
+from id_card_generator.ui.font_scaling import scaled_point_size
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
@@ -375,19 +376,19 @@ class CardPreviewWidget(QWidget):
         # Caption below the card
         caption_y = card_y + scaled.height() + 22
         font = painter.font()
-        font.setPointSize(9)
+        font.setPointSize(scaled_point_size(9))
         font.setFamily(FONT_FAMILY_MONO)
         painter.setFont(font)
         painter.setPen(QPen(QColor(TEXT_PRIMARY)))
         painter.drawText(
-            QRectF(24, caption_y, w - 48, 18),
+            QRectF(24, caption_y, w - 48, scaled_point_size(9) * 2),
             Qt.AlignHCenter | Qt.AlignTop,
             self.caption,
         )
         if self.sub_caption:
             painter.setPen(QPen(QColor(TEXT_MUTED)))
             painter.drawText(
-                QRectF(24, caption_y + 20, w - 48, 18),
+                QRectF(24, caption_y + scaled_point_size(9) + 2, w - 48, scaled_point_size(9) * 2),
                 Qt.AlignHCenter | Qt.AlignTop,
                 self.sub_caption,
             )
@@ -399,7 +400,7 @@ class CardPreviewWidget(QWidget):
         painter.drawRoundedRect(rect, 8, 8)
 
         font = painter.font()
-        font.setPointSize(10)
+        font.setPointSize(scaled_point_size(10))
         font.setFamily(FONT_FAMILY_UI)
         painter.setFont(font)
         painter.setPen(QPen(QColor(TEXT_MUTED)))
@@ -481,8 +482,10 @@ class ExportPage(QWidget):
         # Page header (step badge, title, subtitle)
         # ---------------------------------------------------------
         badge, title, subtitle = workflow.page_header_text(WorkflowStep.EXPORT)
-        self.page_header = PageHeader(title, subtitle, badge)
-        layout.addWidget(self.page_header)
+        # The page header block is removed from the shell.  Kept off-canvas
+        # as a state mirror for tests.
+        self.page_header = PageHeader(title, subtitle, badge, parent=self)
+        self.page_header.hide()
 
         self.notice = InlineNotice()
         notice_row = QHBoxLayout()

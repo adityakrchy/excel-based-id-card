@@ -148,10 +148,9 @@ def test_saving_a_project_is_non_blocking(app_window: MainWindow, tmp_path):
     assert "flow.idcrt" in app_window.status_bar.currentMessage()
 
 
-def test_page_headers_track_the_active_step(app_window: MainWindow):
-    """The shell keeps the ribbon and the page header in sync."""
+def test_ribbon_tracks_the_active_step(app_window: MainWindow):
+    """The shell keeps the workspace ribbon in sync with the active step."""
     app_window.switch_page(WorkflowStep.CANVAS_EDITOR)
 
     assert app_window.studio_nav._buttons[StudioTab.DESIGNER].isChecked()
-    assert app_window.page_editor.page_header.lbl_badge.text() == "Step 4 of 6"
     assert app_window.page_editor.nav_bar.lbl_badge.text() == "Step 4 of 6"

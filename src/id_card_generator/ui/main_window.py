@@ -112,14 +112,16 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
 
         # 1. Studio Top Command Bar (Level 1 Header)
+        # Removed from the shell: kept as an off-canvas state mirror so the
+        # project-title / sync-status slots keep working without the top bar.
         self.header_bar = StudioHeaderBar(self)
+        self.header_bar.setHidden(True)
         self.header_bar.new_requested.connect(self._new_project)
         self.header_bar.open_requested.connect(self._open_project)
         self.header_bar.save_requested.connect(self._save_project)
         self.header_bar.undo_requested.connect(self._on_undo_requested)
         self.header_bar.redo_requested.connect(self._on_redo_requested)
         self.header_bar.theme_requested.connect(self.apply_theme)
-        main_layout.addWidget(self.header_bar)
 
         # 2. Studio Workspace Navigation Ribbon (Level 1.5 Sub-header)
         self.studio_nav = StudioNavBar(self)
@@ -298,6 +300,59 @@ class MainWindow(QMainWindow):
             act = QAction(name, self)
             act.triggered.connect(lambda ch=False, s=step: self.switch_page(s))
             nav_menu.addAction(act)
+
+        # Templates Menu - template management that used to live in the page
+        # headers of the Templates & Designer workspaces.
+        tmpl_menu = menubar.addMenu("&Templates")
+
+        def run_in_workspace(step: WorkflowStep, runner) -> None:
+            """Jump to a workspace and run one of its actions from the menu bar."""
+            self.switch_page(step)
+            runner()
+
+        act_blank = QAction("New Blank Template", self)
+        act_blank.triggered.connect(
+            lambda: run_in_workspace(
+                WorkflowStep.TEMPLATES, self.page_templates._create_blank_canvas
+            )
+        )
+        tmpl_menu.addAction(act_blank)
+
+        act_import = QAction("Import Template JSON...", self)
+        act_import.triggered.connect(
+            lambda: run_in_workspace(
+                WorkflowStep.TEMPLATES, self.page_templates._import_template
+            )
+        )
+        tmpl_menu.addAction(act_import)
+
+        tmpl_menu.addSeparator()
+
+        act_tmpl_save = QAction("Save Template", self)
+        act_tmpl_save.triggered.connect(
+            lambda: run_in_workspace(
+                WorkflowStep.CANVAS_EDITOR, self.page_editor._save_current_template
+            )
+        )
+        tmpl_menu.addAction(act_tmpl_save)
+
+        act_tmpl_delete = QAction("Delete Custom Template", self)
+        act_tmpl_delete.triggered.connect(
+            lambda: run_in_workspace(
+                WorkflowStep.CANVAS_EDITOR, self.page_editor._delete_current_template
+            )
+        )
+        tmpl_menu.addAction(act_tmpl_delete)
+
+        tmpl_menu.addSeparator()
+
+        act_cleanup = QAction("Clean Up Template Library...", self)
+        act_cleanup.triggered.connect(
+            lambda: run_in_workspace(
+                WorkflowStep.TEMPLATES, self.page_templates._open_cleanup_dialog
+            )
+        )
+        tmpl_menu.addAction(act_cleanup)
 
     def _setup_signals(self) -> None:
         # Dashboard signals (including embedded settings & workflow launcher)

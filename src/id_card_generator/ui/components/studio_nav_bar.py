@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QToolButton,
     QWidget,
 )
-from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY, palette_for
 
 
@@ -150,7 +149,7 @@ class StudioNavBar(QFrame):
         )
         layout.addWidget(self.tabs_scroll, 1)
 
-        # Right Side: FIPS Security Pill + User Avatar
+        # Right Side: Help action
         right_tools = QHBoxLayout()
         right_tools.setSpacing(10)
 
@@ -158,21 +157,6 @@ class StudioNavBar(QFrame):
         # They used to show up here and they changed the width of the row of
         # the tabs, so the spacing of the ribbon was different in every
         # workspace.
-
-        # FIPS Security Pill
-        self.pill_fips = StatusPill(text="FIPS 140-3 HW-SEC OK", dot_color=COLORS.TERTIARY)
-        right_tools.addWidget(self.pill_fips)
-
-        # User Avatar Circle Button
-        self.btn_avatar = QToolButton()
-        self.btn_avatar.setText("👤")
-        self.btn_avatar.setFixedSize(28, 28)
-        self.btn_avatar.setCursor(Qt.PointingHandCursor)
-        self.btn_avatar.setStyleSheet(
-            "QToolButton { background-color: #282C34; border: 1px solid #383D47; border-radius: 14px; font-size: 13px; color: #FFFFFF; }"
-            "QToolButton:hover { background-color: #333539; border-color: #6C8CFF; }"
-        )
-        right_tools.addWidget(self.btn_avatar)
 
         self.btn_help = QToolButton()
         self.btn_help.setVisible(False)
@@ -187,12 +171,6 @@ class StudioNavBar(QFrame):
         """Re-apply the ribbon styling for the given theme."""
         self._theme = theme
         c = palette_for(theme)
-
-        self.pill_fips.setStyleSheet(
-            f"QFrame#status_pill {{ background-color: {c.SURFACE_LOW}; "
-            f"border: 1px solid {c.BORDER_HAIRLINE}; border-radius: 4px; }}"
-        )
-        self.pill_fips.set_dot_color(c.TERTIARY)
 
         self.setStyleSheet(
             f"QFrame#studio_nav_bar {{"

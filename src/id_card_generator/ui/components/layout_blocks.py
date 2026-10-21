@@ -2,8 +2,8 @@
 
 from typing import Iterable, List, Optional
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -14,11 +14,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from id_card_generator.resources.resource_loader import get_resource_path
 from id_card_generator.ui.studio_tokens import BORDER_DEFAULT, SIZES, TEXT_MUTED
 
 
 class OverflowMenu(QToolButton):
-    """A "⋯" button that holds the secondary actions of a screen.
+    """A dropdown chevron button that holds the secondary actions of a screen.
 
     Every screen keeps exactly one obvious action and moves the rest into
     this menu, so the interface stays calm.
@@ -26,15 +27,25 @@ class OverflowMenu(QToolButton):
 
     def __init__(self, tooltip: str = "More actions", parent=None):
         super().__init__(parent)
-        self.setText("⋯")
         self.setObjectName("btn_ghost")
         self.setFixedSize(SIZES.CONTROL_HEIGHT, SIZES.CONTROL_HEIGHT)
         self.setToolTip(tooltip)
         self.setPopupMode(QToolButton.InstantPopup)
         self.setCursor(Qt.PointingHandCursor)
 
+        # A crisp svg chevron replaces the arrow the style paints for menu
+        # buttons, which rendered smudged at the widget's small size.
+        self.setIcon(self._dropdown_icon())
+        self.setIconSize(QSize(14, 14))
+        self.setStyleSheet("QToolButton::menu-indicator { image: none; }")
+
         self._menu = QMenu(self)
         self.setMenu(self._menu)
+
+    @staticmethod
+    def _dropdown_icon() -> QIcon:
+        """Load the svg chevron that marks the overflow dropdown."""
+        return QIcon(str(get_resource_path("icons", "chevron_down.svg")))
 
     def add_action(self, text: str, triggered=None, shortcut: str = "") -> QAction:
         """Add an entry to the menu and return the action."""

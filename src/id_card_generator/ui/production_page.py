@@ -156,8 +156,10 @@ class ProductionPage(QWidget):
         layout.setSpacing(0)
 
         badge, title, subtitle = workflow.page_header_text(WorkflowStep.GENERATE)
-        self.page_header = PageHeader(title, subtitle, badge)
-        layout.addWidget(self.page_header)
+        # The page header block is removed from the shell.  Kept off-canvas
+        # as a state mirror for tests.
+        self.page_header = PageHeader(title, subtitle, badge, parent=self)
+        self.page_header.hide()
 
         self.pill_engine_state = StatusPill("ENGINE READY", color=SEMANTIC_SUCCESS)
         self.page_header.add_action(self.pill_engine_state)

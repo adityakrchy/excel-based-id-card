@@ -12,6 +12,7 @@ from PySide6.QtCore import QAbstractListModel, QModelIndex, QRectF, QSize, Qt, S
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QListView, QStyle, QStyledItemDelegate
 
+from id_card_generator.ui.font_scaling import font_scale, scaled_point
 from id_card_generator.ui.studio_tokens import (
     FONT_FAMILY_MONO,
     FONT_FAMILY_UI,
@@ -91,13 +92,15 @@ class RecordListModel(QAbstractListModel):
 class RecordListDelegate(QStyledItemDelegate):
     """Paints a record row: status stripe, PIN, name and a problem flag."""
 
+    # The base design row height; grows with the screen font scale so the
+    # larger glyphs keep their breathing room.
     ROW_HEIGHT = 46
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802 - Qt naming
-        return QSize(option.rect.width(), self.ROW_HEIGHT)
+        return QSize(option.rect.width(), round(self.ROW_HEIGHT * font_scale()))
 
     def paint(self, painter: QPainter, option, index) -> None:  # noqa: N802
         painter.setRenderHint(QPainter.Antialiasing)
@@ -127,6 +130,9 @@ class RecordListDelegate(QStyledItemDelegate):
         status = ""
         flags: Tuple[str, ...] = ()
 
+        # The text bands grow with the screen font scale.
+        s = font_scale()
+
         # The delegate works on a plain model, so the richer fields are read
         # from the model itself when it is available.
         model = index.model()
@@ -155,13 +161,13 @@ class RecordListDelegate(QStyledItemDelegate):
         # PIN - the identity of the card.
         font = QFont()
         font.setFamily(FONT_FAMILY_MONO)
-        font.setPointSizeF(10.0)
+        font.setPointSizeF(scaled_point(10.0))
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(QColor(palette.ON_SURFACE))
         metrics = QFontMetrics(font)
         painter.drawText(
-            QRectF(text_left, rect.top() + 6.0, text_width, 16.0),
+            QRectF(text_left, rect.top() + 6.0 * s, text_width, 16.0 * s),
             Qt.AlignLeft | Qt.AlignVCenter,
             metrics.elidedText(str(pin), Qt.ElideRight, int(text_width)),
         )
@@ -169,12 +175,12 @@ class RecordListDelegate(QStyledItemDelegate):
         # Name - what the card is about.
         font = QFont()
         font.setFamily(FONT_FAMILY_UI)
-        font.setPointSizeF(9.0)
+        font.setPointSizeF(scaled_point(9.0))
         painter.setFont(font)
         painter.setPen(QColor(palette.TEXT_MUTED))
         metrics = QFontMetrics(font)
         painter.drawText(
-            QRectF(text_left, rect.top() + 22.0, text_width, 16.0),
+            QRectF(text_left, rect.top() + 22.0 * s, text_width, 16.0 * s),
             Qt.AlignLeft | Qt.AlignVCenter,
             metrics.elidedText(str(name), Qt.ElideRight, int(text_width)),
         )
@@ -190,11 +196,11 @@ class RecordListDelegate(QStyledItemDelegate):
             painter.setPen(color)
             font = QFont()
             font.setFamily(FONT_FAMILY_UI)
-            font.setPointSizeF(10.0)
+            font.setPointSizeF(scaled_point(10.0))
             font.setBold(True)
             painter.setFont(font)
             painter.drawText(
-                QRectF(rect.right() - 26.0, rect.top(), 18.0, rect.height()),
+                QRectF(rect.right() - 26.0 * s, rect.top(), 18.0 * s, rect.height()),
                 Qt.AlignCenter,
                 badge,
             )

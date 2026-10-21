@@ -156,7 +156,12 @@ def app_window(qtbot):
 
 
 def test_every_workflow_page_has_a_matching_header_and_footer(app_window: MainWindow):
-    """Header and footer always report the same step of the pipeline."""
+    """The page scaffolding reports the right step of the pipeline.
+
+    The header block itself was removed from the shell to reclaim vertical
+    space: the instance stays off-canvas as a state mirror, while the
+    functional actions live in the "Templates" app menu.
+    """
     pages = {
         WorkflowStep.DATA_SOURCE: app_window.page_data_source,
         WorkflowStep.PHOTOS: app_window.page_photos,
@@ -169,6 +174,7 @@ def test_every_workflow_page_has_a_matching_header_and_footer(app_window: MainWi
     for step, page in pages.items():
         header = page.page_header
         footer = page.nav_bar
+        assert header.isHidden(), f"the page header of {step} should not be shown"
         assert header.lbl_badge.text() == workflow.step_badge(step)
         assert header.lbl_title.text() == workflow.title_for(step)
         assert footer.lbl_badge.text() == workflow.step_badge(step)
@@ -256,7 +262,10 @@ def test_ribbon_reflects_step_progress(app_window: MainWindow):
 
 
 def test_header_actions_are_reachable(app_window: MainWindow):
-    """The document actions live in the visible header bar."""
-    for name in ("btn_new", "btn_open", "btn_save", "btn_undo", "btn_redo"):
-        button = getattr(app_window.header_bar, name)
-        assert not button.isHidden(), f"{name} should be visible in the header"
+    """The top command bar is gone; document actions live in the File menu."""
+    assert app_window.header_bar.isHidden(), "the top command bar should not be shown"
+    # The document actions remain reachable from the window menubar.
+    file_menu = app_window.menuBar().actions()[0].menu()
+    menu_texts = " ".join(act.text() for act in file_menu.actions())
+    for label in ("New Project", "Open Project", "Save Project"):
+        assert label in menu_texts

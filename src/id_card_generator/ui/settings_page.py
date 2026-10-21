@@ -44,8 +44,10 @@ class SettingsPage(QWidget):
         layout.setSpacing(0)
 
         badge, title, subtitle = workflow.page_header_text(WorkflowStep.SETTINGS)
-        self.page_header = PageHeader(title, subtitle, badge)
-        layout.addWidget(self.page_header)
+        # The page header block is removed from the shell.  Kept off-canvas
+        # as a state mirror for tests.
+        self.page_header = PageHeader(title, subtitle, badge, parent=self)
+        self.page_header.hide()
 
         self.notice = InlineNotice()
         notice_row = QHBoxLayout()

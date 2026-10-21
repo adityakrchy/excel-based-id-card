@@ -98,8 +98,10 @@ class PhotoLibraryPage(QWidget):
 
         # Page header ---------------------------------------------------------
         badge, title, subtitle = workflow.page_header_text(WorkflowStep.PHOTOS)
-        self.page_header = PageHeader(title, subtitle, badge)
-        layout.addWidget(self.page_header)
+        # The page header block is removed from the shell.  Kept off-canvas
+        # as a state mirror for tests.
+        self.page_header = PageHeader(title, subtitle, badge, parent=self)
+        self.page_header.hide()
 
         self.notice = InlineNotice()
         notice_row = QHBoxLayout()
@@ -122,10 +124,8 @@ class PhotoLibraryPage(QWidget):
         top_layout = QHBoxLayout()
         top_layout.setSpacing(10)
 
-        self.lbl_photo_dir = QLabel("No photo directory selected")
-        self.lbl_photo_dir.setProperty("role", "monoMuted")
-        top_layout.addWidget(self.lbl_photo_dir, stretch=1)
-
+        # Flipped like the data source bar: the primary folder actions lead
+        # the row on the left, and the selected path closes it on the right.
         self.btn_select_dir = QPushButton("Select Photo Folder...")
         self.btn_select_dir.setObjectName("btn_primary")
         self.btn_select_dir.setFixedHeight(CONTROL_HEIGHT)
@@ -138,6 +138,10 @@ class PhotoLibraryPage(QWidget):
         self.btn_rescan.setEnabled(False)
         self.btn_rescan.clicked.connect(self._rescan)
         top_layout.addWidget(self.btn_rescan)
+
+        self.lbl_photo_dir = QLabel("No photo directory selected")
+        self.lbl_photo_dir.setProperty("role", "monoMuted")
+        top_layout.addWidget(self.lbl_photo_dir, stretch=1)
 
         top_vlayout.addLayout(top_layout)
 
@@ -156,10 +160,8 @@ class PhotoLibraryPage(QWidget):
         queue_layout.setContentsMargins(14, 8, 14, 8)
         queue_layout.setSpacing(10)
 
-        self.lbl_queue_status = QLabel("Idle")
-        self.lbl_queue_status.setProperty("role", "pageSubtitle")
-        queue_layout.addWidget(self.lbl_queue_status, stretch=1)
-
+        # Flipped: the queue summary numbers lead on the left, and the
+        # status message closes the row on the right.
         self.lbl_queue_latest = QLabel("")
         self.lbl_queue_latest.setProperty("role", "monoMuted")
         queue_layout.addWidget(self.lbl_queue_latest)
@@ -177,6 +179,10 @@ class PhotoLibraryPage(QWidget):
         self.btn_stop_queue.setVisible(False)
         self.btn_stop_queue.clicked.connect(self._stop_indexing)
         queue_layout.addWidget(self.btn_stop_queue)
+
+        self.lbl_queue_status = QLabel("Idle")
+        self.lbl_queue_status.setProperty("role", "pageSubtitle")
+        queue_layout.addWidget(self.lbl_queue_status, stretch=1)
 
         body.addWidget(self.queue_card)
 
@@ -225,27 +231,12 @@ class PhotoLibraryPage(QWidget):
         tab_rec_layout.setContentsMargins(0, 8, 0, 0)
         tab_rec_layout.setSpacing(8)
 
-        # Filter & Summary Metrics Bar
+        # Filter & Summary Metrics Bar - flipped like the data source bar:
+        # the quick override actions and the match counters lead on the
+        # left, and the search / record filter close the row on the right.
         filter_row = QHBoxLayout()
         filter_row.setSpacing(10)
-        self.cmb_filter = QComboBox()
-        self.cmb_filter.addItems([
-            "All records",
-            "Matched photos",
-            "Missing photos",
-            "Ambiguous matches",
-            "Overridden photos",
-        ])
-        self.cmb_filter.setFixedHeight(CONTROL_HEIGHT)
-        self.cmb_filter.currentIndexChanged.connect(self._filter_table)
-        filter_row.addWidget(self.cmb_filter)
 
-        self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("Search by identifier, name, or file...")
-        self.txt_search.textChanged.connect(self._filter_table)
-        filter_row.addWidget(self.txt_search, stretch=1)
-
-        # Dedicated quick override buttons in toolbar
         self.btn_assign_selected = QPushButton("Assign Photo...")
         self.btn_assign_selected.setToolTip("Assign custom photo to currently selected record")
         self.btn_assign_selected.clicked.connect(self._assign_selected_row)
@@ -262,6 +253,23 @@ class PhotoLibraryPage(QWidget):
 
         self.stat_line = StatLine()
         filter_row.addWidget(self.stat_line)
+
+        self.txt_search = QLineEdit()
+        self.txt_search.setPlaceholderText("Search by identifier, name, or file...")
+        self.txt_search.textChanged.connect(self._filter_table)
+        filter_row.addWidget(self.txt_search, stretch=1)
+
+        self.cmb_filter = QComboBox()
+        self.cmb_filter.addItems([
+            "All records",
+            "Matched photos",
+            "Missing photos",
+            "Ambiguous matches",
+            "Overridden photos",
+        ])
+        self.cmb_filter.setFixedHeight(CONTROL_HEIGHT)
+        self.cmb_filter.currentIndexChanged.connect(self._filter_table)
+        filter_row.addWidget(self.cmb_filter)
         tab_rec_layout.addLayout(filter_row)
 
         # Association Table
