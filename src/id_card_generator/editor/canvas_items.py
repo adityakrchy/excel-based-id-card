@@ -158,8 +158,55 @@ class CanvasItem(QGraphicsObject):
             self._rect.height(),
         )
 
+    def _minimum_size(self):
+        """The smallest frame the content of the element allows.
+
+        The frame of a text is never smaller than the text it holds, so the
+        text can neither overlap nor leave the frame.
+        """
+        elem = self.element
+        if elem.type not in ("static_text", "dynamic_text", "pin_field"):
+            return (10.0, 10.0)
+
+        scene = self.scene()
+        dpi = DEFAULT_DPI
+        if scene and hasattr(scene, "template") and scene.template:
+            dpi = getattr(scene.template, "dpi", None) or DEFAULT_DPI
+
+        width, height = measure_text_size(elem, self.preview_text(elem), dpi)
+        # A small margin, so the text does not break into a second line
+        # when the frame is exactly as wide as the text.
+        return (max(10.0, width + 2.0), max(10.0, height + 2.0))
+
+    def _clamp_to_minimum(self, rect: QRectF, handle: int) -> QRectF:
+        """Keep the frame at least as big as the text it holds.
+
+        The edge that does not move while a handle is dragged stays where it
+        is, so the frame grows away from the handle.
+        """
+        min_width, min_height = self._minimum_size()
+        width = max(rect.width(), min_width)
+        height = max(rect.height(), min_height)
+
+        if handle in (0, 6, 7):
+            # A handle on the left: the right edge is the anchor.
+            rect.setLeft(rect.right() - width)
+        else:
+            # A handle on the right: the left edge is the anchor.
+            rect.setRight(rect.left() + width)
+
+        if handle in (0, 1, 2):
+            # A handle on the top: the bottom edge is the anchor.
+            rect.setTop(rect.bottom() - height)
+        else:
+            # A handle on the bottom: the top edge is the anchor.
+            rect.setBottom(rect.top() + height)
+
+        return rect
+
     def set_rect(self, rect: QRectF) -> None:
         """Update rectangle dimensions."""
+        rect = self._clamp_to_minimum(QRectF(rect), 4)
         self.prepareGeometryChange()
         self._rect = rect
         self.element.width = max(10.0, rect.width())
@@ -312,6 +359,9 @@ class CanvasItem(QGraphicsObject):
                 if hasattr(scene, "set_active_guides"):
                     scene.set_active_guides(snap_res.guides, snap_res.spacing_badges)
                 scene.update()
+
+            # The frame of a text never gets smaller than the text.
+            new_rect = self._clamp_to_minimum(new_rect, handle)
 
             # Enforce minimum size
             if new_rect.width() >= 10.0 and new_rect.height() >= 10.0:
@@ -592,8 +642,10 @@ class CanvasItem(QGraphicsObject):
         draw_rect = QRectF(rect)
         if natural_w > rect.width() + 1.0:
             # A text that is wider than its frame is not broken up.
-            draw_rect.setWidth(natural_w)
             flags &= ~Qt.TextWordWrap
+        # The rectangle is at least as big as the text, so that the last
+        # letter is not cut away.
+        draw_rect.setWidth(max(rect.width(), natural_w))
         if natural_h > rect.height() + 1.0:
             draw_rect.setHeight(natural_h)
             if elem.style.vertical_align == "middle":

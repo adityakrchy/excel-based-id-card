@@ -92,8 +92,35 @@ def test_a_new_text_element_gets_a_frame_that_fits(qtbot):
     assert item.element.height >= height
 
 
+def test_the_frame_never_gets_smaller_than_the_text(qtbot):
+    """Dragging a handle can not shrink the frame below its text."""
+    item = CanvasItem(_text_element())
+    width, height = measure_text_size(item.element, "Sample Text", 300)
+
+    item.set_rect(QRectF(0, 0, 40, 20))
+
+    assert item._rect.width() >= width
+    assert item._rect.height() >= height
+    assert item.text_overflows() is False
+
+
+def test_the_anchor_of_the_handle_stays_where_it_is(qtbot):
+    """The edge that does not move stays where it is."""
+    item = CanvasItem(_text_element())
+    min_width, min_height = item._minimum_size()
+
+    # The bottom right handle is dragged to the top left: the top left
+    # corner of the frame stays where it was.
+    item.set_rect(QRectF(0, 0, 40, 20))
+
+    assert item._rect.left() == 0
+    assert item._rect.top() == 0
+    assert item._rect.width() == pytest.approx(min_width)
+    assert item._rect.height() == pytest.approx(min_height)
+
+
 def test_a_text_that_does_not_fit_is_marked(qtbot):
-    """A frame that is too small is marked, so the cut text is noticed."""
+    """A text that is bigger than its frame is marked."""
     from id_card_generator.editor.canvas_scene import CanvasScene
 
     scene = CanvasScene()
@@ -104,7 +131,8 @@ def test_a_text_that_does_not_fit_is_marked(qtbot):
 
     assert item.text_overflows() is False
 
-    item.set_rect(QRectF(0, 0, 60, 20))
+    # A longer text does not fit into the frame any more.
+    item.element.static_content = "A much longer text that does not fit"
     assert item.text_overflows() is True
 
 
