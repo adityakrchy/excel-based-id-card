@@ -726,17 +726,11 @@ class ReviewPage(QWidget):
         st = rec.status
         self.lbl_status_badge.setText(f"STATUS: {st.value.upper()}")
         if st == ReviewStatus.APPROVED:
-            self.lbl_status_badge.setStyleSheet(
-                f"background-color: #064E3B; border: 1px solid {SEMANTIC_SUCCESS}; color: {SEMANTIC_SUCCESS}; font-weight: bold; padding: 6px; border-radius: 4px;"
-            )
+            self.lbl_status_badge.setStyleSheet(self._badge_style(SEMANTIC_SUCCESS))
         elif st == ReviewStatus.REJECTED:
-            self.lbl_status_badge.setStyleSheet(
-                f"background-color: #7F1D1D; border: 1px solid {SEMANTIC_ERROR}; color: {SEMANTIC_ERROR}; font-weight: bold; padding: 6px; border-radius: 4px;"
-            )
+            self.lbl_status_badge.setStyleSheet(self._badge_style(SEMANTIC_ERROR))
         elif st == ReviewStatus.CORRECTION:
-            self.lbl_status_badge.setStyleSheet(
-                f"background-color: #78350F; border: 1px solid {SEMANTIC_WARNING}; color: {SEMANTIC_WARNING}; font-weight: bold; padding: 6px; border-radius: 4px;"
-            )
+            self.lbl_status_badge.setStyleSheet(self._badge_style(SEMANTIC_WARNING))
         else:
             self.lbl_status_badge.setStyleSheet(
                 f"background-color: {SURFACE_HIGH}; color: {TEXT_PRIMARY}; font-weight: bold; padding: 6px; border-radius: 4px;"
@@ -751,6 +745,16 @@ class ReviewPage(QWidget):
         if row >= 0:
             index = self.record_model.index(row, 0)
             self.record_list.setCurrentIndex(index)
+
+    @staticmethod
+    def _badge_style(color: str) -> str:
+        """A soft badge around a semantic colour."""
+        tint = QColor(color)
+        return (
+            f"background-color: rgba({tint.red()}, {tint.green()}, {tint.blue()}, 48);"
+            f" border: 1px solid {color}; color: {color};"
+            f" font-weight: bold; padding: 6px; border-radius: 4px;"
+        )
 
     # -- preview ------------------------------------------------------
     def _update_preview(self, rec: ReviewRecord) -> None:

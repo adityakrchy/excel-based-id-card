@@ -175,8 +175,9 @@ class RecordTableModel(QAbstractTableModel):
     @staticmethod
     def _pin_status(record: SourceRecord):
         """Return the label and the colour of the PIN state of a record."""
+        palette = active_palette()
         if not record.pin:
-            return "MISSING PIN", "#ffb4ab"
+            return "MISSING PIN", palette.ERROR
         if any("Duplicate" in warning for warning in record.validation_warnings):
-            return "DUPLICATE", "#e8b65b"
-        return "VALID", "#6edba3"
+            return "DUPLICATE", palette.WARNING
+        return "VALID", palette.TERTIARY
