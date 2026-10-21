@@ -328,9 +328,14 @@ class MainWindow(QMainWindow):
 
         # Data source signals
         self.page_data_source.data_loaded.connect(self._on_data_loaded)
+        self.page_data_source.photo_lookup_changed.connect(self._on_photo_lookup_changed)
+        self.page_data_source.photo_policy_changed.connect(self._on_policy_changed)
 
         # Photo library signals
         self.page_photos.matching_updated.connect(self._on_matching_updated)
+        self.page_photos.lookup_column_changed.connect(
+            self.page_data_source.set_photo_lookup_column
+        )
 
         # Template page signals
         self.page_templates.template_selected.connect(self._on_template_selected)
@@ -405,6 +410,10 @@ class MainWindow(QMainWindow):
             if tmpl:
                 self.page_editor.load_template(tmpl)
                 self.page_editor.set_dataset(self.records, self.match_results, self.columns)
+
+        elif step == WorkflowStep.DATA_SOURCE:
+            # The connector shows the policy and the lookup of the project.
+            self.page_data_source.set_photo_policy(self.settings.missing_photo_policy)
 
         elif step == WorkflowStep.GENERATE:
             tmpl = self.active_template or self.page_templates.active_template
@@ -546,7 +555,24 @@ class MainWindow(QMainWindow):
         self.match_results = match_results
         self._mark_step_completed(WorkflowStep.PHOTOS, summary.matched_count > 0)
         self._refresh_dashboard_metrics()
+        # The connector shows how the photographs were found.
+        ambiguous = sum(
+            1 for m in match_results.values() if m.status.value == "ambiguous"
+        )
+        self.page_data_source.set_photo_stats(
+            matched=summary.matched_count,
+            missing=summary.missing_count,
+            ambiguous=ambiguous,
+        )
         self.status_bar.showMessage(f"Photos updated: {summary.matched_count} matched, {summary.missing_count} missing.")
+
+    def _on_photo_lookup_changed(self, column: str) -> None:
+        """The photo lookup column was changed on the connector."""
+        self.page_photos.matcher.set_key_column(column or None)
+        self.page_photos._rematch()
+        self.status_bar.showMessage(
+            f"Photo lookup column: {column or 'auto-detect'}"
+        )
 
     def _on_template_selected(self, template: TemplateDefinition) -> None:
         self.active_template = template
@@ -571,6 +597,8 @@ class MainWindow(QMainWindow):
 
     def _on_policy_changed(self, policy: MissingPhotoPolicy) -> None:
         self.settings.missing_photo_policy = policy
+        # The connector shows the same policy.
+        self.page_data_source.set_photo_policy(policy)
         logger.info("Missing photo policy set to %s", policy)
 
     def _refresh_dashboard_metrics(self) -> None:

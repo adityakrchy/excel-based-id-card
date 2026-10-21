@@ -1,17 +1,23 @@
 """Data source import and interactive record preview page.
 
-Revamped into a 3-column workstation suite per Stitch screen bd2f3aebf3bb:
-- Top Ribbon: connection pill, action toolbar, live metric pills.
-- Left Column: Template Placeholders & schema token registry.
-- Center Column: Spreadsheet controls, search filter, and live preview data table.
-- Right Column: Field Mapping & Rule Inspector + Selected Record Inspector.
+The screen is the Excel & CSV connector of the Stitch design
+(``bd2f3aebf3bb``) and is built as a three column workstation:
+
+* the left column lists the placeholders of the active template with their
+  mapping state and whether they are required,
+* the centre column shows the connection state of the spreadsheet, the
+  mapping tools and a virtual table with the imported records,
+* the right column is the column mapping inspector: the source column with
+  its inferred type, the transliteration, the photo lookup and the policy
+  for missing photographs.
 """
 
 import logging
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -24,39 +30,39 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
+    QTableView,
     QTabWidget,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from id_card_generator.core.constants import WorkflowStep
-from id_card_generator.core.exceptions import DataSourceError
-from id_card_generator.core.models import ProjectConfiguration, SourceRecord, TemplateDefinition
+from id_card_generator.core.constants import MissingPhotoPolicy, WorkflowStep
+from id_card_generator.core.models import (
+    ProjectConfiguration,
+    SourceRecord,
+    TemplateDefinition,
+)
 from id_card_generator.core.project_manager import ProjectManager
 from id_card_generator.data.data_validator import DataValidator, ValidationReport
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.data.hindi_converter import HindiConverter
 from id_card_generator.ui import workflow
-from id_card_generator.ui.studio_tokens import SIZES
-from id_card_generator.ui.components.layout_blocks import Divider, OverflowMenu, StatLine
+from id_card_generator.ui.components.layout_blocks import OverflowMenu, StatLine
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
+from id_card_generator.ui.components.record_table import RecordTableModel
 from id_card_generator.ui.components.status_pill import StatusPill
+from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
-    BORDER_DEFAULT,
     BORDER_SUBTLE,
     FONT_FAMILY_MONO,
-    FONT_FAMILY_UI,
     PRIMARY,
     SEMANTIC_ERROR,
     SEMANTIC_SUCCESS,
     SEMANTIC_WARNING,
-    SURFACE,
     SURFACE_HIGH,
-    SURFACE_HIGHER,
     SURFACE_LOW,
     SURFACE_LOWEST,
     TEXT_MUTED,
@@ -69,6 +75,50 @@ logger = logging.getLogger(__name__)
 # Every control in a row uses the same height as the rest of the app.
 CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
 
+# The placeholders that a card cannot do without.
+DEFAULT_REQUIRED_TOKENS = ("pin_number", "photo", "employee_name")
+
+
+class PlaceholderRow(QWidget):
+    """One row of the placeholder list: the token, its state and its tag."""
+
+    def __init__(
+        self,
+        token: str,
+        mapped_column: str = "",
+        required: bool = True,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setProperty("role", "flat")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(2)
+
+        top = QHBoxLayout()
+        top.setSpacing(6)
+
+        name = QLabel(f"{{{{{token}}}}}")
+        name.setProperty("role", "specValue")
+        top.addWidget(name)
+
+        top.addStretch()
+
+        tag = QLabel("REQ" if required else "OPT")
+        tag.setProperty("role", "badgeAccent" if required else "badgeMuted")
+        top.addWidget(tag)
+
+        layout.addLayout(top)
+
+        if mapped_column:
+            state = QLabel(f"Mapped → {mapped_column}")
+            state.setProperty("role", "specKey")
+        else:
+            state = QLabel("Not mapped")
+            state.setStyleSheet(f"color: {SEMANTIC_WARNING}; font-size: 11px;")
+        layout.addWidget(state)
+
 
 class DataSourcePage(QWidget):
     """Import spreadsheet, configure sheet/headers, validate rows, and preview data."""
@@ -76,6 +126,8 @@ class DataSourcePage(QWidget):
     data_loaded = Signal(object, object, object)  # (columns, records, validation_report)
     navigate_requested = Signal(str)  # WorkflowStep value
     mappings_changed = Signal(dict)  # token -> column mapping dict
+    photo_lookup_changed = Signal(str)  # the column the photos are looked up by
+    photo_policy_changed = Signal(object)  # MissingPhotoPolicy
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -86,6 +138,9 @@ class DataSourcePage(QWidget):
         self.validation_report: Optional[ValidationReport] = None
         self.field_mappings: Dict[str, str] = {}
         self.template_tokens: List[str] = ["pin_number", "employee_name", "department", "designation", "photo"]
+        self.column_types: Dict[str, str] = {}
+        self.token_required: Dict[str, bool] = {}
+        self.photo_lookup_column: str = ""
         self._error_count = 0
 
         self._setup_ui()
@@ -109,13 +164,16 @@ class DataSourcePage(QWidget):
                 tokens.add(elem.field_name.strip("{}"))
             if getattr(elem, "text", None):
                 # Search for {{token}} in text
-                import re
                 found = re.findall(r"\{\{([^}]+)\}\}", elem.text)
                 for f in found:
                     tokens.add(f.strip())
         if tokens:
             self.template_tokens = sorted(list(tokens))
             self._refresh_placeholders_list()
+
+    def setup_ui(self) -> None:
+        """Alias kept for the older call sites."""
+        self._setup_ui()
 
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -186,18 +244,6 @@ class DataSourcePage(QWidget):
         self.btn_refresh.setVisible(False)
         top_layout.addWidget(self.btn_refresh)
 
-        self.btn_automap = QPushButton("Auto-Map")
-        self.btn_automap.setToolTip("Automatically map spreadsheet columns to template placeholders by name similarity")
-        self.btn_automap.clicked.connect(self._auto_map_columns)
-        self.btn_automap.setVisible(False)
-        top_layout.addWidget(self.btn_automap)
-
-        self.btn_validate = QPushButton("Validate All")
-        self.btn_validate.setToolTip("Run strict validation checks across all records")
-        self.btn_validate.clicked.connect(self._validate_all_records)
-        self.btn_validate.setVisible(False)
-        top_layout.addWidget(self.btn_validate)
-
         # The metric pills stay available for the API, but the interface only
         # shows the quiet numbers of the stat line.
         self.pill_placeholders = StatusPill("TOKENS: 0", color=PRIMARY)
@@ -235,26 +281,32 @@ class DataSourcePage(QWidget):
         # --- LEFT COLUMN: Template Placeholders List ---
         left_panel = QFrame()
         left_panel.setObjectName("workspace_panel")
+        left_panel.setMinimumWidth(240)
+        left_panel.setMaximumWidth(360)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(6)
 
-        lbl_tokens_title = QLabel("<b>TEMPLATE PLACEHOLDERS</b>")
-        lbl_tokens_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px; letter-spacing: 0.5px;")
+        lbl_tokens_title = QLabel("TEMPLATE PLACEHOLDERS")
+        lbl_tokens_title.setProperty("role", "sectionLabel")
         left_layout.addWidget(lbl_tokens_title)
 
-        lbl_tokens_sub = QLabel("Select token to inspect or map")
-        lbl_tokens_sub.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        lbl_tokens_sub = QLabel("Select a token to map it to a column")
+        lbl_tokens_sub.setProperty("role", "specKey")
         left_layout.addWidget(lbl_tokens_sub)
 
         self.list_placeholders = QListWidget()
         self.list_placeholders.setStyleSheet(
             f"QListWidget {{ background: {SURFACE_LOWEST}; border: 1px solid {BORDER_SUBTLE}; color: {TEXT_PRIMARY}; font-size: 11px; }}"
-            f"QListWidget::item {{ padding: 6px; border-bottom: 1px solid {BORDER_SUBTLE}; }}"
-            f"QListWidget::item:selected {{ background-color: {SURFACE_HIGH}; color: {PRIMARY}; border-left: 2px solid {PRIMARY}; }}"
+            f"QListWidget::item {{ padding: 0px; border-bottom: 1px solid {BORDER_SUBTLE}; }}"
+            f"QListWidget::item:selected {{ background-color: {SURFACE_HIGH}; color: {PRIMARY}; }}"
         )
         self.list_placeholders.itemClicked.connect(self._on_placeholder_clicked)
         left_layout.addWidget(self.list_placeholders)
+
+        self.lbl_token_summary = QLabel("")
+        self.lbl_token_summary.setProperty("role", "specKey")
+        left_layout.addWidget(self.lbl_token_summary)
 
         self.main_splitter.addWidget(left_panel)
 
@@ -264,6 +316,11 @@ class DataSourcePage(QWidget):
         center_layout = QVBoxLayout(center_panel)
         center_layout.setContentsMargins(8, 8, 8, 8)
         center_layout.setSpacing(8)
+
+        # The connection state of the spreadsheet.
+        self.lbl_connection = QLabel("Not connected")
+        self.lbl_connection.setProperty("role", "cardTitle")
+        center_layout.addWidget(self.lbl_connection)
 
         # Controls sub-bar (Worksheet, Header row, Hindi mode, Search)
         ctrl_bar = QHBoxLayout()
@@ -286,10 +343,36 @@ class DataSourcePage(QWidget):
         self.cmb_hindi_mode = QComboBox()
         self.cmb_hindi_mode.addItem("Auto-detect Hindi", "auto")
         self.cmb_hindi_mode.addItem("Kruti Dev → Unicode", "kruti_to_unicode")
+        self.cmb_hindi_mode.addItem("Chanakya → Unicode", "chanakya_to_unicode")
         self.cmb_hindi_mode.addItem("Unicode / Mangal", "none")
+        self.cmb_hindi_mode.setToolTip(
+            "Auto-detect reads the legacy font of the cell.\n"
+            "Kruti Dev and Chanakya are converted with the shared legacy "
+            "Devanagari mapping.\n"
+            "Unicode / Mangal keeps the text as it is."
+        )
         self.cmb_hindi_mode.setFixedHeight(CONTROL_HEIGHT)
         self.cmb_hindi_mode.currentIndexChanged.connect(self._on_hindi_mode_changed)
         ctrl_bar.addWidget(self.cmb_hindi_mode)
+
+        ctrl_bar.addStretch()
+
+        # The two mapping tools of the plan.
+        self.btn_automap = QPushButton("✦ Auto-map columns")
+        self.btn_automap.setToolTip(
+            "Automatically map spreadsheet columns to template placeholders by name similarity"
+        )
+        self.btn_automap.setObjectName("btn_secondary")
+        self.btn_automap.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_automap.clicked.connect(self._auto_map_columns)
+        ctrl_bar.addWidget(self.btn_automap)
+
+        self.btn_validate = QPushButton("Validate all")
+        self.btn_validate.setToolTip("Run strict validation checks across all records")
+        self.btn_validate.setObjectName("btn_secondary")
+        self.btn_validate.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_validate.clicked.connect(self._validate_all_records)
+        ctrl_bar.addWidget(self.btn_validate)
 
         center_layout.addLayout(ctrl_bar)
 
@@ -297,21 +380,30 @@ class DataSourcePage(QWidget):
         search_bar = QHBoxLayout()
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("Filter records (name, PIN, designation, dept)...")
+        self.txt_search.setProperty("role", "fieldFlat")
         self.txt_search.textChanged.connect(self._filter_table)
         search_bar.addWidget(self.txt_search, stretch=1)
 
         self.lbl_summary = QLabel("0 records loaded")
-        self.lbl_summary.setStyleSheet(f"font-weight: 600; color: {TEXT_SECONDARY}; font-size: 11px;")
+        self.lbl_summary.setProperty("role", "specKey")
         search_bar.addWidget(self.lbl_summary)
         center_layout.addLayout(search_bar)
 
         # Data Table
-        self.table = QTableWidget()
+        self.record_model = RecordTableModel(self)
+        self.table = QTableView()
+        self.table.setModel(self.record_model)
         self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableView.SelectRows)
+        self.table.setSelectionMode(QTableView.SingleSelection)
+        self.table.verticalHeader().setDefaultSectionSize(26)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.table.itemSelectionChanged.connect(self._on_row_selected)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.selectionModel().selectionChanged.connect(
+            lambda selected, deselected: self._on_row_selected()
+        )
         self.table.setStyleSheet(
-            f"QTableWidget {{ background-color: {SURFACE_LOWEST}; alternate-background-color: {SURFACE_LOW};"
+            f"QTableView {{ background-color: {SURFACE_LOWEST}; alternate-background-color: {SURFACE_LOW};"
             f" gridline-color: {BORDER_SUBTLE}; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_SUBTLE}; }}"
             f"QHeaderView::section {{ background-color: {SURFACE_HIGH}; color: {TEXT_SECONDARY}; border: 1px solid {BORDER_SUBTLE};"
             f" padding: 4px; font-weight: 600; font-size: 11px; }}"
@@ -323,6 +415,8 @@ class DataSourcePage(QWidget):
         # --- RIGHT COLUMN: Field Mapping & Selected Record Inspector ---
         right_panel = QFrame()
         right_panel.setObjectName("workspace_panel")
+        right_panel.setMinimumWidth(280)
+        right_panel.setMaximumWidth(400)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(6, 6, 6, 6)
         right_layout.setSpacing(6)
@@ -336,11 +430,22 @@ class DataSourcePage(QWidget):
 
         # Tab 1: Field Mapping & Rules Inspector
         tab_mapping = QWidget()
-        mapping_layout = QVBoxLayout(tab_mapping)
+        mapping_outer = QVBoxLayout(tab_mapping)
+        mapping_outer.setContentsMargins(0, 0, 0, 0)
+        mapping_outer.setSpacing(0)
+
+        mapping_scroll = QScrollArea()
+        mapping_scroll.setWidgetResizable(True)
+        mapping_scroll.setFrameShape(QFrame.NoFrame)
+        mapping_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        mapping_content = QWidget()
+        mapping_content.setProperty("role", "flat")
+        mapping_layout = QVBoxLayout(mapping_content)
         mapping_layout.setContentsMargins(8, 8, 8, 8)
         mapping_layout.setSpacing(8)
 
-        lbl_map_head = QLabel("MAPPING")
+        lbl_map_head = QLabel("TARGET PLACEHOLDER")
         lbl_map_head.setProperty("role", "sectionLabel")
         mapping_layout.addWidget(lbl_map_head)
 
@@ -349,11 +454,24 @@ class DataSourcePage(QWidget):
         self.lbl_active_token.setStyleSheet(f"color: {PRIMARY}; font-weight: 600;")
         mapping_layout.addWidget(self.lbl_active_token)
 
+        self.lbl_token_detail = QLabel("")
+        self.lbl_token_detail.setProperty("role", "specKey")
+        self.lbl_token_detail.setWordWrap(True)
+        mapping_layout.addWidget(self.lbl_token_detail)
+
+        lbl_col_head = QLabel("SOURCE COLUMN")
+        lbl_col_head.setProperty("role", "sectionLabel")
+        mapping_layout.addWidget(lbl_col_head)
+
         self.cmb_source_column = QComboBox()
         self.cmb_source_column.setPlaceholderText("Spreadsheet column")
         self.cmb_source_column.setFixedHeight(CONTROL_HEIGHT)
         self.cmb_source_column.currentIndexChanged.connect(self._on_source_column_changed)
         mapping_layout.addWidget(self.cmb_source_column)
+
+        self.lbl_column_type = QLabel("")
+        self.lbl_column_type.setProperty("role", "specKey")
+        mapping_layout.addWidget(self.lbl_column_type)
 
         self.btn_apply_mapping = QPushButton("Apply mapping")
         self.btn_apply_mapping.setObjectName("btn_primary")
@@ -370,6 +488,7 @@ class DataSourcePage(QWidget):
         mapping_layout.addWidget(self.btn_rules)
 
         self.rules_box = QWidget()
+        self.rules_box.setProperty("role", "flat")
         rules_layout = QVBoxLayout(self.rules_box)
         rules_layout.setContentsMargins(0, 4, 0, 0)
         rules_layout.setSpacing(8)
@@ -389,16 +508,55 @@ class DataSourcePage(QWidget):
 
         self.chk_required = QCheckBox("Required field")
         self.chk_required.setChecked(True)
+        self.chk_required.toggled.connect(self._on_required_toggled)
         rules_layout.addWidget(self.chk_required)
 
-        self.chk_convert_hindi = QCheckBox("Convert KrutiDev / DevLys")
+        self.chk_convert_hindi = QCheckBox("Convert KrutiDev / Chanakya")
         self.chk_convert_hindi.setChecked(True)
         rules_layout.addWidget(self.chk_convert_hindi)
 
         self.rules_box.setVisible(False)
         mapping_layout.addWidget(self.rules_box)
 
+        # --- Photo lookup ---
+        lbl_photo_head = QLabel("PHOTO LOOKUP")
+        lbl_photo_head.setProperty("role", "sectionLabel")
+        mapping_layout.addWidget(lbl_photo_head)
+
+        self.cmb_photo_lookup = QComboBox()
+        self.cmb_photo_lookup.addItem("Auto-detect (PIN / ID)", "")
+        self.cmb_photo_lookup.setFixedHeight(CONTROL_HEIGHT)
+        self.cmb_photo_lookup.currentIndexChanged.connect(self._on_photo_lookup_changed)
+        mapping_layout.addWidget(self.cmb_photo_lookup)
+
+        self.lbl_photo_stats = QLabel("No photos matched yet.")
+        self.lbl_photo_stats.setProperty("role", "specKey")
+        self.lbl_photo_stats.setWordWrap(True)
+        mapping_layout.addWidget(self.lbl_photo_stats)
+
+        # --- Missing photo policy ---
+        lbl_policy_head = QLabel("MISSING PHOTO POLICY")
+        lbl_policy_head.setProperty("role", "sectionLabel")
+        mapping_layout.addWidget(lbl_policy_head)
+
+        self.cmb_photo_policy = QComboBox()
+        self.cmb_photo_policy.addItem(
+            "Default avatar placeholder", MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER
+        )
+        self.cmb_photo_policy.addItem(
+            "Skip the record", MissingPhotoPolicy.SKIP_RECORD
+        )
+        self.cmb_photo_policy.addItem(
+            "Fail the generation", MissingPhotoPolicy.FAIL_RECORD
+        )
+        self.cmb_photo_policy.setFixedHeight(CONTROL_HEIGHT)
+        self.cmb_photo_policy.currentIndexChanged.connect(self._on_photo_policy_changed)
+        mapping_layout.addWidget(self.cmb_photo_policy)
+
         mapping_layout.addStretch()
+
+        mapping_scroll.setWidget(mapping_content)
+        mapping_outer.addWidget(mapping_scroll)
         self.right_tabs.addTab(tab_mapping, "Mapping")
 
         # Tab 2: Selected Record Inspector (preserves self.inspector & self.lbl_inspect_details)
@@ -414,7 +572,7 @@ class DataSourcePage(QWidget):
 
         self.lbl_inspect_details = QLabel("<i>Select a row in the table to inspect all attributes.</i>")
         self.lbl_inspect_details.setWordWrap(True)
-        self.lbl_inspect_details.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; line-height: 1.4;")
+        self.lbl_inspect_details.setProperty("role", "specValue")
         insp_layout.addWidget(self.lbl_inspect_details)
         insp_layout.addStretch()
 
@@ -423,8 +581,8 @@ class DataSourcePage(QWidget):
 
         self.main_splitter.addWidget(right_panel)
 
-        # Set Splitter Initial Proportions: Left ~240, Center ~600, Right ~280
-        self.main_splitter.setSizes([240, 620, 280])
+        # Set Splitter Initial Proportions: Left ~280, Center ~620, Right ~320
+        self.main_splitter.setSizes([280, 620, 320])
         self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setStretchFactor(2, 0)
@@ -446,34 +604,47 @@ class DataSourcePage(QWidget):
 
         self._refresh_placeholders_list()
 
+    # -----------------------------------------------------------------
+    # Placeholders
+    # -----------------------------------------------------------------
+    def _is_required(self, token: str) -> bool:
+        """True when the token has to be mapped."""
+        if token in self.token_required:
+            return self.token_required[token]
+        return token in DEFAULT_REQUIRED_TOKENS
+
     def _refresh_placeholders_list(self) -> None:
         """Populate left placeholder list."""
         self.list_placeholders.clear()
         mapped_count = 0
-        for token in self.template_tokens:
-            is_mapped = token in self.field_mappings and bool(self.field_mappings[token])
-            if is_mapped:
-                mapped_count += 1
-                status = f"✓ {self.field_mappings[token]}"
-            else:
-                status = "⚠ unmapped"
 
-            item = QListWidgetItem(f"{{{{{token}}}}}\n   {status}")
+        for token in self.template_tokens:
+            mapped_column = self.field_mappings.get(token, "")
+            if mapped_column:
+                mapped_count += 1
+
+            item = QListWidgetItem()
             item.setData(Qt.UserRole, token)
+            row = PlaceholderRow(
+                token=token,
+                mapped_column=mapped_column,
+                required=self._is_required(token),
+            )
             self.list_placeholders.addItem(item)
+            self.list_placeholders.setItemWidget(item, row)
+            # The row is drawn by a widget, so the item needs its size.
+            item.setSizeHint(row.sizeHint())
 
         self.pill_placeholders.set_status(f"TOKENS: {len(self.template_tokens)}", color=PRIMARY)
         self.pill_mapped.set_status(f"MAPPED: {mapped_count}", color=SEMANTIC_SUCCESS if mapped_count > 0 else TEXT_MUTED)
         unmapped = len(self.template_tokens) - mapped_count
         self.pill_unmapped.set_status(f"UNMAPPED: {unmapped}", color=SEMANTIC_WARNING if unmapped > 0 else SEMANTIC_SUCCESS)
 
-        self.stat_line.set_stats([
-            ("Fields", len(self.template_tokens)),
-            ("Mapped", mapped_count, SEMANTIC_SUCCESS if mapped_count else None),
-            ("Unmapped", unmapped, SEMANTIC_WARNING if unmapped else None),
-            ("Records", len(self.records)),
-            ("Errors", self._error_count, SEMANTIC_ERROR if self._error_count else None),
-        ])
+        self.lbl_token_summary.setText(
+            f"{mapped_count} of {len(self.template_tokens)} placeholders mapped"
+        )
+
+        self._refresh_stat_line()
 
     def _refresh_stat_line(self) -> None:
         """Refresh the quiet line of numbers below the source bar."""
@@ -495,15 +666,43 @@ class DataSourcePage(QWidget):
 
     def _on_placeholder_clicked(self, item: QListWidgetItem) -> None:
         token = item.data(Qt.UserRole)
-        if token:
-            self.lbl_active_token.setText(f"{{{{{token}}}}}")
-            self.right_tabs.setCurrentIndex(0)
-            # Pre-select mapped column if existing
-            mapped_col = self.field_mappings.get(token, "")
-            idx = self.cmb_source_column.findText(mapped_col)
-            if idx >= 0:
-                self.cmb_source_column.setCurrentIndex(idx)
+        if not token:
+            return
 
+        self.lbl_active_token.setText(f"{{{{{token}}}}}")
+        self.right_tabs.setCurrentIndex(0)
+
+        required = self._is_required(token)
+        self.chk_required.blockSignals(True)
+        self.chk_required.setChecked(required)
+        self.chk_required.blockSignals(False)
+
+        self.lbl_token_detail.setText(
+            "Required field - the card cannot be rendered without it."
+            if required
+            else "Optional field - the card falls back to the placeholder."
+        )
+
+        # Pre-select mapped column if existing
+        mapped_col = self.field_mappings.get(token, "")
+        idx = self.cmb_source_column.findData(mapped_col)
+        if idx >= 0:
+            self.cmb_source_column.setCurrentIndex(idx)
+        else:
+            self.cmb_source_column.setCurrentIndex(0)
+            if mapped_col:
+                self.lbl_column_type.setText("")
+
+    def _on_required_toggled(self, checked: bool) -> None:
+        """Remember whether the active token is required."""
+        token = self.lbl_active_token.text().strip("{}")
+        if token:
+            self.token_required[token] = checked
+            self._refresh_placeholders_list()
+
+    # -----------------------------------------------------------------
+    # Import
+    # -----------------------------------------------------------------
     def _browse_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -579,12 +778,28 @@ class DataSourcePage(QWidget):
             self.columns = cols
             self.records = records
             self.validation_report = report
+            self.column_types = self._infer_column_types(cols, records)
 
             # Update Source Column dropdown in Mapping Inspector
             self.cmb_source_column.clear()
             self.cmb_source_column.addItem("(None / Ignore)", "")
             for col in cols:
-                self.cmb_source_column.addItem(col, col)
+                self.cmb_source_column.addItem(
+                    f"{col}  {self.column_types.get(col, '[String]')}", col
+                )
+
+            # The photo lookup offers every column of the sheet.
+            previous_lookup = self.photo_lookup_column
+            self.cmb_photo_lookup.blockSignals(True)
+            self.cmb_photo_lookup.clear()
+            self.cmb_photo_lookup.addItem("Auto-detect (PIN / ID)", "")
+            for col in cols:
+                self.cmb_photo_lookup.addItem(col, col)
+            if previous_lookup:
+                index = self.cmb_photo_lookup.findData(previous_lookup)
+                if index >= 0:
+                    self.cmb_photo_lookup.setCurrentIndex(index)
+            self.cmb_photo_lookup.blockSignals(False)
 
             # Auto-map initial common tokens if not already mapped
             self._auto_map_columns(silent=True)
@@ -612,6 +827,7 @@ class DataSourcePage(QWidget):
                 f"{len(records):,} records • {report.valid_records} valid • "
                 f"{report.missing_pins} missing PINs • {len(report.duplicate_pins)} duplicate PINs"
             )
+            self._update_connection_label()
             self.pill_records.set_status(f"RECORDS: {len(records):,}", color=TEXT_SECONDARY)
             self._error_count = report.missing_pins + len(report.duplicate_pins)
             self.pill_errors.set_status(
@@ -627,9 +843,71 @@ class DataSourcePage(QWidget):
         except Exception as e:
             logger.error("Import failed: %s", e)
             self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
-            self.pill_connection.set_status("ERROR", color=SEMANTIC_ERROR)
             self.notice.set_message(f"Failed to import records: {e}", severity="error")
 
+    def _update_connection_label(self) -> None:
+        """Show the state of the connection the way the plan describes it."""
+        sheet = self.cmb_sheets.currentText()
+        if not self.records:
+            self.lbl_connection.setText("Connected · no records")
+            return
+        self.lbl_connection.setText(
+            f"Connected: {len(self.records):,} Records  |  Sheet: '{sheet or 'default'}'"
+        )
+
+    # -----------------------------------------------------------------
+    # Column types
+    # -----------------------------------------------------------------
+    def _infer_column_types(
+        self,
+        columns: List[str],
+        records: List[SourceRecord],
+    ) -> Dict[str, str]:
+        """Guess the type of every column of the sheet."""
+        types: Dict[str, str] = {}
+        samples = records[:200]
+
+        for column in columns:
+            values = [record.get_value(column) for record in samples]
+            values = [value for value in values if value]
+            types[column] = self._type_of(values)
+
+        return types
+
+    @staticmethod
+    def _type_of(values: List[str]) -> str:
+        """Return the type label of a list of values."""
+        if not values:
+            return "[String]"
+
+        lowered = [value.lower() for value in values]
+
+        if all(
+            value.endswith((".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"))
+            for value in lowered
+        ):
+            return "[Image Path]"
+
+        if all(HindiConverter.is_unicode_devanagari(value) for value in values):
+            return "[Devanagari]"
+
+        if all(re.fullmatch(r"[+-]?\d+", value) for value in values):
+            return "[Integer]"
+
+        # A column that mixes whole numbers and decimals is a decimal column.
+        if all(re.fullmatch(r"[+-]?\d+([.,]\d+)?", value) for value in values):
+            return "[Decimal]"
+
+        if all(
+            re.fullmatch(r"\d{1,4}[-/]\d{1,2}[-/]\d{1,4}", value) for value in values
+        ):
+            return "[Date]"
+
+        return "[String]"
+
+    # -----------------------------------------------------------------
+    # Mapping
+    # -----------------------------------------------------------------
     def _auto_map_columns(self, silent: bool = False) -> None:
         """Heuristic auto-mapping between template tokens and spreadsheet column names."""
         if not self.columns:
@@ -678,85 +956,76 @@ class DataSourcePage(QWidget):
         )
 
     def _on_source_column_changed(self) -> None:
-        pass
+        """Show the inferred type of the chosen column."""
+        column = self.cmb_source_column.currentData()
+        if not column:
+            self.lbl_column_type.setText("The placeholder stays empty.")
+            return
+        self.lbl_column_type.setText(
+            f"{self.column_types.get(column, '[String]')} · {column}"
+        )
 
     def _apply_current_mapping(self) -> None:
         raw_token = self.lbl_active_token.text().strip("{}")
-        col = self.cmb_source_column.currentText()
-        if col.startswith("(None"):
-            col = ""
+        col = self.cmb_source_column.currentData() or ""
         self.field_mappings[raw_token] = col
         self._refresh_placeholders_list()
         self.mappings_changed.emit(self.field_mappings)
 
+    # -----------------------------------------------------------------
+    # Photo lookup & policy
+    # -----------------------------------------------------------------
+    def _on_photo_lookup_changed(self) -> None:
+        """The column the photographs are looked up by has changed."""
+        self.photo_lookup_column = self.cmb_photo_lookup.currentData() or ""
+        self.photo_lookup_changed.emit(self.photo_lookup_column)
+
+    def _on_photo_policy_changed(self) -> None:
+        """The policy for missing photographs has changed."""
+        policy = self.cmb_photo_policy.currentData()
+        if policy is not None:
+            self.photo_policy_changed.emit(policy)
+
+    def set_photo_lookup_column(self, column: str) -> None:
+        """Show the column the photographs are looked up by."""
+        self.cmb_photo_lookup.blockSignals(True)
+        index = self.cmb_photo_lookup.findData(column or "")
+        if index >= 0:
+            self.cmb_photo_lookup.setCurrentIndex(index)
+        self.cmb_photo_lookup.blockSignals(False)
+        self.photo_lookup_column = column or ""
+
+    def set_photo_policy(self, policy) -> None:
+        """Show the policy for missing photographs."""
+        self.cmb_photo_policy.blockSignals(True)
+        index = self.cmb_photo_policy.findData(policy)
+        if index >= 0:
+            self.cmb_photo_policy.setCurrentIndex(index)
+        self.cmb_photo_policy.blockSignals(False)
+
+    def set_photo_stats(self, matched: int, missing: int, ambiguous: int) -> None:
+        """Show how many photographs were found for the records."""
+        self.lbl_photo_stats.setText(
+            f"Matched {matched:,} · Missing {missing:,} · Ambiguous {ambiguous:,}"
+        )
+
+    # -----------------------------------------------------------------
+    # Table
+    # -----------------------------------------------------------------
     def _populate_table(self, records_to_show: List[SourceRecord]) -> None:
-        self.table.clear()
-        if not records_to_show or not self.columns:
-            self.table.setRowCount(0)
-            self.table.setColumnCount(0)
-            return
-
-        tbl_font = self.table.font()
-        tbl_font.setFamilies([tbl_font.family(), "Segoe UI", "Nirmala UI", "Mangal", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Devanagari", "Arial"])
-        self.table.setFont(tbl_font)
-
-        headers = ["Row", "PIN Status", "PIN Number"] + [c for c in self.columns if c.lower() != "pin number"]
-        self.table.setColumnCount(len(headers))
-        self.table.setHorizontalHeaderLabels(headers)
-        self.table.setRowCount(len(records_to_show))
-
-        for row_idx, rec in enumerate(records_to_show):
-            # Row index
-            item_row = QTableWidgetItem(str(rec.row_index))
-            item_row.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row_idx, 0, item_row)
-
-            # PIN Status
-            if not rec.pin:
-                status_item = QTableWidgetItem("MISSING PIN")
-                status_item.setBackground(QColor(239, 68, 68, 60))
-                status_item.setForeground(QColor(SEMANTIC_ERROR))
-            elif any("Duplicate" in w for w in rec.validation_warnings):
-                status_item = QTableWidgetItem("DUPLICATE")
-                status_item.setBackground(QColor(245, 158, 11, 60))
-                status_item.setForeground(QColor(SEMANTIC_WARNING))
-            else:
-                status_item = QTableWidgetItem("VALID")
-                status_item.setForeground(QColor(SEMANTIC_SUCCESS))
-            status_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row_idx, 1, status_item)
-
-            # PIN Number
-            item_pin = QTableWidgetItem(rec.pin or rec.raw_pin)
-            if not rec.pin:
-                item_pin.setBackground(QColor(239, 68, 68, 40))
-            self.table.setItem(row_idx, 2, item_pin)
-
-            # Other columns
-            col_offset = 3
-            for c_idx, col_name in enumerate(c for c in self.columns if c.lower() != "pin number"):
-                val = rec.get_value(col_name)
-                item = QTableWidgetItem(val)
-                if not val:
-                    # Empty cell highlight
-                    item.setBackground(QColor(40, 44, 52, 100))
-                self.table.setItem(row_idx, col_offset + c_idx, item)
+        """Fill the virtual table with the imported records."""
+        self.record_model.set_records(records_to_show, self.columns)
+        self.record_model.set_filter(self.txt_search.text())
 
     def _filter_table(self, query: str) -> None:
-        query = query.lower().strip()
-        if not query:
-            for r in range(self.table.rowCount()):
-                self.table.setRowHidden(r, False)
-            return
-
-        for r in range(self.table.rowCount()):
-            row_visible = False
-            for c in range(self.table.columnCount()):
-                item = self.table.item(r, c)
-                if item and query in item.text().lower():
-                    row_visible = True
-                    break
-            self.table.setRowHidden(r, not row_visible)
+        """Only the matching rows stay visible."""
+        self.record_model.set_filter(query)
+        visible = self.record_model.rowCount()
+        self.lbl_summary.setText(
+            f"{visible:,} of {len(self.records):,} records"
+            if visible != len(self.records)
+            else f"{len(self.records):,} records loaded"
+        )
 
     def _on_row_selected(self) -> None:
         selected_rows = self.table.selectionModel().selectedRows()
@@ -764,21 +1033,22 @@ class DataSourcePage(QWidget):
             self.lbl_inspect_details.setText("<i>Select a row in the table to inspect all attributes.</i>")
             return
 
-        row_idx = selected_rows[0].row()
-        if 0 <= row_idx < len(self.records):
-            rec = self.records[row_idx]
-            lines = [
-                f"<b>Row Index:</b> {rec.row_index}",
-                f"<b>PIN Number:</b> {rec.pin or '(None)'}",
-                f"<b>Raw PIN:</b> '{rec.raw_pin}'",
-                "<hr>",
-            ]
-            for k, v in rec.data.items():
-                lines.append(f"<b>{k}:</b> {v or '<i>empty</i>'}")
+        rec = self.record_model.record_at(selected_rows[0].row())
+        if rec is None:
+            return
 
-            if rec.validation_errors:
-                lines.append(f"<hr><font color='{SEMANTIC_ERROR}'><b>Errors:</b><br>" + "<br>".join(rec.validation_errors) + "</font>")
-            if rec.validation_warnings:
-                lines.append(f"<hr><font color='{SEMANTIC_WARNING}'><b>Warnings:</b><br>" + "<br>".join(rec.validation_warnings) + "</font>")
+        lines = [
+            f"<b>Row Index:</b> {rec.row_index + 1}",
+            f"<b>PIN Number:</b> {rec.pin or '(None)'}",
+            f"<b>Raw PIN:</b> '{rec.raw_pin}'",
+            "<hr>",
+        ]
+        for k, v in rec.data.items():
+            lines.append(f"<b>{k}:</b> {v or '<i>empty</i>'}")
 
-            self.lbl_inspect_details.setText("<br>".join(lines))
+        if rec.validation_errors:
+            lines.append(f"<hr><font color='{SEMANTIC_ERROR}'><b>Errors:</b><br>" + "<br>".join(rec.validation_errors) + "</font>")
+        if rec.validation_warnings:
+            lines.append(f"<hr><font color='{SEMANTIC_WARNING}'><b>Warnings:</b><br>" + "<br>".join(rec.validation_warnings) + "</font>")
+
+        self.lbl_inspect_details.setText("<br>".join(lines))

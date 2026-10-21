@@ -122,6 +122,9 @@ class StatLine(QWidget):
             item = self._layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # Detach the widget first: a widget that is only scheduled for
+                # deletion keeps painting over the new statistics.
+                widget.setParent(None)
                 widget.deleteLater()
         self._labels.clear()
 

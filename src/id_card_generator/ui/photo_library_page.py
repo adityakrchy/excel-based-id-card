@@ -57,6 +57,7 @@ class PhotoLibraryPage(QWidget):
 
     matching_updated = Signal(object, object)  # (match_results_dict, match_summary)
     navigate_requested = Signal(str)  # WorkflowStep value
+    lookup_column_changed = Signal(str)  # the column the photos are looked up by
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -511,6 +512,7 @@ class PhotoLibraryPage(QWidget):
             prefix=self.txt_prefix.text().strip(),
             suffix=self.txt_suffix.text().strip(),
         )
+        self.lookup_column_changed.emit(key_col or "")
         self._rematch()
 
     def _browse_directory(self) -> None:

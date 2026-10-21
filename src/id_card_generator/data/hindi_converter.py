@@ -232,6 +232,9 @@ class HindiConverter:
         Modes:
             'auto': Auto-detect Kruti Dev font or text characteristics. If detected, convert.
             'kruti_to_unicode': Force Kruti Dev -> Unicode conversion for all legacy strings.
+            'chanakya_to_unicode': Force the legacy Devanagari conversion used for the
+                Chanakya legacy font.  Chanakya shares the consonant layout with
+                Kruti Dev, so the same mapping table is used for the supported subset.
             'none': Preserve raw value without conversion (for Mangal/Unicode or raw Latin).
         """
         if val is None:
@@ -244,6 +247,9 @@ class HindiConverter:
             return s
 
         if mode == "kruti_to_unicode":
+            return cls.kruti_to_unicode(s)
+
+        if mode == "chanakya_to_unicode":
             return cls.kruti_to_unicode(s)
 
         # mode == 'auto'
