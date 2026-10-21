@@ -8,7 +8,6 @@ come from the standard library, so no extra dependency is needed:
 * the memory is the peak resident set size of the process.
 """
 
-import resource
 import sys
 import time
 from typing import Tuple
@@ -42,7 +41,12 @@ class ProcessMetrics:
 
     @staticmethod
     def memory_mb() -> float:
-        """Return the peak resident memory of the process in megabytes."""
+        """Return peak resident memory in megabytes when the platform supports it."""
+        try:
+            import resource
+        except ImportError:  # Windows does not provide the resource module.
+            return 0.0
+
         try:
             usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         except (OSError, ValueError):  # pragma: no cover - platform specific

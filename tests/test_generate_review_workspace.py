@@ -9,6 +9,8 @@ the whole job of the page:
 * the card can be previewed, flipped to the back face and edited.
 """
 
+import builtins
+
 import pytest
 
 from id_card_generator.core.constants import MatchStatus, MissingPhotoPolicy, ReviewStatus
@@ -124,7 +126,21 @@ def test_the_process_metrics_report_cpu_and_memory():
 
     cpu, memory = metrics.sample()
     assert 0.0 <= cpu <= 100.0
-    assert memory > 0.0
+    assert memory >= 0.0
+
+
+def test_process_metrics_work_without_resource_module(monkeypatch):
+    """Platforms without resource still allow the application to start."""
+    original_import = builtins.__import__
+
+    def import_without_resource(name, *args, **kwargs):
+        if name == "resource":
+            raise ImportError("resource is unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_resource)
+
+    assert ProcessMetrics.memory_mb() == 0.0
 
 
 def test_the_record_list_model_tracks_the_entries(qtbot):
