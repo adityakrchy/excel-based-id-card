@@ -426,3 +426,42 @@ def test_approving_moves_to_the_next_record(review_page: ProductionPage):
 
     assert review_page.manager.records[0].status == ReviewStatus.APPROVED
     assert review_page.manager.current_index == 1
+
+
+def test_the_queue_can_approve_every_card(review_page: ProductionPage):
+    """The button approves every card of the queue that is not rejected."""
+    records = _records(5)
+    results = [
+        RenderResult(
+            record_id=record.record_id,
+            pin=record.pin,
+            success=True,
+            image_path=f"/tmp/{record.pin}.png",
+        )
+        for record in records
+    ]
+    review_page.load_review_session(
+        source_records=records,
+        generation_results=results,
+        template=_template(),
+        match_results=_matches(records),
+        column_mappings={},
+    )
+
+    # One card is rejected, it stays rejected.
+    review_page.manager.records[-1].status = ReviewStatus.REJECTED
+    review_page._update_display()
+
+    assert review_page.btn_approve_all.isEnabled() is True
+    assert "4" in review_page.btn_approve_all.text()
+
+    review_page.btn_approve_all.click()
+
+    counts = review_page.manager.counts
+    assert counts["approved"] == 4
+    assert counts["pending"] == 0
+    assert counts["rejected"] == 1
+    assert "Approved 4" in review_page.notice.text()
+
+    # Nothing is left to approve, so the button goes quiet.
+    assert review_page.btn_approve_all.isEnabled() is False

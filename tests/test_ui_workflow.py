@@ -1,7 +1,7 @@
 """UI integration tests using pytest-qt."""
 
 import pytest
-from id_card_generator.core.constants import WorkflowStep
+from id_card_generator.core.constants import APP_NAME, WorkflowStep
 from id_card_generator.ui.main_window import MainWindow
 
 
@@ -14,7 +14,7 @@ def app_window(qtbot):
 
 
 def test_main_window_initialization(app_window: MainWindow):
-    assert app_window.windowTitle().startswith("Excel ID Card Generator")
+    assert app_window.windowTitle().startswith(APP_NAME)
     assert app_window.stack.currentIndex() == 0  # Starts on Dashboard
     assert app_window.nav_buttons[WorkflowStep.DASHBOARD].isChecked()
 

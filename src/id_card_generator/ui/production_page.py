@@ -572,9 +572,25 @@ class ProductionPage(QWidget):
         self.record_list.record_selected.connect(self._on_record_selected)
         card.add(self.record_list, stretch=1)
 
+        # The count of the queue and the button that approves all of it.
+        list_info_row = QHBoxLayout()
+        list_info_row.setSpacing(8)
+
+        self.btn_approve_all = QPushButton("✓ Approve all")
+        self.btn_approve_all.setObjectName("btn_success")
+        self.btn_approve_all.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_approve_all.setToolTip(
+            "Approve every card of the queue that is not rejected yet"
+        )
+        self.btn_approve_all.clicked.connect(self._approve_all)
+        list_info_row.addWidget(self.btn_approve_all)
+
         self.lbl_list_info = QLabel("No cards yet")
         self.lbl_list_info.setProperty("role", "specKey")
-        card.add(self.lbl_list_info)
+        list_info_row.addStretch()
+        list_info_row.addWidget(self.lbl_list_info)
+
+        card.add_layout(list_info_row)
 
         # -- the decision ---------------------------------------------
         index_row = QHBoxLayout()
@@ -1133,6 +1149,13 @@ class ProductionPage(QWidget):
         else:
             self.lbl_list_info.setText("No cards yet - launch the batch")
 
+        # The button knows how many cards it would approve.
+        approvable = self._approvable_count()
+        self.btn_approve_all.setText(
+            f"✓ Approve all ({approvable})" if approvable else "✓ Approve all"
+        )
+        self.btn_approve_all.setEnabled(approvable > 0)
+
         if not record or not filtered:
             self.lbl_nav_index.setText("Card 0 of 0")
             self.lbl_card_preview.setPixmap(QPixmap())
@@ -1420,6 +1443,38 @@ class ProductionPage(QWidget):
     # -----------------------------------------------------------------
     # The decisions
     # -----------------------------------------------------------------
+    def _approve_all(self) -> None:
+        """Approve every card of the queue that is not rejected yet."""
+        if not self._approvable_count():
+            self.notice.set_message(
+                "There is no card to approve.", severity="info"
+            )
+            return
+
+        before = self.manager.counts["approved"]
+        self.manager.batch_approve_all_valid()
+        approved = self.manager.counts["approved"] - before
+
+        self.review_updated.emit(self.manager)
+        self._update_display()
+        self.notice.set_message(
+            f"Approved {approved} card(s).", severity="success"
+        )
+
+    def _approvable_count(self) -> int:
+        """The cards of the queue that the button would approve.
+
+        A card can only be approved when it was rendered and it was not
+        rejected before.
+        """
+        return sum(
+            1
+            for record in self.manager.records
+            if record.rendered_image_path
+            and record.status != ReviewStatus.APPROVED
+            and record.status != ReviewStatus.REJECTED
+        )
+
     def _set_current_status(self, status: ReviewStatus) -> None:
         record = self.manager.get_current_record()
         if not record:
