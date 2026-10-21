@@ -11,9 +11,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFontComboBox,
-    QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
+    QLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 from id_card_generator.core.constants import ImageFitMode
 from id_card_generator.core.models import CanvasElement
 from id_card_generator.editor.canvas_items import CanvasItem
+from id_card_generator.ui.studio_tokens import active_palette
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +60,11 @@ class ElementInspector(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         if not color_hex or color_hex.lower() in ("transparent", "none"):
-            p.setPen(QPen(QColor("#52525B"), 1))
-            p.setBrush(QColor("#18181B"))
+            palette = active_palette()
+            p.setPen(QPen(QColor(palette.OUTLINE_VARIANT), 1))
+            p.setBrush(QColor(palette.SURFACE_LOWEST))
             p.drawRoundedRect(1, 1, size - 2, size - 2, 2.5, 2.5)
-            p.setPen(QPen(QColor("#EF4444"), 1.5))
+            p.setPen(QPen(QColor(palette.ERROR), 1.5))
             p.drawLine(3, size - 4, size - 4, 3)
         else:
             c = QColor(color_hex)
@@ -78,151 +81,95 @@ class ElementInspector(QWidget):
             btn.setText(f" {color_hex.upper()}")
         else:
             btn.setText(f" {default_label}")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #202023;
-                color: #F4F4F5;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-                padding: 2px 8px;
-                text-align: left;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #2A2A2E;
-                border-color: #52525B;
-            }
-            QPushButton:pressed {
-                background-color: #18181B;
-                border-color: #0078D4;
-            }
-        """)
+        # The look of the well comes from the application stylesheet, only
+        # the swatch shows the colour of the element itself.
+        btn.setObjectName("swatch_button")
 
     def _setup_ui(self) -> None:
+        # Only the type of the inputs is set here - the colours, the spacing
+        # and the borders come from the token driven application stylesheet,
+        # so the panel follows the theme of the application.
         self.setStyleSheet("""
-            QWidget {
-                font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            }
-            QGroupBox {
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 0.5px;
-                text-transform: uppercase;
-                color: #b6c4ff;
-                border: 1px solid #383d47;
-                border-radius: 4px;
-                margin-top: 8px;
-                padding-top: 12px;
-                background-color: #1a1c20;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px;
-                background: #1a1c20;
-            }
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QFontComboBox {
-                background-color: #0c0e12;
-                border: 1px solid #383d47;
-                border-radius: 4px;
-                color: #e2e2e8;
                 font-family: 'JetBrains Mono', monospace;
-                font-size: 11px;
-                padding: 3px 6px;
-            }
-            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QFontComboBox:focus {
-                border: 1px solid #6c8cff;
-            }
-            QPushButton {
-                background-color: #282a2e;
-                border: 1px solid #383d47;
-                border-radius: 4px;
-                color: #e2e2e8;
-                font-size: 11px;
-                font-weight: 500;
-                padding: 3px 8px;
-            }
-            QPushButton:hover {
-                background-color: #333539;
-                border-color: #6c8cff;
-            }
-            QLabel {
-                color: #c4c5d5;
                 font-size: 11px;
             }
         """)
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
 
         # Header
-        self.lbl_title = QLabel("<b>ELEMENT PROPERTIES</b>")
-        self.lbl_title.setStyleSheet("color: #ffffff; font-size: 11px; letter-spacing: 0.5px;")
+        self.lbl_section = QLabel("PROPERTIES")
+        self.lbl_section.setProperty("role", "sectionLabel")
+        main_layout.addWidget(self.lbl_section)
+
+        self.lbl_title = QLabel("<i>No element selected</i>")
+        self.lbl_title.setProperty("role", "cardTitle")
+        self.lbl_title.setWordWrap(True)
         main_layout.addWidget(self.lbl_title)
 
         # Scroll Area for properties
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         container = QWidget()
-        container.setStyleSheet("background: transparent;")
+        container.setProperty("role", "flat")
         self.form_layout = QVBoxLayout(container)
-        self.form_layout.setContentsMargins(2, 2, 2, 2)
-        self.form_layout.setSpacing(8)
+        self.form_layout.setContentsMargins(0, 0, 4, 0)
+        self.form_layout.setSpacing(10)
 
         # 1. Identity & Geometry Group
         geom_group = QGroupBox("Transform && Position")
-        geom_layout = QFormLayout(geom_group)
-        geom_layout.setContentsMargins(8, 12, 8, 8)
-        geom_layout.setHorizontalSpacing(8)
-        geom_layout.setVerticalSpacing(6)
+        geom_layout = self._make_form(geom_group)
 
         self.txt_name = QLineEdit()
         self.txt_name.textChanged.connect(self._on_name_changed)
-        geom_layout.addRow("Name:", self.txt_name)
+        self._add_row(geom_layout, "Name:", self.txt_name)
 
         self.spin_x = QDoubleSpinBox()
         self.spin_x.setRange(-5000, 5000)
         self.spin_x.setSuffix(" px")
         self.spin_x.valueChanged.connect(self._on_pos_changed)
-        geom_layout.addRow("X:", self.spin_x)
+        self._add_row(geom_layout, "X:", self.spin_x)
 
         self.spin_y = QDoubleSpinBox()
         self.spin_y.setRange(-5000, 5000)
         self.spin_y.setSuffix(" px")
         self.spin_y.valueChanged.connect(self._on_pos_changed)
-        geom_layout.addRow("Y:", self.spin_y)
+        self._add_row(geom_layout, "Y:", self.spin_y)
 
         self.spin_w = QDoubleSpinBox()
         self.spin_w.setRange(5, 5000)
         self.spin_w.setSuffix(" px")
         self.spin_w.valueChanged.connect(self._on_size_changed)
-        geom_layout.addRow("Width:", self.spin_w)
+        self._add_row(geom_layout, "Width:", self.spin_w)
 
         self.spin_h = QDoubleSpinBox()
         self.spin_h.setRange(5, 5000)
         self.spin_h.setSuffix(" px")
         self.spin_h.valueChanged.connect(self._on_size_changed)
-        geom_layout.addRow("Height:", self.spin_h)
+        self._add_row(geom_layout, "Height:", self.spin_h)
 
         self.chk_locked = QCheckBox("Lock element on canvas")
         self.chk_locked.toggled.connect(self._on_lock_toggled)
-        geom_layout.addRow("", self.chk_locked)
+        self._add_full_row(geom_layout, self.chk_locked)
 
         self.cmb_side = QComboBox()
         self.cmb_side.addItem("Front", "front")
         self.cmb_side.addItem("Back", "back")
         self.cmb_side.currentIndexChanged.connect(self._on_side_changed)
-        geom_layout.addRow("Card side:", self.cmb_side)
+        self._add_row(geom_layout, "Card side:", self.cmb_side)
 
         self.form_layout.addWidget(geom_group)
 
         # Layer Arrangement Group (Bring to top, send to bottom, step forward/backward)
         arrange_group = QGroupBox("Layer Order && Stacking")
         arrange_layout = QHBoxLayout(arrange_group)
-        arrange_layout.setContentsMargins(6, 12, 6, 8)
-        arrange_layout.setSpacing(4)
+        arrange_layout.setContentsMargins(12, 10, 12, 12)
+        arrange_layout.setSpacing(6)
 
         self.btn_prop_to_front = QPushButton("Top ⏫")
         self.btn_prop_to_front.setFixedHeight(26)
@@ -252,27 +199,21 @@ class ElementInspector(QWidget):
 
         # 2. Data Binding Group
         binding_group = QGroupBox("Data Binding")
-        binding_layout = QFormLayout(binding_group)
-        binding_layout.setContentsMargins(8, 12, 8, 8)
-        binding_layout.setHorizontalSpacing(8)
-        binding_layout.setVerticalSpacing(6)
+        binding_layout = self._make_form(binding_group)
 
         self.cmb_binding = QComboBox()
         self.cmb_binding.currentIndexChanged.connect(self._on_binding_changed)
-        binding_layout.addRow("Bind Column:", self.cmb_binding)
+        self._add_row(binding_layout, "Bind Column:", self.cmb_binding)
 
         self.txt_static = QLineEdit()
         self.txt_static.textChanged.connect(self._on_static_changed)
-        binding_layout.addRow("Static Text:", self.txt_static)
+        self._add_row(binding_layout, "Static Text:", self.txt_static)
 
         self.form_layout.addWidget(binding_group)
 
         # 3. Typography Group
         self.type_group = QGroupBox("Typography")
-        type_layout = QFormLayout(self.type_group)
-        type_layout.setContentsMargins(8, 12, 8, 8)
-        type_layout.setHorizontalSpacing(8)
-        type_layout.setVerticalSpacing(6)
+        type_layout = self._make_form(self.type_group)
 
         from id_card_generator.rendering.font_manager import FontManager
         FontManager.register_system_fonts_with_qt()
@@ -280,15 +221,18 @@ class ElementInspector(QWidget):
         self.cmb_font = QFontComboBox()
         self.cmb_font.setFontFilters(QFontComboBox.FontFilter.AllFonts)
         self.cmb_font.setWritingSystem(QFontDatabase.WritingSystem.Any)
+        # The longest font name would make the panel wider than the dock.
+        self.cmb_font.setMinimumContentsLength(10)
+        self.cmb_font.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.cmb_font.currentFontChanged.connect(self._on_font_changed)
-        type_layout.addRow("Font:", self.cmb_font)
+        self._add_row(type_layout, "Font:", self.cmb_font)
 
         self.spin_font_size = QSpinBox()
         self.spin_font_size.setRange(4, 144)
         self.spin_font_size.setSuffix(" pt")
         self.spin_font_size.setValue(10)
         self.spin_font_size.valueChanged.connect(self._on_font_size_changed)
-        type_layout.addRow("Size:", self.spin_font_size)
+        self._add_row(type_layout, "Size:", self.spin_font_size)
 
         style_row = QHBoxLayout()
         style_row.setSpacing(6)
@@ -299,13 +243,13 @@ class ElementInspector(QWidget):
         style_row.addWidget(self.chk_bold)
         style_row.addWidget(self.chk_italic)
         style_row.addStretch()
-        type_layout.addRow("Style:", style_row)
+        self._add_row(type_layout, "Style:", style_row)
 
         self.btn_font_color = QPushButton()
         self.btn_font_color.setFixedHeight(28)
         self._set_color_button_state(self.btn_font_color, "#1A1A1A")
         self.btn_font_color.clicked.connect(self._pick_font_color)
-        type_layout.addRow("Text Color:", self.btn_font_color)
+        self._add_row(type_layout, "Text Color:", self.btn_font_color, stretch=False)
 
         # Segmented alignment buttons in a rectangle
         self.align_frame = QFrame()
@@ -320,21 +264,21 @@ class ElementInspector(QWidget):
         self.btn_align_left.setText("Left")
         self.btn_align_left.setToolTip("Align Left")
         self.btn_align_left.setCheckable(True)
-        self.btn_align_left.setFixedHeight(26)
+        self.btn_align_left.setMinimumWidth(54)
 
         self.btn_align_center = QToolButton()
         self.btn_align_center.setObjectName("btn_align_center")
         self.btn_align_center.setText("Center")
         self.btn_align_center.setToolTip("Align Center")
         self.btn_align_center.setCheckable(True)
-        self.btn_align_center.setFixedHeight(26)
+        self.btn_align_center.setMinimumWidth(64)
 
         self.btn_align_right = QToolButton()
         self.btn_align_right.setObjectName("btn_align_right")
         self.btn_align_right.setText("Right")
         self.btn_align_right.setToolTip("Align Right")
         self.btn_align_right.setCheckable(True)
-        self.btn_align_right.setFixedHeight(26)
+        self.btn_align_right.setMinimumWidth(54)
 
         self.align_group = QButtonGroup(self.type_group)
         self.align_group.setExclusive(True)
@@ -350,50 +294,13 @@ class ElementInspector(QWidget):
         align_layout.addWidget(self.btn_align_center)
         align_layout.addWidget(self.btn_align_right)
 
-        self.align_frame.setStyleSheet("""
-            QFrame#insp_align_rect {
-                background-color: #202023;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-            }
-            QFrame#insp_align_rect QToolButton {
-                background-color: transparent;
-                color: #A1A1AA;
-                border: none;
-                font-size: 11px;
-                font-weight: 500;
-                padding: 2px 8px;
-            }
-            QFrame#insp_align_rect QToolButton:hover {
-                background-color: #2E2E33;
-                color: #FFFFFF;
-            }
-            QFrame#insp_align_rect QToolButton:checked {
-                background-color: #0078D4;
-                color: #FFFFFF;
-                font-weight: 600;
-            }
-            QFrame#insp_align_rect QToolButton#btn_align_left {
-                border-top-left-radius: 3px;
-                border-bottom-left-radius: 3px;
-                border-right: 1px solid #3F3F46;
-            }
-            QFrame#insp_align_rect QToolButton#btn_align_center {
-                border-radius: 0px;
-                border-right: 1px solid #3F3F46;
-            }
-            QFrame#insp_align_rect QToolButton#btn_align_right {
-                border-top-right-radius: 3px;
-                border-bottom-right-radius: 3px;
-            }
-        """)
-        type_layout.addRow("Align:", self.align_frame)
+        self._add_row(type_layout, "Align:", self.align_frame)
 
         self.cmb_align = QComboBox()
         self.cmb_align.addItems(["left", "center", "right"])
         self.cmb_align.setVisible(False)
         self.cmb_align.currentTextChanged.connect(self._sync_align_from_combo)
-        type_layout.addRow(self.cmb_align)
+        type_layout.addWidget(self.cmb_align)
 
         self.btn_align_left.setChecked(True)
 
@@ -401,53 +308,47 @@ class ElementInspector(QWidget):
 
         # 4. Appearance & Borders Group
         self.app_group = QGroupBox("Appearance && Borders")
-        app_layout = QFormLayout(self.app_group)
-        app_layout.setContentsMargins(8, 12, 8, 8)
-        app_layout.setHorizontalSpacing(8)
-        app_layout.setVerticalSpacing(6)
+        app_layout = self._make_form(self.app_group)
 
         self.btn_bg_color = QPushButton()
         self.btn_bg_color.setFixedHeight(28)
         self._set_color_button_state(self.btn_bg_color, "transparent", "None (Transparent)")
         self.btn_bg_color.clicked.connect(self._pick_bg_color)
-        app_layout.addRow("Background:", self.btn_bg_color)
+        self._add_row(app_layout, "Background:", self.btn_bg_color, stretch=False)
 
         self.btn_border_color = QPushButton()
         self.btn_border_color.setFixedHeight(28)
         self._set_color_button_state(self.btn_border_color, "transparent", "None (Transparent)")
         self.btn_border_color.clicked.connect(self._pick_border_color)
-        app_layout.addRow("Border Color:", self.btn_border_color)
+        self._add_row(app_layout, "Border Color:", self.btn_border_color, stretch=False)
 
         self.spin_border_width = QSpinBox()
         self.spin_border_width.setRange(0, 50)
         self.spin_border_width.setSuffix(" px")
         self.spin_border_width.valueChanged.connect(self._on_border_width_changed)
-        app_layout.addRow("Border Width:", self.spin_border_width)
+        self._add_row(app_layout, "Border Width:", self.spin_border_width)
 
         self.spin_border_radius = QSpinBox()
         self.spin_border_radius.setRange(0, 500)
         self.spin_border_radius.setSuffix(" px")
         self.spin_border_radius.valueChanged.connect(self._on_border_radius_changed)
-        app_layout.addRow("Corner Radius:", self.spin_border_radius)
+        self._add_row(app_layout, "Corner Radius:", self.spin_border_radius)
 
         self.form_layout.addWidget(self.app_group)
 
         # 5. Image & Masking Group
         self.img_group = QGroupBox("Photo / Image Options")
-        img_layout = QFormLayout(self.img_group)
-        img_layout.setContentsMargins(8, 12, 8, 8)
-        img_layout.setHorizontalSpacing(8)
-        img_layout.setVerticalSpacing(6)
+        img_layout = self._make_form(self.img_group)
 
         self.cmb_mask = QComboBox()
         self.cmb_mask.addItems(["rect", "circle", "rounded"])
         self.cmb_mask.currentTextChanged.connect(self._on_mask_changed)
-        img_layout.addRow("Mask Shape:", self.cmb_mask)
+        self._add_row(img_layout, "Mask Shape:", self.cmb_mask)
 
         self.cmb_fit = QComboBox()
         self.cmb_fit.addItems(["cover", "contain", "stretch", "crop"])
         self.cmb_fit.currentTextChanged.connect(self._on_fit_changed)
-        img_layout.addRow("Fit Mode:", self.cmb_fit)
+        self._add_row(img_layout, "Fit Mode:", self.cmb_fit)
 
         self.form_layout.addWidget(self.img_group)
 
@@ -456,6 +357,57 @@ class ElementInspector(QWidget):
         main_layout.addWidget(scroll)
 
         self.setEnabled(False)
+
+    # -- the form of a group --------------------------------------------
+    LABEL_WIDTH = 92
+
+    def _make_form(self, group: QGroupBox) -> QGridLayout:
+        """Build the two column form of a group.
+
+        The caption column has a fixed width, so every group of the panel
+        starts its fields at the same place and the rows read as one column.
+        """
+        layout = QGridLayout(group)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(8)
+        layout.setColumnMinimumWidth(0, self.LABEL_WIDTH)
+        layout.setColumnStretch(1, 1)
+        return layout
+
+    def _add_row(
+        self,
+        layout: QGridLayout,
+        label: str,
+        widget: QWidget,
+        stretch: bool = True,
+    ) -> None:
+        """Add a caption and its field to a group."""
+        row = layout.rowCount()
+
+        caption = QLabel(label)
+        caption.setProperty("role", "specKey")
+        caption.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        caption.setFixedWidth(self.LABEL_WIDTH)
+        layout.addWidget(caption, row, 0)
+
+        if isinstance(widget, QLayout):
+            # A row of controls is hosted by a plain widget.
+            holder = QWidget()
+            holder.setProperty("role", "flat")
+            holder.setLayout(widget)
+            widget = holder
+
+        if stretch:
+            layout.addWidget(widget, row, 1)
+        else:
+            # A colour well keeps its own size instead of filling the row.
+            layout.addWidget(widget, row, 1, 1, 1, Qt.AlignLeft | Qt.AlignVCenter)
+
+    def _add_full_row(self, layout: QGridLayout, widget: QWidget) -> None:
+        """Add a widget that spans the whole width of a group."""
+        row = layout.rowCount()
+        layout.addWidget(widget, row, 0, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
 
     def set_selected_item(self, item: Optional[CanvasItem]) -> None:
         """Bind selected item to inspector form controls."""

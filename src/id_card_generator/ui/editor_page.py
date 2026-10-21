@@ -53,7 +53,7 @@ from id_card_generator.ui import workflow
 from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.layout_blocks import OverflowMenu
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
-from id_card_generator.ui.studio_tokens import SIZES
+from id_card_generator.ui.studio_tokens import SIZES, active_palette
 from id_card_generator.ui.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
@@ -148,9 +148,9 @@ class EditorPage(QWidget):
         # 1. Top Contextual Options Bar
         self.options_bar = QFrame()
         self.options_bar.setObjectName("card_panel")
-        self.options_bar.setFixedHeight(36)
+        self.options_bar.setFixedHeight(40)
         self.opt_layout = QHBoxLayout(self.options_bar)
-        self.opt_layout.setContentsMargins(8, 4, 8, 4)
+        self.opt_layout.setContentsMargins(10, 6, 10, 6)
         self.opt_layout.setSpacing(8)
 
         # Stacked widget for contextual options
@@ -175,11 +175,7 @@ class EditorPage(QWidget):
         self.opt_layout.addWidget(self.stack_context, stretch=1)
 
         # Separator before action buttons
-        sep_act = QFrame()
-        sep_act.setFrameShape(QFrame.Shape.VLine)
-        sep_act.setFrameShadow(QFrame.Shadow.Sunken)
-        sep_act.setStyleSheet("color: #3F3F46; max-height: 20px;")
-        self.opt_layout.addWidget(sep_act)
+        self.opt_layout.addWidget(self._separator())
 
         # Common action buttons on far right of options bar
         self.btn_undo = QPushButton("↶ Undo")
@@ -221,7 +217,8 @@ class EditorPage(QWidget):
 
         # Right Tabbed Dock
         self.right_tabs = QTabWidget()
-        self.right_tabs.setMinimumWidth(260)
+        self.right_tabs.setMinimumWidth(280)
+        self.right_tabs.setMaximumWidth(360)
         self.right_tabs.addTab(self.inspector, "Properties")
         self.right_tabs.addTab(self.layers_panel, "Layers")
         self.right_tabs.addTab(self.mapping_panel, "Data Mapping")
@@ -257,7 +254,7 @@ class EditorPage(QWidget):
         sb_layout.addSpacing(16)
 
         self.lbl_sb_selection = QLabel("No selection")
-        self.lbl_sb_selection.setStyleSheet("color: #60CDFF;")
+        self.lbl_sb_selection.setProperty("role", "accentText")
         sb_layout.addWidget(self.lbl_sb_selection)
 
         sb_layout.addStretch()
@@ -279,17 +276,24 @@ class EditorPage(QWidget):
         self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value))
         main_layout.addWidget(self.nav_bar)
 
+    @staticmethod
+    def _separator(vertical: bool = True) -> QFrame:
+        """A hairline that separates the groups of a bar."""
+        line = QFrame()
+        line.setObjectName("separator")
+        line.setProperty("orientation", "vertical" if vertical else "horizontal")
+        line.setFrameShape(QFrame.NoFrame)
+        if vertical:
+            line.setFixedWidth(1)
+        else:
+            line.setFixedHeight(1)
+        return line
+
     def _create_vertical_tool_strip(self) -> QFrame:
         """Create Photoshop-inspired vertical icon toolbar."""
         frame = QFrame()
-        frame.setObjectName("card_panel")
+        frame.setObjectName("tool_strip")
         frame.setFixedWidth(48)
-        frame.setStyleSheet(
-            "QFrame#card_panel { background-color: #111317; border: 1px solid #383d47; border-radius: 4px; }"
-            "QToolButton { background-color: transparent; border: 1px solid transparent; border-radius: 4px; color: #c4c5d5; font-size: 13px; font-weight: bold; }"
-            "QToolButton:hover { background-color: #282a2e; color: #ffffff; border-color: #383d47; }"
-            "QToolButton:checked { background-color: #1e2024; color: #b6c4ff; border: 1px solid #6c8cff; }"
-        )
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(4, 8, 4, 8)
         layout.setSpacing(6)
@@ -301,7 +305,7 @@ class EditorPage(QWidget):
             ("select", "↖", "Select / Move Tool (V)"),
             ("static_text", "T", "Text Tool (T)"),
             ("dynamic_text", "{T}", "Dynamic Field Tool (D)"),
-            ("photo", "📷", "Photo Tool (P)"),
+            ("photo", "▣", "Photo Tool (P)"),
             ("rect", "▭", "Rectangle Tool (U)"),
             ("round_rect", "▢", "Rounded Rectangle Tool (R)"),
             ("line", "―", "Line Tool (L)"),
@@ -320,10 +324,7 @@ class EditorPage(QWidget):
             layout.addWidget(btn)
 
         layout.addSpacing(6)
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #383d47;")
-        layout.addWidget(sep)
+        layout.addWidget(self._separator(vertical=False))
         layout.addSpacing(6)
 
         # Zoom & View actions
@@ -343,32 +344,18 @@ class EditorPage(QWidget):
 
         layout.addStretch()
 
-        # Swatch well at bottom of tool strip
-        swatch_frame = QFrame()
-        swatch_frame.setFixedSize(38, 44)
-        swatch_layout = QVBoxLayout(swatch_frame)
-        swatch_layout.setContentsMargins(0, 0, 0, 0)
-        swatch_layout.setSpacing(2)
-
+        # The colour wells at the bottom of the strip.
         self.btn_strip_fill = QToolButton()
-        self.btn_strip_fill.setFixedSize(22, 20)
-        self.btn_strip_fill.setStyleSheet(
-            "QToolButton { background-color: #6c8cff; border: 1px solid #ffffff; "
-            "border-radius: 2px; padding: 0px; min-height: 0px; }"
-        )
+        self.btn_strip_fill.setObjectName("swatch_fill")
+        self.btn_strip_fill.setFixedSize(26, 16)
         self.btn_strip_fill.setToolTip("Active Fill Color")
-        swatch_layout.addWidget(self.btn_strip_fill, alignment=Qt.AlignLeft)
+        layout.addWidget(self.btn_strip_fill, alignment=Qt.AlignLeft)
 
         self.btn_strip_stroke = QToolButton()
-        self.btn_strip_stroke.setFixedSize(22, 20)
-        self.btn_strip_stroke.setStyleSheet(
-            "QToolButton { background-color: transparent; border: 2px solid #383d47; "
-            "border-radius: 2px; padding: 0px; min-height: 0px; }"
-        )
+        self.btn_strip_stroke.setObjectName("swatch_stroke")
+        self.btn_strip_stroke.setFixedSize(26, 16)
         self.btn_strip_stroke.setToolTip("Active Stroke Color")
-        swatch_layout.addWidget(self.btn_strip_stroke, alignment=Qt.AlignRight)
-
-        layout.addWidget(swatch_frame)
+        layout.addWidget(self.btn_strip_stroke, alignment=Qt.AlignLeft)
 
         return frame
 
@@ -381,9 +368,9 @@ class EditorPage(QWidget):
 
         # Document Preset Pill
         self.lbl_ctx_doc_dims = ElidedLabel("CR80 Standard")
+        self.lbl_ctx_doc_dims.setProperty("role", "badgeAccent")
         self.lbl_ctx_doc_dims.setStyleSheet(
-            "background-color: #111317; border: 1px solid #383d47; border-radius: 4px; "
-            "padding: 3px 8px; color: #b6c4ff; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;"
+            "font-family: 'JetBrains Mono', monospace; font-weight: 600;"
         )
         layout.addWidget(self.lbl_ctx_doc_dims)
 
@@ -429,14 +416,10 @@ class EditorPage(QWidget):
         # Bleed guideline toggle
         self.btn_bleed_toggle = QToolButton()
         self.btn_bleed_toggle.setText("Bleed: 3.0mm")
+        self.btn_bleed_toggle.setObjectName("btn_toggle")
         self.btn_bleed_toggle.setCheckable(True)
         self.btn_bleed_toggle.setChecked(True)
         self.btn_bleed_toggle.setFixedHeight(CONTROL_HEIGHT)
-        self.btn_bleed_toggle.setStyleSheet(
-            "QToolButton { background-color: #111317; border: 1px solid #383d47; border-radius: 4px; padding: 2px 8px; font-size: 11px; color: #c4c5d5; }"
-            "QToolButton:hover { background-color: #282a2e; border-color: #6c8cff; }"
-            "QToolButton:checked { border-color: #6edba3; color: #6edba3; font-weight: 600; }"
-        )
         self.btn_bleed_toggle.setToolTip("Toggle 3.0mm standard print bleed margin guidelines")
         self.btn_bleed_toggle.toggled.connect(self._on_bleed_toggled)
         layout.addWidget(self.btn_bleed_toggle)
@@ -445,7 +428,7 @@ class EditorPage(QWidget):
 
         # Live Data Preview Stepper (segmented control)
         lbl_data_tag = QLabel("Live Data:")
-        lbl_data_tag.setStyleSheet("color: #8e909f; font-size: 11px;")
+        lbl_data_tag.setProperty("role", "controlLabel")
         layout.addWidget(lbl_data_tag)
 
         record_cluster = QFrame()
@@ -463,7 +446,7 @@ class EditorPage(QWidget):
 
         self.lbl_rec_stepper = QLabel("No Data")
         self.lbl_rec_stepper.setAlignment(Qt.AlignCenter)
-        self.lbl_rec_stepper.setMinimumWidth(74)
+        self.lbl_rec_stepper.setMinimumWidth(112)
         record_layout.addWidget(self.lbl_rec_stepper)
 
         self.btn_rec_next = QToolButton()
@@ -523,6 +506,7 @@ class EditorPage(QWidget):
         """Add Smart Guides and Magnetic Snapping controls to document context bar."""
         # 1. Quick toggle button: Guides
         self.btn_guides_toggle = QToolButton()
+        self.btn_guides_toggle.setObjectName("btn_toggle")
         self.btn_guides_toggle.setText("⚡ Guides")
         self.btn_guides_toggle.setCheckable(True)
         self.btn_guides_toggle.setChecked(self.scene.snap_settings.smart_guides_enabled)
@@ -533,6 +517,7 @@ class EditorPage(QWidget):
 
         # 2. Quick toggle button: Snap
         self.btn_snap_toggle = QToolButton()
+        self.btn_snap_toggle.setObjectName("btn_toggle")
         self.btn_snap_toggle.setText("🧲 Snap")
         self.btn_snap_toggle.setCheckable(True)
         self.btn_snap_toggle.setChecked(self.scene.snap_settings.object_snapping_enabled)
@@ -621,8 +606,8 @@ class EditorPage(QWidget):
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        lbl_text = QLabel("<b>Text:</b>")
-        lbl_text.setStyleSheet("color: #E4E4E7; font-size: 12px; margin-right: 2px;")
+        lbl_text = QLabel("Text:")
+        lbl_text.setProperty("role", "controlLabel")
         layout.addWidget(lbl_text)
 
         # 1. Complete System Font Dropdown
@@ -648,11 +633,7 @@ class EditorPage(QWidget):
         layout.addWidget(self.ctx_font_size)
 
         # Separator
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setFrameShadow(QFrame.Shadow.Sunken)
-        sep1.setStyleSheet("color: #3F3F46; max-height: 20px;")
-        layout.addWidget(sep1)
+        layout.addWidget(self._separator())
 
         # 3. Bold & Italic Toggle Buttons
         self.ctx_chk_bold = QToolButton()
@@ -664,25 +645,6 @@ class EditorPage(QWidget):
         bold_font = self.ctx_chk_bold.font()
         bold_font.setBold(True)
         self.ctx_chk_bold.setFont(bold_font)
-        self.ctx_chk_bold.setStyleSheet("""
-            QToolButton#ctx_bold_btn {
-                background-color: #262629;
-                color: #E4E4E7;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QToolButton#ctx_bold_btn:hover {
-                background-color: #333338;
-                border-color: #52525B;
-            }
-            QToolButton#ctx_bold_btn:checked {
-                background-color: #0078D4;
-                color: #FFFFFF;
-                border-color: #005A9E;
-            }
-        """)
         self.ctx_chk_bold.toggled.connect(self._on_ctx_bold_toggled)
         layout.addWidget(self.ctx_chk_bold)
 
@@ -695,25 +657,6 @@ class EditorPage(QWidget):
         italic_font = self.ctx_chk_italic.font()
         italic_font.setItalic(True)
         self.ctx_chk_italic.setFont(italic_font)
-        self.ctx_chk_italic.setStyleSheet("""
-            QToolButton#ctx_italic_btn {
-                background-color: #262629;
-                color: #E4E4E7;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-                font-style: italic;
-                font-size: 13px;
-            }
-            QToolButton#ctx_italic_btn:hover {
-                background-color: #333338;
-                border-color: #52525B;
-            }
-            QToolButton#ctx_italic_btn:checked {
-                background-color: #0078D4;
-                color: #FFFFFF;
-                border-color: #005A9E;
-            }
-        """)
         self.ctx_chk_italic.toggled.connect(self._on_ctx_italic_toggled)
         layout.addWidget(self.ctx_chk_italic)
 
@@ -724,29 +667,11 @@ class EditorPage(QWidget):
         self.ctx_btn_color.setToolTip("Text Color")
         self.ctx_btn_color.setIcon(self._create_color_icon("#1A1A1A"))
         self.ctx_btn_color.setIconSize(QSize(22, 22))
-        self.ctx_btn_color.setStyleSheet("""
-            QToolButton#ctx_color_btn {
-                background-color: #262629;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-            }
-            QToolButton#ctx_color_btn:hover {
-                background-color: #333338;
-                border-color: #52525B;
-            }
-            QToolButton#ctx_color_btn:pressed {
-                background-color: #202023;
-            }
-        """)
         self.ctx_btn_color.clicked.connect(self._on_ctx_color_clicked)
         layout.addWidget(self.ctx_btn_color)
 
         # Separator
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setFrameShadow(QFrame.Shadow.Sunken)
-        sep2.setStyleSheet("color: #3F3F46; max-height: 20px;")
-        layout.addWidget(sep2)
+        layout.addWidget(self._separator())
 
         # 5. Segmented Alignment Buttons in a Clean Rectangle (Left | Center | Right)
         self.ctx_align_frame = QFrame()
@@ -761,21 +686,21 @@ class EditorPage(QWidget):
         self.ctx_btn_align_left.setText("Left")
         self.ctx_btn_align_left.setToolTip("Align Left")
         self.ctx_btn_align_left.setCheckable(True)
-        self.ctx_btn_align_left.setFixedSize(46, 26)
+        self.ctx_btn_align_left.setMinimumWidth(54)
 
         self.ctx_btn_align_center = QToolButton()
         self.ctx_btn_align_center.setObjectName("btn_align_center")
         self.ctx_btn_align_center.setText("Center")
         self.ctx_btn_align_center.setToolTip("Align Center")
         self.ctx_btn_align_center.setCheckable(True)
-        self.ctx_btn_align_center.setFixedSize(54, 26)
+        self.ctx_btn_align_center.setMinimumWidth(64)
 
         self.ctx_btn_align_right = QToolButton()
         self.ctx_btn_align_right.setObjectName("btn_align_right")
         self.ctx_btn_align_right.setText("Right")
         self.ctx_btn_align_right.setToolTip("Align Right")
         self.ctx_btn_align_right.setCheckable(True)
-        self.ctx_btn_align_right.setFixedSize(46, 26)
+        self.ctx_btn_align_right.setMinimumWidth(54)
 
         self.ctx_align_group = QButtonGroup(widget)
         self.ctx_align_group.setExclusive(True)
@@ -791,42 +716,6 @@ class EditorPage(QWidget):
         align_layout.addWidget(self.ctx_btn_align_center)
         align_layout.addWidget(self.ctx_btn_align_right)
 
-        self.ctx_align_frame.setStyleSheet("""
-            QFrame#ctx_align_rect {
-                background-color: #202023;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-            }
-            QFrame#ctx_align_rect QToolButton {
-                background-color: transparent;
-                color: #A1A1AA;
-                border: none;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QFrame#ctx_align_rect QToolButton:hover {
-                background-color: #2E2E33;
-                color: #FFFFFF;
-            }
-            QFrame#ctx_align_rect QToolButton:checked {
-                background-color: #0078D4;
-                color: #FFFFFF;
-                font-weight: 600;
-            }
-            QFrame#ctx_align_rect QToolButton#btn_align_left {
-                border-top-left-radius: 3px;
-                border-bottom-left-radius: 3px;
-                border-right: 1px solid #3F3F46;
-            }
-            QFrame#ctx_align_rect QToolButton#btn_align_center {
-                border-radius: 0px;
-                border-right: 1px solid #3F3F46;
-            }
-            QFrame#ctx_align_rect QToolButton#btn_align_right {
-                border-top-right-radius: 3px;
-                border-bottom-right-radius: 3px;
-            }
-        """)
         layout.addWidget(self.ctx_align_frame)
 
         # Backwards compatibility dummy / synced combo
@@ -849,8 +738,8 @@ class EditorPage(QWidget):
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        lbl_shape = QLabel("<b>Shape:</b>")
-        lbl_shape.setStyleSheet("color: #E4E4E7; font-size: 12px; margin-right: 2px;")
+        lbl_shape = QLabel("Shape:")
+        lbl_shape.setProperty("role", "controlLabel")
         layout.addWidget(lbl_shape)
 
         self.ctx_btn_fill = QToolButton()
@@ -859,20 +748,6 @@ class EditorPage(QWidget):
         self.ctx_btn_fill.setToolTip("Shape Fill Color")
         self.ctx_btn_fill.setIcon(self._create_shape_fill_icon("#E2E8F0"))
         self.ctx_btn_fill.setIconSize(QSize(22, 22))
-        self.ctx_btn_fill.setStyleSheet("""
-            QToolButton#ctx_fill_btn {
-                background-color: #262629;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-            }
-            QToolButton#ctx_fill_btn:hover {
-                background-color: #333338;
-                border-color: #52525B;
-            }
-            QToolButton#ctx_fill_btn:pressed {
-                background-color: #202023;
-            }
-        """)
         self.ctx_btn_fill.clicked.connect(self._on_ctx_fill_clicked)
         layout.addWidget(self.ctx_btn_fill)
 
@@ -882,31 +757,13 @@ class EditorPage(QWidget):
         self.ctx_btn_stroke.setToolTip("Shape Stroke Color")
         self.ctx_btn_stroke.setIcon(self._create_shape_stroke_icon("#0078D4"))
         self.ctx_btn_stroke.setIconSize(QSize(22, 22))
-        self.ctx_btn_stroke.setStyleSheet("""
-            QToolButton#ctx_stroke_btn {
-                background-color: #262629;
-                border: 1px solid #3F3F46;
-                border-radius: 4px;
-            }
-            QToolButton#ctx_stroke_btn:hover {
-                background-color: #333338;
-                border-color: #52525B;
-            }
-            QToolButton#ctx_stroke_btn:pressed {
-                background-color: #202023;
-            }
-        """)
         self.ctx_btn_stroke.clicked.connect(self._on_ctx_stroke_clicked)
         layout.addWidget(self.ctx_btn_stroke)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Sunken)
-        sep.setStyleSheet("color: #3F3F46; max-height: 20px;")
-        layout.addWidget(sep)
+        layout.addWidget(self._separator())
 
         lbl_w = QLabel("Width:")
-        lbl_w.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        lbl_w.setProperty("role", "specKey")
         layout.addWidget(lbl_w)
         self.ctx_spin_stroke_w = QSpinBox()
         self.ctx_spin_stroke_w.setRange(0, 50)
@@ -915,8 +772,8 @@ class EditorPage(QWidget):
         self.ctx_spin_stroke_w.valueChanged.connect(self._on_ctx_stroke_w_changed)
         layout.addWidget(self.ctx_spin_stroke_w)
 
-        lbl_r = QLabel("Radius:")
-        lbl_r.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        lbl_r = QLabel("Height:")
+        lbl_r.setProperty("role", "specKey")
         layout.addWidget(lbl_r)
         self.ctx_spin_radius = QSpinBox()
         self.ctx_spin_radius.setRange(0, 500)
@@ -935,12 +792,12 @@ class EditorPage(QWidget):
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        lbl_photo = QLabel("<b>Photo / Image:</b>")
-        lbl_photo.setStyleSheet("color: #E4E4E7; font-size: 12px; margin-right: 2px;")
+        lbl_photo = QLabel("Photo:")
+        lbl_photo.setProperty("role", "controlLabel")
         layout.addWidget(lbl_photo)
 
-        lbl_fit = QLabel("Fit:")
-        lbl_fit.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        lbl_fit = QLabel("Fit Mode:")
+        lbl_fit.setProperty("role", "specKey")
         layout.addWidget(lbl_fit)
         self.ctx_cmb_fit = QComboBox()
         self.ctx_cmb_fit.addItems(["cover", "contain", "stretch", "crop"])
@@ -949,7 +806,7 @@ class EditorPage(QWidget):
         layout.addWidget(self.ctx_cmb_fit)
 
         lbl_mask = QLabel("Mask:")
-        lbl_mask.setStyleSheet("color: #A1A1AA; font-size: 11px;")
+        lbl_mask.setProperty("role", "specKey")
         layout.addWidget(lbl_mask)
         self.ctx_cmb_mask = QComboBox()
         self.ctx_cmb_mask.addItems(["rect", "circle", "rounded"])
@@ -1199,6 +1056,27 @@ class EditorPage(QWidget):
             self.stack_context.setCurrentIndex(0)
 
         self._updating_context_bar = False
+        self._update_strip_swatches(elem)
+
+    def _update_strip_swatches(self, elem) -> None:
+        """Show the colours of the selected element in the wells of the strip.
+
+        The colour of an element is content and not a theme colour, so this
+        is the one place where a raw value belongs into a stylesheet.
+        """
+        fill = elem.style.background_color or "transparent"
+        stroke = elem.style.border_color or "transparent"
+        if fill.lower() == "transparent":
+            fill = "transparent"
+        if stroke.lower() == "transparent":
+            stroke = "transparent"
+
+        self.btn_strip_fill.setStyleSheet(
+            f"QToolButton#swatch_fill {{ background-color: {fill}; }}"
+        )
+        self.btn_strip_stroke.setStyleSheet(
+            f"QToolButton#swatch_stroke {{ border-color: {stroke}; }}"
+        )
 
     def _on_inspector_property_changed(self, item: CanvasItem) -> None:
         self.scene.update()
@@ -1325,7 +1203,7 @@ class EditorPage(QWidget):
 
         bar_color = QColor(color_hex) if color_hex and QColor(color_hex).isValid() else QColor("#1A1A1A")
         p.setBrush(bar_color)
-        p.setPen(QPen(QColor("#3F3F46"), 0.5))
+        p.setPen(QPen(QColor(active_palette().OUTLINE_VARIANT), 0.5))
         p.drawRoundedRect(2, size - 4, size - 4, 3, 1.0, 1.0)
         p.end()
         return QIcon(pix)
@@ -1369,15 +1247,15 @@ class EditorPage(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         if not color_hex or color_hex.lower() in ("transparent", "none"):
-            p.setPen(QPen(QColor("#52525B"), 1))
+            p.setPen(QPen(QColor(active_palette().OUTLINE_VARIANT), 1))
             p.setBrush(QColor("#18181B"))
             p.drawRoundedRect(3, 3, size - 6, size - 6, 2.5, 2.5)
-            p.setPen(QPen(QColor("#EF4444"), 1.5))
+            p.setPen(QPen(QColor(active_palette().ERROR), 1.5))
             p.drawLine(4, size - 5, size - 5, 4)
         else:
             c = QColor(color_hex)
             p.setBrush(c)
-            p.setPen(QPen(QColor("#52525B"), 0.8))
+            p.setPen(QPen(QColor(active_palette().OUTLINE_VARIANT), 0.8))
             p.drawRoundedRect(3, 3, size - 6, size - 6, 2.5, 2.5)
         p.end()
         return QIcon(pix)

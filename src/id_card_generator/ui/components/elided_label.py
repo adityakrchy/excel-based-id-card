@@ -1,6 +1,6 @@
 """Labels that elide their text instead of clipping it."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QLabel, QSizePolicy
 
@@ -33,6 +33,17 @@ class ElidedLabel(QLabel):
     def setElideMode(self, mode) -> None:  # noqa: N802 - Qt naming
         self._mode = mode
         self._apply_elide()
+
+    def sizeHint(self):  # noqa: N802 - Qt naming
+        """Ask for the room the full text needs.
+
+        The elided text is short, so a plain label would claim almost no
+        space and the toolbar would cut the value off right away.
+        """
+        metrics = QFontMetrics(self.font())
+        width = metrics.horizontalAdvance(self._full_text) + 10
+        height = super().sizeHint().height()
+        return QSize(width, height)
 
     # -- internals --------------------------------------------------
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming

@@ -514,6 +514,102 @@ QPushButton#btn_icon:hover, QToolButton#btn_icon:hover {
     color: $on_surface;
 }
 
+/* Toggle buttons of the designer bar (guides, snap, bleed, ...). */
+QToolButton#btn_toggle {
+    background-color: $surface_container;
+    border: 1px solid $border;
+    border-radius: $radius_sm;
+    color: $on_surface_variant;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+
+QToolButton#btn_toggle:hover {
+    background-color: $surface_high;
+    color: $on_surface;
+    border-color: $outline_variant;
+}
+
+QToolButton#btn_toggle:checked {
+    background-color: $surface_high;
+    border-color: $tertiary;
+    color: $tertiary;
+    font-weight: 600;
+}
+
+/* The vertical tool strip of the designer. */
+QFrame#tool_strip {
+    background-color: $surface_container;
+    border: 1px solid $border;
+    border-radius: $radius;
+}
+
+QFrame#tool_strip QToolButton {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: $radius_sm;
+    color: $on_surface_variant;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QFrame#tool_strip QToolButton:hover {
+    background-color: $surface_high;
+    color: $on_surface;
+    border-color: $border;
+}
+
+QFrame#tool_strip QToolButton:checked {
+    background-color: $surface_container;
+    border-color: $primary_container;
+    color: $primary;
+}
+
+/* The colour wells of the tool strip. */
+QToolButton#swatch_fill {
+    border: 1px solid $outline_variant;
+    border-radius: $radius_sm;
+    padding: 0px;
+    min-height: 0px;
+}
+
+QToolButton#swatch_stroke {
+    background-color: transparent;
+    border: 2px solid $outline_variant;
+    border-radius: $radius_sm;
+    padding: 0px;
+    min-height: 0px;
+}
+
+/* The button that shows the colour of an element. */
+QPushButton#swatch_button {
+    background-color: $surface_container;
+    color: $on_surface;
+    border: 1px solid $border;
+    border-radius: $radius_sm;
+    padding: 2px 8px;
+    text-align: left;
+    font-family: $mono_font;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+QPushButton#swatch_button:hover {
+    background-color: $surface_high;
+    border-color: $outline_variant;
+}
+
+QPushButton#swatch_button:pressed {
+    background-color: $surface_low;
+    border-color: $primary_container;
+}
+
+/* A thin rule that separates the groups of a toolbar. */
+QFrame#separator {
+    background-color: $border;
+    border: none;
+}
+
 /* Compact square buttons (zoom steppers, record stepper, ...) */
 QPushButton#btn_stepper, QToolButton#btn_stepper {
     background-color: $surface_container;
@@ -973,6 +1069,27 @@ QLabel[role="statValue"] {
 QLabel[role="specKey"] {
     color: $text_muted;
     font-size: 11px;
+}
+
+/* The caption of a control in a toolbar row. */
+QLabel[role="controlLabel"] {
+    color: $on_surface;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* A value that stands out, for example the selection of the canvas. */
+QLabel[role="accentText"] {
+    color: $primary;
+    font-family: $mono_font;
+    font-size: 11px;
+}
+
+/* The well that holds the photograph of the sample record. */
+QLabel[role="photoWell"] {
+    background-color: $surface_low;
+    border: 1px solid $border;
+    border-radius: $radius_sm;
 }
 
 QLabel[role="specValue"] {

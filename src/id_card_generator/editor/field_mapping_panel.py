@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from id_card_generator.core.constants import MatchStatus
 from id_card_generator.core.models import PhotoMatchResult, SourceRecord
 from id_card_generator.editor.canvas_items import CanvasItem
+from id_card_generator.ui.studio_tokens import SEMANTIC_ERROR, SEMANTIC_WARNING
 
 logger = logging.getLogger(__name__)
 
@@ -51,17 +52,19 @@ class FieldMappingPanel(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(12)
 
         # 1. Available Spreadsheet Columns
         col_group = QGroupBox("Available Spreadsheet Columns")
         col_layout = QVBoxLayout(col_group)
-        col_layout.setContentsMargins(6, 6, 6, 6)
+        col_layout.setContentsMargins(12, 10, 12, 12)
+        col_layout.setSpacing(8)
         col_layout.setSpacing(6)
 
         self.col_list = QListWidget()
-        self.col_list.setMaximumHeight(140)
+        self.col_list.setMinimumHeight(90)
+        self.col_list.setMaximumHeight(160)
         col_layout.addWidget(self.col_list)
 
         btn_row = QHBoxLayout()
@@ -76,13 +79,13 @@ class FieldMappingPanel(QWidget):
         btn_row.addWidget(self.btn_add_dyn)
         col_layout.addLayout(btn_row)
 
-        layout.addWidget(col_group)
+        layout.addWidget(col_group, 0)
 
         # 2. Live Sample Record Preview
         sample_group = QGroupBox("Live Sample Record Preview")
         sample_layout = QVBoxLayout(sample_group)
-        sample_layout.setContentsMargins(6, 6, 6, 6)
-        sample_layout.setSpacing(6)
+        sample_layout.setContentsMargins(12, 10, 12, 12)
+        sample_layout.setSpacing(8)
 
         nav_box = QHBoxLayout()
         self.btn_prev = QPushButton("◀")
@@ -92,7 +95,7 @@ class FieldMappingPanel(QWidget):
 
         self.lbl_record_num = QLabel("0 / 0")
         self.lbl_record_num.setAlignment(Qt.AlignCenter)
-        self.lbl_record_num.setStyleSheet("font-weight: 600; color: #38BDF8;")
+        self.lbl_record_num.setProperty("role", "accentText")
         nav_box.addWidget(self.lbl_record_num, stretch=1)
 
         self.btn_next = QPushButton("▶")
@@ -111,13 +114,13 @@ class FieldMappingPanel(QWidget):
         photo_box = QHBoxLayout()
         self.lbl_photo_thumb = QLabel()
         self.lbl_photo_thumb.setFixedSize(48, 56)
-        self.lbl_photo_thumb.setStyleSheet("background-color: #27272A; border-radius: 4px; border: 1px solid #3F3F46;")
+        self.lbl_photo_thumb.setProperty("role", "photoWell")
         self.lbl_photo_thumb.setAlignment(Qt.AlignCenter)
         photo_box.addWidget(self.lbl_photo_thumb)
 
         self.lbl_photo_status = QLabel("No photo loaded")
         self.lbl_photo_status.setWordWrap(True)
-        self.lbl_photo_status.setStyleSheet("font-size: 11px;")
+        self.lbl_photo_status.setProperty("role", "specKey")
         photo_box.addWidget(self.lbl_photo_status, stretch=1)
         sample_layout.addLayout(photo_box)
 
@@ -129,7 +132,7 @@ class FieldMappingPanel(QWidget):
         self.tbl_values.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         sample_layout.addWidget(self.tbl_values)
 
-        layout.addWidget(sample_group)
+        layout.addWidget(sample_group, 1)
 
     def set_dataset(
         self,
@@ -223,14 +226,19 @@ class FieldMappingPanel(QWidget):
                 self.lbl_photo_thumb.setPixmap(avatar.scaled(44, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             else:
                 self.lbl_photo_thumb.clear()
-            self.lbl_photo_status.setText(f"<b style='color: #EAB308;'>Ambiguous:</b> {len(match.candidate_paths)} photos found")
+            self.lbl_photo_status.setText(
+                f"<b style='color: {SEMANTIC_WARNING};'>Ambiguous:</b> "
+                f"{len(match.candidate_paths)} photos found"
+            )
         else:
             avatar = CanvasItem.get_avatar_pixmap()
             if avatar and not avatar.isNull():
                 self.lbl_photo_thumb.setPixmap(avatar.scaled(44, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             else:
                 self.lbl_photo_thumb.clear()
-            self.lbl_photo_status.setText("<b style='color: #EF4444;'>Photo Missing</b>")
+            self.lbl_photo_status.setText(
+                f"<b style='color: {SEMANTIC_ERROR};'>Photo Missing</b>"
+            )
 
         # Values table
         self.tbl_values.setRowCount(len(self.columns))
