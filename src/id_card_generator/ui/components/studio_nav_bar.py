@@ -2,17 +2,27 @@
 
 from enum import Enum
 from typing import Dict
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QToolButton,
+    QWidget,
 )
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.studio_tokens import COLORS, TYPOGRAPHY, palette_for
+
+
+def _wrap(layout) -> QWidget:
+    """Host a layout inside a plain widget."""
+    holder = QWidget()
+    holder.setProperty("role", "flat")
+    holder.setLayout(layout)
+    return holder
 
 
 class StudioTab(str, Enum):
@@ -126,8 +136,21 @@ class StudioNavBar(QFrame):
         if StudioTab.HUB in self._buttons:
             self._buttons[StudioTab.HUB].setChecked(True)
 
-        layout.addLayout(tabs_layout)
-        layout.addStretch()
+        # The tabs scroll when the window is too narrow.  Without it the
+        # ribbon needed 1100 pixels and the whole window was wider than
+        # the screen, which pushed the tools of the right side out of it.
+        self.tabs_scroll = QScrollArea()
+        self.tabs_scroll.setWidgetResizable(True)
+        self.tabs_scroll.setFrameShape(QFrame.NoFrame)
+        self.tabs_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.tabs_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.tabs_scroll.setMinimumWidth(200)
+        self.tabs_scroll.setFixedHeight(44)
+        self.tabs_scroll.setWidget(_wrap(tabs_layout))
+        self.tabs_scroll.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+        )
+        layout.addWidget(self.tabs_scroll, 1)
 
         # Right Side: FIPS Security Pill + User Avatar
         right_tools = QHBoxLayout()
@@ -258,10 +281,30 @@ class StudioNavBar(QFrame):
         self._active_tab = tab
         self.tab_selected.emit(tab.value)
 
+    def _reveal_tab(self, tab: StudioTab) -> None:
+        """Scroll the active tab into the sight of the ribbon.
+
+        The ribbon scrolls in a narrow window, so the tab of the workspace
+        the user is in may be out of sight.
+        """
+        button = self._buttons.get(tab)
+        if button is None:
+            return
+        # The ribbon needs its final geometry before it can scroll.
+        QTimer.singleShot(0, lambda: self._scroll_to_tab(button))
+
+    def _scroll_to_tab(self, button) -> None:
+        """Move the ribbon so that the given tab is visible."""
+        try:
+            self.tabs_scroll.ensureWidgetVisible(button, 40, 0)
+        except RuntimeError:  # pragma: no cover - the bar may be gone
+            pass
+
     def set_active_tab(self, tab: StudioTab) -> None:
         if tab in self._buttons:
             self._buttons[tab].setChecked(True)
             self._active_tab = tab
+            self._reveal_tab(tab)
 
     def set_tab_state(self, tab: StudioTab, state: TabState) -> None:
         """Show the progress state of a workspace tab (done / active / blocked)."""

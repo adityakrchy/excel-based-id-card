@@ -50,6 +50,7 @@ from id_card_generator.data.data_validator import DataValidator, ValidationRepor
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.data.hindi_converter import HindiConverter
 from id_card_generator.ui import workflow
+from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.layout_blocks import OverflowMenu, StatLine
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.components.record_table import RecordTableModel
@@ -71,6 +72,14 @@ from id_card_generator.ui.studio_tokens import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _wrap(layout) -> QWidget:
+    """Host a layout inside a plain widget."""
+    holder = QWidget()
+    holder.setProperty("role", "flat")
+    holder.setLayout(layout)
+    return holder
 
 # Every control in a row uses the same height as the rest of the app.
 CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
@@ -281,8 +290,8 @@ class DataSourcePage(QWidget):
         # --- LEFT COLUMN: Template Placeholders List ---
         left_panel = QFrame()
         left_panel.setObjectName("workspace_panel")
-        left_panel.setMinimumWidth(240)
-        left_panel.setMaximumWidth(360)
+        left_panel.setMinimumWidth(200)
+        left_panel.setMaximumWidth(340)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(6)
@@ -329,6 +338,10 @@ class DataSourcePage(QWidget):
         self.cmb_sheets = QComboBox()
         self.cmb_sheets.setPlaceholderText("Sheet")
         self.cmb_sheets.setFixedHeight(CONTROL_HEIGHT)
+        self.cmb_sheets.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.cmb_sheets.setMinimumContentsLength(8)
         self.cmb_sheets.currentIndexChanged.connect(self._on_sheet_changed)
         ctrl_bar.addWidget(self.cmb_sheets)
 
@@ -341,6 +354,10 @@ class DataSourcePage(QWidget):
         ctrl_bar.addWidget(self.spin_header)
 
         self.cmb_hindi_mode = QComboBox()
+        self.cmb_hindi_mode.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.cmb_hindi_mode.setMinimumContentsLength(10)
         self.cmb_hindi_mode.addItem("Auto-detect Hindi", "auto")
         self.cmb_hindi_mode.addItem("Kruti Dev → Unicode", "kruti_to_unicode")
         self.cmb_hindi_mode.addItem("Chanakya → Unicode", "chanakya_to_unicode")
@@ -374,7 +391,19 @@ class DataSourcePage(QWidget):
         self.btn_validate.clicked.connect(self._validate_all_records)
         ctrl_bar.addWidget(self.btn_validate)
 
-        center_layout.addLayout(ctrl_bar)
+        # The row of the controls scrolls when the window is too narrow,
+        # otherwise the whole page would be wider than the screen.
+        self.ctrl_scroll = QScrollArea()
+        self.ctrl_scroll.setWidgetResizable(True)
+        self.ctrl_scroll.setFrameShape(QFrame.NoFrame)
+        self.ctrl_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.ctrl_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.ctrl_scroll.setMinimumHeight(CONTROL_HEIGHT + 8)
+        self.ctrl_scroll.setWidget(_wrap(ctrl_bar))
+        self.ctrl_scroll.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+        )
+        center_layout.addWidget(self.ctrl_scroll)
 
         # Search & Summary Bar
         search_bar = QHBoxLayout()
@@ -384,8 +413,9 @@ class DataSourcePage(QWidget):
         self.txt_search.textChanged.connect(self._filter_table)
         search_bar.addWidget(self.txt_search, stretch=1)
 
-        self.lbl_summary = QLabel("0 records loaded")
+        self.lbl_summary = ElidedLabel("0 records loaded")
         self.lbl_summary.setProperty("role", "specKey")
+        self.lbl_summary.setMinimumWidth(120)
         search_bar.addWidget(self.lbl_summary)
         center_layout.addLayout(search_bar)
 
@@ -402,6 +432,7 @@ class DataSourcePage(QWidget):
         self.table.selectionModel().selectionChanged.connect(
             lambda selected, deselected: self._on_row_selected()
         )
+        self.table.setMinimumWidth(180)
         self.table.setStyleSheet(
             f"QTableView {{ background-color: {SURFACE_LOWEST}; alternate-background-color: {SURFACE_LOW};"
             f" gridline-color: {BORDER_SUBTLE}; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_SUBTLE}; }}"
@@ -415,8 +446,8 @@ class DataSourcePage(QWidget):
         # --- RIGHT COLUMN: Field Mapping & Selected Record Inspector ---
         right_panel = QFrame()
         right_panel.setObjectName("workspace_panel")
-        right_panel.setMinimumWidth(280)
-        right_panel.setMaximumWidth(400)
+        right_panel.setMinimumWidth(250)
+        right_panel.setMaximumWidth(380)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(6, 6, 6, 6)
         right_layout.setSpacing(6)
@@ -466,6 +497,10 @@ class DataSourcePage(QWidget):
         self.cmb_source_column = QComboBox()
         self.cmb_source_column.setPlaceholderText("Spreadsheet column")
         self.cmb_source_column.setFixedHeight(CONTROL_HEIGHT)
+        self.cmb_source_column.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.cmb_source_column.setMinimumContentsLength(12)
         self.cmb_source_column.currentIndexChanged.connect(self._on_source_column_changed)
         mapping_layout.addWidget(self.cmb_source_column)
 
@@ -526,6 +561,10 @@ class DataSourcePage(QWidget):
         self.cmb_photo_lookup = QComboBox()
         self.cmb_photo_lookup.addItem("Auto-detect (PIN / ID)", "")
         self.cmb_photo_lookup.setFixedHeight(CONTROL_HEIGHT)
+        self.cmb_photo_lookup.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.cmb_photo_lookup.setMinimumContentsLength(12)
         self.cmb_photo_lookup.currentIndexChanged.connect(self._on_photo_lookup_changed)
         mapping_layout.addWidget(self.cmb_photo_lookup)
 
@@ -540,6 +579,10 @@ class DataSourcePage(QWidget):
         mapping_layout.addWidget(lbl_policy_head)
 
         self.cmb_photo_policy = QComboBox()
+        self.cmb_photo_policy.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.cmb_photo_policy.setMinimumContentsLength(12)
         self.cmb_photo_policy.addItem(
             "Default avatar placeholder", MissingPhotoPolicy.GENERATE_WITH_PLACEHOLDER
         )

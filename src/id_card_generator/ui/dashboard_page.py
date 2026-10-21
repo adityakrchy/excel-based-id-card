@@ -29,6 +29,7 @@ from id_card_generator.core.constants import (
 )
 from id_card_generator.core.logging_config import export_diagnostic_logs, get_current_log_path
 from id_card_generator.core.models import ProjectConfiguration
+from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
@@ -214,8 +215,11 @@ class RecentProjectRowWidget(QFrame):
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
 
-        lbl_name = QLabel(name)
+        # The name and the path may be long, so they elide instead of
+        # making the whole window wider than the screen.
+        lbl_name = ElidedLabel(name)
         lbl_name.setProperty("role", "cardTitle")
+        lbl_name.setMinimumWidth(60)
         lbl_name.setStyleSheet("font-weight: 700; font-size: 12px;")
         title_row.addWidget(lbl_name)
 
@@ -229,12 +233,23 @@ class RecentProjectRowWidget(QFrame):
         title_row.addStretch()
         info_layout.addLayout(title_row)
 
-        lbl_sub = QLabel(
-            f"<font color='{SEMANTIC_SUCCESS}'><b>{records_text}</b></font> • "
-            f"<font color='#7E8494'>Edited {edited_text} • {path_text}</font>"
+        sub_row = QHBoxLayout()
+        sub_row.setSpacing(6)
+
+        lbl_records = QLabel(records_text)
+        lbl_records.setStyleSheet(
+            f"color: {SEMANTIC_SUCCESS}; font-weight: 700; font-size: 10px;"
+            f" font-family: {FONT_FAMILY_MONO};"
         )
-        lbl_sub.setStyleSheet(f"font-size: 10px; font-family: {FONT_FAMILY_MONO};")
-        info_layout.addWidget(lbl_sub)
+        sub_row.addWidget(lbl_records)
+
+        lbl_sub = ElidedLabel(f"Edited {edited_text} • {path_text}")
+        lbl_sub.setMinimumWidth(60)
+        lbl_sub.setStyleSheet(
+            f"color: #7E8494; font-size: 10px; font-family: {FONT_FAMILY_MONO};"
+        )
+        sub_row.addWidget(lbl_sub, stretch=1)
+        info_layout.addLayout(sub_row)
 
         layout.addLayout(info_layout, stretch=1)
 

@@ -167,33 +167,35 @@ class ElementInspector(QWidget):
 
         # Layer Arrangement Group (Bring to top, send to bottom, step forward/backward)
         arrange_group = QGroupBox("Layer Order && Stacking")
-        arrange_layout = QHBoxLayout(arrange_group)
+        # Two rows, so the buttons keep their label in a narrow panel.
+        arrange_layout = QGridLayout(arrange_group)
         arrange_layout.setContentsMargins(12, 10, 12, 12)
-        arrange_layout.setSpacing(6)
+        arrange_layout.setHorizontalSpacing(6)
+        arrange_layout.setVerticalSpacing(6)
 
         self.btn_prop_to_front = QPushButton("Top ⏫")
         self.btn_prop_to_front.setFixedHeight(26)
         self.btn_prop_to_front.setToolTip("Bring element on top of every other element")
         self.btn_prop_to_front.clicked.connect(self._bring_to_front)
-        arrange_layout.addWidget(self.btn_prop_to_front)
+        arrange_layout.addWidget(self.btn_prop_to_front, 0, 0)
 
         self.btn_prop_forward = QPushButton("Up ▲")
         self.btn_prop_forward.setFixedHeight(26)
         self.btn_prop_forward.setToolTip("Bring element one step forward")
         self.btn_prop_forward.clicked.connect(self._bring_forward)
-        arrange_layout.addWidget(self.btn_prop_forward)
+        arrange_layout.addWidget(self.btn_prop_forward, 0, 1)
 
         self.btn_prop_backward = QPushButton("Down ▼")
         self.btn_prop_backward.setFixedHeight(26)
         self.btn_prop_backward.setToolTip("Send element one step backward")
         self.btn_prop_backward.clicked.connect(self._send_backward)
-        arrange_layout.addWidget(self.btn_prop_backward)
+        arrange_layout.addWidget(self.btn_prop_backward, 1, 0)
 
         self.btn_prop_to_back = QPushButton("Bottom ⏬")
         self.btn_prop_to_back.setFixedHeight(26)
         self.btn_prop_to_back.setToolTip("Send element back to bottom of all elements")
         self.btn_prop_to_back.clicked.connect(self._send_to_back)
-        arrange_layout.addWidget(self.btn_prop_to_back)
+        arrange_layout.addWidget(self.btn_prop_to_back, 1, 1)
 
         self.form_layout.addWidget(arrange_group)
 

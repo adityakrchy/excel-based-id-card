@@ -202,8 +202,8 @@ class ProductionPage(QWidget):
     def _build_batch_column(self) -> QWidget:
         """Configure the batch, start it and watch the process."""
         card = SurfaceCard("Batch")
-        card.setMinimumWidth(280)
-        card.setMaximumWidth(400)
+        card.setMinimumWidth(250)
+        card.setMaximumWidth(380)
 
         # -- progress ------------------------------------------------
         self.progress_bar = QProgressBar()
@@ -404,8 +404,8 @@ class ProductionPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setMinimumWidth(280)
-        scroll.setMaximumWidth(400)
+        scroll.setMinimumWidth(250)
+        scroll.setMaximumWidth(380)
         scroll.setWidget(card)
         return scroll
 
@@ -413,7 +413,7 @@ class ProductionPage(QWidget):
     def _build_preview_column(self) -> QWidget:
         """The card that is reviewed, with the fields of its record."""
         card = SurfaceCard("Card")
-        card.setMinimumWidth(340)
+        card.setMinimumWidth(280)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
@@ -528,8 +528,8 @@ class ProductionPage(QWidget):
     def _build_queue_column(self) -> QWidget:
         """The queue of the produced cards and the decisions on them."""
         card = SurfaceCard("Queue")
-        card.setMinimumWidth(280)
-        card.setMaximumWidth(420)
+        card.setMinimumWidth(250)
+        card.setMaximumWidth(380)
 
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("Filter by PIN or name...")

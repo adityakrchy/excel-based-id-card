@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -174,7 +175,23 @@ class EditorPage(QWidget):
 
         # The context sits on the left, the actions on the right.  Both
         # groups are centred on the same baseline, so they read as one line.
-        self.opt_layout.addWidget(self.stack_context, 1, Qt.AlignVCenter)
+        #
+        # The context scrolls when the window is too narrow: without it the
+        # whole bar needs 1300 pixels, the actions would be pushed out of
+        # the window and the dock of the canvas would collapse.
+        self.context_scroll = QScrollArea()
+        self.context_scroll.setWidgetResizable(True)
+        self.context_scroll.setFrameShape(QFrame.NoFrame)
+        self.context_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.context_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.context_scroll.setMinimumWidth(160)
+        self.context_scroll.setFixedHeight(CONTROL_HEIGHT)
+        self.context_scroll.setWidget(self.stack_context)
+        self.context_scroll.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+        )
+        self.opt_layout.addWidget(self.context_scroll, 1, Qt.AlignVCenter)
+        self._fit_context_width()
 
         # Separator before action buttons
         self.opt_layout.addWidget(self._separator(), 0, Qt.AlignVCenter)
@@ -277,6 +294,26 @@ class EditorPage(QWidget):
         self.nav_bar.back_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.TEMPLATES.value))
         self.nav_bar.next_requested.connect(lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value))
         main_layout.addWidget(self.nav_bar)
+
+    def _fit_context_width(self) -> None:
+        """Keep the context of the bar at its natural width.
+
+        The pages of the context are not squeezed into a narrow window -
+        the bar scrolls them instead, so a long value is never cut into a
+        couple of letters.
+        """
+        widths = [
+            page.sizeHint().width()
+            for page in (
+                self.page_doc_context,
+                self.page_text_context,
+                self.page_shape_context,
+                self.page_photo_context,
+            )
+        ]
+        natural = max(widths) if widths else 0
+        if natural > 0:
+            self.stack_context.setMinimumWidth(natural)
 
     @staticmethod
     def _separator(vertical: bool = True) -> QFrame:
@@ -922,26 +959,38 @@ class EditorPage(QWidget):
         self._user_adjusted_splitter = True
 
     def apply_default_splitter_sizes(self, force: bool = False) -> None:
-        """Ensure canvas area occupies 70% of available screen width by default."""
+        """Give the canvas the free space and keep the dock at its size.
+
+        The width of the splitter is only correct once the layout has
+        settled, so the free space is measured against the width of the
+        page.  Otherwise a narrow window keeps the sizes of the wide one
+        and the dock is pushed out of the screen.
+        """
         if self._user_adjusted_splitter and not force:
             return
 
-        total_w = self.splitter.width()
+        # The strip and the margins of the body are not part of the splitter.
+        total_w = self.width() - self.tool_strip.width() - 18
         if total_w <= 100:
-            total_w = self.width() - self.tool_strip.width() - 24
-            if total_w <= 100 and self.window():
-                total_w = self.window().width() - self.tool_strip.width() - 32
+            total_w = self.splitter.width()
+        if total_w <= 100 and self.window():
+            total_w = self.window().width() - self.tool_strip.width() - 32
 
-        if total_w > 100:
-            canvas_w = int(total_w * 0.70)
-            right_w = max(240, total_w - canvas_w)
-            self.splitter.setSizes([canvas_w, right_w])
-            if force:
-                self._user_adjusted_splitter = False
-                self.view.fit_to_view(enlarge_factor=1.35)
+        if total_w <= 100:
+            return
+
+        # The dock keeps a third of the space, the canvas takes the rest.
+        dock_w = int(total_w * 0.30)
+        dock_w = max(self.right_tabs.minimumWidth(), min(self.right_tabs.maximumWidth(), dock_w))
+        canvas_w = max(self.view.minimumWidth(), total_w - dock_w)
+        self.splitter.setSizes([canvas_w, dock_w])
+        if force:
+            self._user_adjusted_splitter = False
+            self.view.fit_to_view(enlarge_factor=1.35)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self._fit_context_width()
         if not self._user_adjusted_splitter:
             self.apply_default_splitter_sizes(force=False)
             QTimer.singleShot(0, self._safe_apply_splitter_sizes)
@@ -951,7 +1000,9 @@ class EditorPage(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if not self._user_adjusted_splitter:
-            self.apply_default_splitter_sizes(force=False)
+            # The layout of the splitter is only settled in the next turn of
+            # the event loop, so the sizes are applied there.
+            QTimer.singleShot(0, self._safe_apply_splitter_sizes)
 
     def keyPressEvent(self, event) -> None:
         """Forward arrow keys and element actions from editor page to canvas scene."""

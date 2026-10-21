@@ -250,6 +250,39 @@ def test_the_options_bar_sits_on_one_baseline(qtbot):
     assert len(centres) == 1, f"the controls do not share a baseline: {centres}"
 
 
+def test_the_options_bar_does_not_force_the_window_wide(qtbot):
+    """The bar shrinks, so a narrow window is not pushed out of the screen.
+
+    The context of the bar scrolls instead of taking the room it needs.
+    """
+    from id_card_generator.ui.editor_page import EditorPage
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    page = EditorPage()
+    qtbot.addWidget(page)
+    page.resize(1400, 900)
+    page.show()
+    qtbot.wait(50)
+
+    assert page.options_bar.minimumSizeHint().width() < 600
+
+
+def test_the_window_fits_into_a_small_screen(qtbot):
+    """The whole application may shrink to a small screen.
+
+    The window was wider than the screen of the user, so the right side of
+    the designer - the actions and the dock - was cut off.
+    """
+    from id_card_generator.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.minimumSizeHint().width() <= 900
+
+
 # ---------------------------------------------------------------------------
 # The other tabs of the dock
 # ---------------------------------------------------------------------------

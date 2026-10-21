@@ -45,6 +45,15 @@ class ElidedLabel(QLabel):
         height = super().sizeHint().height()
         return QSize(width, height)
 
+    def minimumSizeHint(self):  # noqa: N802 - Qt naming
+        """Stay small enough to be elided instead of pushing the bar.
+
+        A label reports the width of its text as its minimum, so a long
+        value would make the whole bar wider than the window.
+        """
+        height = super().minimumSizeHint().height()
+        return QSize(self.minimumWidth(), height)
+
     # -- internals --------------------------------------------------
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().resizeEvent(event)
