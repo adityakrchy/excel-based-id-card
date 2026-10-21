@@ -53,10 +53,10 @@ jobs:
       - name: Verify executable creation
         shell: pwsh
         run: |
-          $exe = "dist\ExcelIDCardGenerator\ExcelIDCardGenerator.exe"
+          $exe = "dist\BulkIDCardGenerator\BulkIDCardGenerator.exe"
 
           if (-not (Test-Path $exe)) {
-            Write-Error "ExcelIDCardGenerator.exe was not found at $exe"
+            Write-Error "BulkIDCardGenerator.exe was not found at $exe"
             Get-ChildItem dist -Recurse -ErrorAction SilentlyContinue
             exit 1
           }
@@ -67,8 +67,8 @@ jobs:
       - name: Zip standalone application
         shell: pwsh
         run: |
-          $source = "dist\ExcelIDCardGenerator"
-          $destination = "dist\ExcelIDCardGenerator-Windows-x64.zip"
+          $source = "dist\BulkIDCardGenerator"
+          $destination = "dist\BulkIDCardGenerator-Windows-x64.zip"
 
           if (-not (Test-Path $source)) {
             throw "Application directory not found: $source"
@@ -111,13 +111,13 @@ jobs:
 
           New-Item -ItemType Directory -Path "dist\installer" -Force | Out-Null
 
-          & $iscc /O"dist\installer" /F"ExcelIDCardGenerator-Setup" "packaging\installer.iss"
+          & $iscc /O"dist\installer" /F"BulkIDCardGenerator-Setup" "packaging\installer.iss"
 
           if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup compilation failed."
           }
 
-          $installer = "dist\installer\ExcelIDCardGenerator-Setup.exe"
+          $installer = "dist\installer\BulkIDCardGenerator-Setup.exe"
 
           if (-not (Test-Path $installer)) {
             throw "Installer executable was not created at $installer"
@@ -129,8 +129,8 @@ jobs:
       - name: Upload Windows Standalone ZIP Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ExcelIDCardGenerator-Windows-x64
-          path: dist/ExcelIDCardGenerator-Windows-x64.zip
+          name: BulkIDCardGenerator-Windows-x64
+          path: dist/BulkIDCardGenerator-Windows-x64.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -138,7 +138,7 @@ jobs:
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
         with:
-          name: ExcelIDCardGenerator-Installer
-          path: dist/installer/ExcelIDCardGenerator-Setup.exe
+          name: BulkIDCardGenerator-Installer
+          path: dist/installer/BulkIDCardGenerator-Setup.exe
           if-no-files-found: error
           retention-days: 14

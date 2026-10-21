@@ -2,9 +2,7 @@ name: Build Windows Application
 
 on:
   push:
-    branches: [main, master]
   pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -50,16 +48,16 @@ jobs:
       - name: Verify executable creation
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist\ExcelIDCardGenerator\ExcelIDCardGenerator.exe")) {
-            Write-Error "ExcelIDCardGenerator.exe was not found in dist/ExcelIDCardGenerator!"
+          if (-not (Test-Path "dist\BulkIDCardGenerator\BulkIDCardGenerator.exe")) {
+            Write-Error "BulkIDCardGenerator.exe was not found in dist/BulkIDCardGenerator!"
             exit 1
           }
-          Write-Host "Verified ExcelIDCardGenerator.exe exists successfully." -ForegroundColor Green
+          Write-Host "Verified BulkIDCardGenerator.exe exists successfully." -ForegroundColor Green
 
       - name: Zip standalone application
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist\ExcelIDCardGenerator\*" -DestinationPath "dist\ExcelIDCardGenerator-Windows-x64.zip"
+          Compress-Archive -Path "dist\BulkIDCardGenerator\*" -DestinationPath "dist\BulkIDCardGenerator-Windows-x64.zip"
 
       - name: Install Inno Setup
         shell: pwsh
@@ -110,14 +108,14 @@ jobs:
       - name: Upload Windows Standalone ZIP Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ExcelIDCardGenerator-Windows-x64
-          path: dist/ExcelIDCardGenerator-Windows-x64.zip
+          name: BulkIDCardGenerator-Windows-x64
+          path: dist/BulkIDCardGenerator-Windows-x64.zip
           retention-days: 14
 
       - name: Upload Windows Installer (if built)
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ExcelIDCardGenerator-Installer
+          name: BulkIDCardGenerator-Installer
           path: dist/installer/*.exe
           retention-days: 14

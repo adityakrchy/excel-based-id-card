@@ -1,5 +1,5 @@
 [![Build Windows Application](https://github.com/adityakrchy/excel-based-id-card/actions/workflows/build-windows.yml/badge.svg)](https://github.com/adityakrchy/excel-based-id-card/actions/workflows/build-windows.yml)
-# Excel ID Card Generator — Windows 11 ID Card Designer & Batch Generator
+# Bulk ID Card Generator — Windows 11 ID Card Designer & Batch Generator
 
 A polished, Windows 11 Fluent-inspired desktop application for designing custom ID cards, binding arbitrary spreadsheet columns to dynamic visual elements, associating photographs via generic key lookups, batch generating cards in bulk, sequentially reviewing results, and exporting approved cards with audit manifests and printable contact sheets.
 
@@ -179,14 +179,14 @@ pyinstaller --clean packaging/id_card_generator.spec
 ```
 
 The resulting standalone executable will be generated at:
-`dist\ExcelIDCardGenerator\ExcelIDCardGenerator.exe`
+`dist\BulkIDCardGenerator\BulkIDCardGenerator.exe`
 
 ### 2. Build Inno Setup Installer
 
 To compile the setup installer:
 1. Open `packaging\installer.iss` in [Inno Setup 6](https://jrsoftware.org/isdl.php).
 2. Click **Build > Compile** (or run `ISCC.exe packaging\installer.iss`).
-3. The installer `ExcelIDCardGenerator-Setup-1.0.0.exe` will be generated in `dist\installer\`.
+3. The installer `BulkIDCardGenerator-Setup-1.0.0.exe` will be generated in `dist\installer\`.
 
 ### 3. Automated GitHub Actions CI/CD
 

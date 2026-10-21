@@ -3,8 +3,8 @@
 from enum import Enum
 from pathlib import Path
 
-APP_NAME = "Excel ID Card Generator"
-APP_SLUG = "excel-id-card-generator"
+APP_NAME = "Bulk ID Card Generator"
+APP_SLUG = "bulk-id-card-generator"
 APP_ORG = "CardForge"
 APP_VERSION = "1.0.3"
 

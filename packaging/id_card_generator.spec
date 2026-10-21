@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller specification for Excel ID Card Generator.
+PyInstaller specification for Bulk ID Card Generator.
 Builds a standalone Windows x64 desktop application without console window.
 """
 
@@ -77,7 +77,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="ExcelIDCardGenerator",
+    name="BulkIDCardGenerator",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -99,5 +99,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="ExcelIDCardGenerator",
+    name="BulkIDCardGenerator",
 )

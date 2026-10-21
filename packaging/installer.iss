@@ -1,10 +1,10 @@
-; Inno Setup Script for Excel ID Card Generator
+; Inno Setup Script for Bulk ID Card Generator
 ; Target: Windows 10 & 11 (x64)
 
-#define MyAppName "Excel ID Card Generator"
+#define MyAppName "Bulk ID Card Generator"
 #define MyAppVersion "1.0.3"
 #define MyAppPublisher "CardForge"
-#define MyAppExeName "ExcelIDCardGenerator.exe"
+#define MyAppExeName "BulkIDCardGenerator.exe"
 
 [Setup]
 AppId={{D37F8E32-15A4-4A2D-9B84-1CF678A0337E}
@@ -15,7 +15,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\dist\installer
-OutputBaseFilename=ExcelIDCardGenerator-Setup-{#MyAppVersion}
+OutputBaseFilename=BulkIDCardGenerator-Setup-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -30,7 +30,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\dist\ExcelIDCardGenerator\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\BulkIDCardGenerator\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
