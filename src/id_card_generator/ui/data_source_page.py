@@ -52,6 +52,7 @@ from id_card_generator.data.data_validator import DataValidator, ValidationRepor
 from id_card_generator.data.excel_importer import ExcelImporter
 from id_card_generator.data.hindi_converter import HindiConverter
 from id_card_generator.ui import workflow
+from id_card_generator.ui.components.column_filter import open_column_filter_menu
 from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.layout_blocks import OverflowMenu, StatLine
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
@@ -1120,129 +1121,15 @@ class DataSourcePage(QWidget):
     def _open_filter_menu(self, column: int) -> None:
         """Show the values of a column, so they can be picked."""
         model = self.record_model
-        values = model.distinct_values(column)
-        counts = model.value_counts(column)
-        current = model.column_filter(column)
-
-        title = self._column_title(column)
-
-        menu = QMenu(self)
-        menu.setObjectName("column_filter_menu")
-        menu.setStyleSheet(
-            "QMenu {"
-            f"  background-color: {SURFACE_CONTAINER};"
-            f"  border: 1px solid {BORDER_DEFAULT};"
-            "  border-radius: 6px;"
-            "  padding: 6px;"
-            "}"
-            "QMenu::item {"
-            f"  color: {TEXT_PRIMARY};"
-            "  padding: 5px 24px 5px 8px;"
-            "  border-radius: 4px;"
-            "}"
-            "QMenu::item:selected {"
-            f"  background-color: {SURFACE_HIGH};"
-            "}"
-            "QMenu::item:disabled {"
-            f"  color: {TEXT_MUTED};"
-            "}"
-            "QMenu::separator {"
-            f"  height: 1px; background: {BORDER_DEFAULT}; margin: 5px 8px;"
-            "}"
-            "QLabel#menu_title {"
-            f"  color: {PRIMARY};"
-            "  font-size: 11px;"
-            "  font-weight: 700;"
-            "  padding: 4px 8px 6px 8px;"
-            "}"
-            "QLineEdit {"
-            f"  background-color: {SURFACE_LOWEST};"
-            f"  border: 1px solid {BORDER_DEFAULT};"
-            "  border-radius: 4px;"
-            "  padding: 4px 8px;"
-            f"  color: {TEXT_PRIMARY};"
-            f"  font-size: 11px; margin: 2px 6px 6px 6px;"
-            "}"
+        index = model.index(0, column)
+        pos = self.table.mapToGlobal(self.table.visualRect(index).topLeft())
+        open_column_filter_menu(
+            self, model, column, pos, on_changed=self._on_filters_changed
         )
 
-        # The name of the column.
-        title_label = QLabel(title)
-        title_label.setObjectName("menu_title")
-        title_action = QWidgetAction(menu)
-        title_action.setDefaultWidget(title_label)
-        menu.addAction(title_action)
-
-        # A search for the values of the column.
-        search = QLineEdit()
-        search.setPlaceholderText(f"Search {title.lower()}...")
-        search_action = QWidgetAction(menu)
-        search_action.setDefaultWidget(search)
-        menu.addAction(search_action)
-        menu.addSeparator()
-
-        act_all = menu.addAction(f"Select all ({len(values)})")
-        act_clear = menu.addAction("Clear the filter")
-        menu.addSeparator()
-
-        # One entry per value.
-        entries = []
-        for value in values:
-            label = value if value else "(empty)"
-            action = menu.addAction(f"{label}  ({counts.get(value, 0)})")
-            action.setCheckable(True)
-            action.setChecked(value in current or not current)
-            action.setData(value)
-            entries.append(action)
-
-        def _apply() -> None:
-            """Write the picked values into the model."""
-            allowed = {
-                action.data()
-                for action in entries
-                if action.isChecked() and action.isVisible()
-            }
-            if len(allowed) == len(values):
-                # Every value is picked - that is no filter at all.
-                model.clear_column_filter(column)
-            else:
-                model.set_column_filter(column, allowed)
-            self._refresh_stat_line()
-
-        def _on_toggled(checked: bool) -> None:
-            _apply()
-
-        def _on_all() -> None:
-            for action in entries:
-                action.setChecked(True)
-            _apply()
-
-        def _on_clear() -> None:
-            for action in entries:
-                action.setChecked(False)
-            model.clear_column_filter(column)
-            self._refresh_stat_line()
-            menu.close()
-        def _on_search(text: str) -> None:
-            needle = text.lower().strip()
-            for action in entries:
-                value = str(action.data()).lower()
-                action.setVisible(not needle or needle in value)
-
-        for action in entries:
-            action.toggled.connect(_on_toggled)
-        act_all.triggered.connect(_on_all)
-        act_clear.triggered.connect(_on_clear)
-        search.textChanged.connect(_on_search)
-
-        # The state of the filter is shown in the menu.
-        if current:
-            menu.setTitle(f"{title} - {len(current)} of {len(values)}")
-        else:
-            menu.setTitle(f"{title} - all values")
-
-        menu.popup(self.table.mapToGlobal(self.table.visualRect(
-            self.table.model().index(0, column)
-        ).topLeft()))
+    def _on_filters_changed(self) -> None:
+        """The filters of the columns changed."""
+        self._refresh_stat_line()
 
     def _column_title(self, column: int) -> str:
         """The name of a column of the table."""

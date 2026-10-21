@@ -300,3 +300,137 @@ def test_export_page_sheet_settings_are_optional(qtbot):
     assert not page.sheet_box.isVisible()
     page.chk_contact_sheet.setChecked(True)
     assert page.sheet_box.isVisible()
+
+
+# ---------------------------------------------------------------------------
+# The filter of the cards that are written
+# ---------------------------------------------------------------------------
+def _records(count: int = 6):
+    """Reviewed cards with a department."""
+    from PySide6.QtCore import Qt
+
+    from id_card_generator.core.constants import ReviewStatus
+    from id_card_generator.core.models import ReviewRecord, SourceRecord
+
+    records = []
+    sources = {}
+    for index in range(count):
+        source = SourceRecord(
+            row_index=index,
+            raw_pin=f"EMP{index}",
+            pin=f"EMP{index}",
+            data={
+                "PIN Number": f"EMP{index}",
+                "Name": f"Employee {index}",
+                "Department": ["Engineering", "Accounts"][index % 2],
+            },
+        )
+        sources[source.record_id] = source
+        records.append(
+            ReviewRecord(
+                record_id=source.record_id,
+                pin=source.pin,
+                name=f"Employee {index}",
+                status=ReviewStatus.APPROVED,
+            )
+        )
+    return records, sources
+
+
+def test_the_export_lists_the_cards(qtbot, tmp_path):
+    """The table of the export shows the cards that are written."""
+    from id_card_generator.ui.export_page import ExportPage
+
+    page = ExportPage()
+    qtbot.addWidget(page)
+
+    records, sources = _records()
+    page.set_export_context(records, sources, {})
+
+    assert page.card_model.rowCount() == 6
+    assert page.card_model.columnCount() >= 5
+    assert "6 of 6" in page.lbl_table_info.text()
+
+
+def test_a_column_of_the_export_can_be_filtered(qtbot, tmp_path):
+    """Only the cards that pass the filter are written."""
+    from PySide6.QtCore import Qt
+
+    from id_card_generator.core.constants import ReviewStatus
+    from id_card_generator.ui.export_page import ExportPage
+
+    page = ExportPage()
+    qtbot.addWidget(page)
+
+    records, sources = _records()
+    # Two cards are not approved, so the policy leaves four.
+    records[0].status = ReviewStatus.PENDING
+    records[1].status = ReviewStatus.PENDING
+    page.set_export_context(records, sources, {})
+
+    assert page.card_model.rowCount() == 4
+
+    department = None
+    for column in range(page.card_model.columnCount()):
+        if page.card_model.headerData(column, Qt.Horizontal) == "Department":
+            department = column
+            break
+    assert department is not None
+
+    page.card_model.set_column_filter(department, {"Engineering"})
+    page._on_filters_changed()
+
+    assert page.card_model.rowCount() == 2
+    assert "2 of 6" in page.lbl_table_info.text()
+    assert "2 Cards" in page.btn_execute_export.text()
+
+
+def test_the_filters_survive_a_refresh(qtbot):
+    """The filter of a column stays when the table is filled again."""
+    from PySide6.QtCore import Qt
+
+    from id_card_generator.ui.export_page import ExportPage
+
+    page = ExportPage()
+    qtbot.addWidget(page)
+
+    records, sources = _records()
+    page.set_export_context(records, sources, {})
+
+    department = None
+    for column in range(page.card_model.columnCount()):
+        if page.card_model.headerData(column, Qt.Horizontal) == "Department":
+            department = column
+            break
+
+    page.card_model.set_column_filter(department, {"Engineering"})
+    page._refresh_export_list()
+
+    assert page.card_model.rowCount() == 3
+    assert page.card_model.is_filtered(department) is True
+
+
+def test_the_file_name_belongs_to_its_card(qtbot):
+    """Every row shows the name of the file it is written to."""
+    from PySide6.QtCore import Qt
+
+    from id_card_generator.ui.export_page import ExportPage
+
+    page = ExportPage()
+    qtbot.addWidget(page)
+
+    records, sources = _records()
+    page.set_export_context(records, sources, {})
+
+    model = page.card_model
+    file_column = None
+    for column in range(model.columnCount()):
+        if model.headerData(column, Qt.Horizontal) == "File":
+            file_column = column
+            break
+    assert file_column is not None
+
+    for row in range(model.rowCount()):
+        name = model.data(model.index(row, file_column))
+        pin = model.data(model.index(row, 2))
+        assert name.startswith(pin)

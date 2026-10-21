@@ -17,13 +17,14 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QModelIndex, QRectF, QSize, Qt, Signal
 from PIL import Image
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QLayout,
     QComboBox,
+    QHeaderView,
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QSplitter,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
@@ -49,12 +51,15 @@ from id_card_generator.core.models import (
     SourceRecord,
 )
 from id_card_generator.export.export_manager import ExportManager
+from id_card_generator.ui.components.column_filter import open_column_filter_menu
+from id_card_generator.ui.components.record_table import FilterableTableModel
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui import workflow
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
 from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
     BORDER_DEFAULT,
+    active_palette,
     BORDER_SUBTLE,
     FONT_FAMILY_MONO,
     FONT_FAMILY_UI,
@@ -76,6 +81,222 @@ logger = logging.getLogger(__name__)
 
 # Every control in a toolbar row uses the same height.
 CONTROL_HEIGHT = SIZES.CONTROL_HEIGHT
+
+# The columns of the table of the cards.
+COL_NUMBER = 0
+COL_STATUS = 1
+COL_PIN = 2
+COL_NAME = 3
+COL_FIRST_DATA = 4
+COL_FILE = -1  # The file name is the last column.
+
+
+class ExportTableModel(FilterableTableModel):
+    """The cards that are about to be written, with a filter per column."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._records: List[ReviewRecord] = []
+        self._source_map: Dict[str, SourceRecord] = {}
+        self._data_columns: List[str] = []
+        self._file_name_builder = None
+
+    # -- content ------------------------------------------------------
+    def set_records(
+        self,
+        records: List[ReviewRecord],
+        source_map: Dict[str, SourceRecord],
+        data_columns: List[str],
+        keep_filters: bool = False,
+    ) -> None:
+        """Replace the cards of the table."""
+        self.beginResetModel()
+        self._records = list(records)
+        self._source_map = dict(source_map)
+        self._data_columns = list(data_columns)
+        if not keep_filters:
+            self._column_filters.clear()
+            self._query = ""
+        self._rebuild_visible()
+        self.endResetModel()
+
+    def set_file_name_builder(self, builder) -> None:
+        """The callable that builds the file name of a card."""
+        self._file_name_builder = builder
+
+    def _row_count(self) -> int:
+        return len(self._records)
+
+    def _row_value(self, row: int, column: int) -> str:
+        record = self._records[row]
+        if column == COL_NUMBER:
+            return str(row + 1)
+        if column == COL_STATUS:
+            return record.status.value
+        if column == COL_PIN:
+            return record.pin or ""
+        if column == COL_NAME:
+            return record.name or ""
+        if column == self._file_column():
+            return self._file_name_of(row)
+        index = column - COL_FIRST_DATA
+        if 0 <= index < len(self._data_columns):
+            source = self._source_map.get(record.record_id)
+            if source is None:
+                return ""
+            return source.get_value(self._data_columns[index])
+        return ""
+
+    def _row_matches(self, row: int, query: str) -> bool:
+        record = self._records[row]
+        if query in (record.pin or "").lower():
+            return True
+        if query in (record.name or "").lower():
+            return True
+        return query in self._file_name_of(row).lower()
+
+    def _file_name_of(self, row: int) -> str:
+        """The name of the file a card is written to."""
+        if self._file_name_builder is None:
+            return ""
+        try:
+            return self._file_name_builder(row)
+        except Exception:  # pragma: no cover - defensive
+            return ""
+
+    def record_at(self, row: int) -> Optional[ReviewRecord]:
+        """The card of a table row (the row of the table)."""
+        if 0 <= row < len(self._visible):
+            return self._records[self._visible[row]]
+        return None
+
+    def record_by_index(self, index: int) -> Optional[ReviewRecord]:
+        """The card at a place in the list of the cards."""
+        if 0 <= index < len(self._records):
+            return self._records[index]
+        return None
+
+    def visible_records(self) -> List[ReviewRecord]:
+        """The cards that pass the filters."""
+        return [self._records[row] for row in self._visible]
+
+    # -- the header -----------------------------------------------------
+    def _file_column(self) -> int:
+        """The number of the column with the file name."""
+        return COL_FIRST_DATA + len(self._data_columns)
+
+    def _column_title(self, section: int) -> Optional[str]:
+        titles = {
+            COL_NUMBER: "#",
+            COL_STATUS: "Status",
+            COL_PIN: "PIN",
+            COL_NAME: "Name",
+        }
+        if section == self._file_column():
+            title = "File"
+        elif section in titles:
+            title = titles[section]
+        else:
+            index = section - COL_FIRST_DATA
+            if not (0 <= index < len(self._data_columns)):
+                return None
+            title = self._data_columns[index]
+
+        if section in self._column_filters:
+            allowed = self._column_filters[section]
+            total = len(self.distinct_values(section))
+            return f"{title} ({len(allowed)}/{total})"
+        return title
+
+    # -- the model API ---------------------------------------------------
+    def columnCount(self, parent=QModelIndex()) -> int:  # noqa: N802
+        if parent.isValid():
+            return 0
+        return COL_FIRST_DATA + len(self._data_columns) + 1
+
+    def data(self, index: QModelIndex, role=Qt.DisplayRole):
+        if not index.isValid():
+            return None
+
+        row = index.row()
+        column = index.column()
+        if row >= len(self._visible):
+            return None
+
+        record = self._records[self._visible[row]]
+        palette = active_palette()
+
+        if column == COL_NUMBER:
+            if role == Qt.DisplayRole:
+                return str(self._visible[row] + 1)
+            if role == Qt.TextAlignmentRole:
+                return int(Qt.AlignCenter)
+            if role == Qt.ForegroundRole:
+                return QColor(palette.TEXT_MUTED)
+            return None
+
+        if column == COL_STATUS:
+            status = record.status.value
+            colour = {
+                "approved": palette.TERTIARY,
+                "rejected": palette.ERROR,
+                "correction": palette.WARNING,
+            }.get(status, palette.ON_SURFACE_VARIANT)
+            if role == Qt.DisplayRole:
+                return status.upper()
+            if role == Qt.ForegroundRole:
+                return QColor(colour)
+            if role == Qt.TextAlignmentRole:
+                return int(Qt.AlignCenter)
+            if role == Qt.FontRole:
+                font = QFont()
+                font.setBold(True)
+                return font
+            return None
+
+        if column == COL_PIN:
+            if role == Qt.DisplayRole:
+                return record.pin or ""
+            if role == Qt.FontRole:
+                font = QFont()
+                font.setFamily("JetBrains Mono")
+                return font
+            return None
+
+        if column == COL_NAME:
+            if role == Qt.DisplayRole:
+                return record.name or ""
+            if role == Qt.FontRole:
+                font = QFont()
+                font.setFamily("JetBrains Mono")
+                return font
+            return None
+
+        if column == self._file_column():
+            value = self._file_name_of(self._visible[row])
+            if role == Qt.DisplayRole:
+                return value
+            if role == Qt.FontRole:
+                font = QFont()
+                font.setFamily("JetBrains Mono")
+                return font
+            if role == Qt.ForegroundRole:
+                return QColor(palette.ON_SURFACE_VARIANT)
+            return None
+
+        data_index = column - COL_FIRST_DATA
+        if not (0 <= data_index < len(self._data_columns)):
+            return None
+
+        source = self._source_map.get(record.record_id)
+        value = source.get_value(self._data_columns[data_index]) if source else ""
+        if role == Qt.DisplayRole:
+            return value
+        if role == Qt.BackgroundRole and not value:
+            return QColor(palette.SURFACE_LOW)
+        if role == Qt.ToolTipRole:
+            return value
+        return None
 
 
 class CardPreviewWidget(QWidget):
@@ -324,15 +545,50 @@ class ExportPage(QWidget):
         self.card_preview = CardPreviewWidget()
         left_layout.addWidget(self.card_preview, stretch=1)
 
-        lbl_files_head = QLabel("<b>FILES TO BE WRITTEN</b>")
+        lbl_files_head = QLabel("<b>CARDS TO BE WRITTEN</b>")
         lbl_files_head.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 10px; letter-spacing: 0.5px;"
         )
         left_layout.addWidget(lbl_files_head)
 
-        self.file_list = ExportFileListWidget()
-        self.file_list.setMaximumHeight(150)
-        left_layout.addWidget(self.file_list)
+        # The table of the cards.  Every column can be filtered, and only the
+        # cards that pass the filter are written.
+        self.card_model = ExportTableModel(self)
+        self.card_table = QTableView()
+        self.card_table.setModel(self.card_model)
+        self.card_table.setAlternatingRowColors(True)
+        self.card_table.setSelectionBehavior(QTableView.SelectRows)
+        self.card_table.setSelectionMode(QTableView.SingleSelection)
+        self.card_table.verticalHeader().setDefaultSectionSize(26)
+        self.card_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.card_table.horizontalHeader().setStretchLastSection(True)
+        self.card_table.setMinimumHeight(120)
+        self.card_table.setStyleSheet(
+            f"QTableView {{ background-color: {SURFACE_LOWEST}; alternate-background-color: {SURFACE_LOW};"
+            f" gridline-color: {BORDER_SUBTLE}; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_SUBTLE}; }}"
+            f"QHeaderView::section {{ background-color: {SURFACE_HIGH}; color: {TEXT_SECONDARY};"
+            f" border: 1px solid {BORDER_SUBTLE}; padding: 4px; font-weight: 600; font-size: 11px; }}"
+        )
+        self.card_table.horizontalHeader().sectionClicked.connect(self._on_column_clicked)
+        self.card_table.selectionModel().selectionChanged.connect(
+            lambda selected, deselected: self._on_card_selected()
+        )
+        left_layout.addWidget(self.card_table, stretch=1)
+
+        # The number of the cards and the filters that are set.
+        table_footer = QHBoxLayout()
+        table_footer.setSpacing(8)
+        self.lbl_table_info = QLabel("")
+        self.lbl_table_info.setProperty("role", "specKey")
+        table_footer.addWidget(self.lbl_table_info)
+        table_footer.addStretch()
+        self.btn_clear_filters = QPushButton("Clear the filters")
+        self.btn_clear_filters.setObjectName("btn_ghost")
+        self.btn_clear_filters.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_clear_filters.setVisible(False)
+        self.btn_clear_filters.clicked.connect(self._clear_filters)
+        table_footer.addWidget(self.btn_clear_filters)
+        left_layout.addLayout(table_footer)
 
         splitter.addWidget(left_panel)
 
@@ -540,11 +796,43 @@ class ExportPage(QWidget):
         """The sheet layout only matters for the optional PDF."""
         self.sheet_box.setVisible(checked)
 
+    # ------------------------------------------------------------------
+    # The filter of a column
+    # ------------------------------------------------------------------
+    def _on_column_clicked(self, section: int) -> None:
+        """Open the filter of a column of the table."""
+        model = self.card_model
+        if model is None or section >= model.columnCount():
+            return
+
+        index = model.index(0, section)
+        pos = self.card_table.mapToGlobal(self.card_table.visualRect(index).topLeft())
+        open_column_filter_menu(
+            self, model, section, pos, on_changed=self._on_filters_changed
+        )
+
+    def _on_filters_changed(self) -> None:
+        """The filters of the columns changed."""
+        self._refresh_export_list()
+
+    def _clear_filters(self) -> None:
+        """Remove the filter of every column."""
+        self.card_model.reset_filters()
+        self._refresh_export_list()
+
+    def _on_card_selected(self) -> None:
+        """Show the card that was picked in the table."""
+        rows = self.card_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        record = self.card_model.record_at(rows[0].row())
+        if record is None:
+            return
+        self._show_card(record, self._file_name_of(record))
+
     def _selected_records(self) -> List[ReviewRecord]:
-        """Return the records that will be exported with the current policy."""
-        if self.chk_approved_only.isChecked():
-            return [r for r in self.review_records if r.status == ReviewStatus.APPROVED]
-        return list(self.review_records)
+        """The cards that are written: the policy and the filters decide."""
+        return self.card_model.visible_records()
 
     def _build_config(self) -> ExportConfiguration:
         """Build the export configuration from the current settings."""
@@ -577,30 +865,80 @@ class ExportPage(QWidget):
         name = ExportManager.build_filename(config, sample, source, 0)
         self.lbl_pattern_hint.setText(f"Example: {name}")
 
-    def _refresh_export_list(self) -> None:
-        """Update the file list, the card preview and the export button."""
-        records = self._selected_records()
-        config = self._build_config()
+    def _policy_records(self) -> List[ReviewRecord]:
+        """The cards the policy allows."""
+        if self.chk_approved_only.isChecked():
+            return [r for r in self.review_records if r.status == ReviewStatus.APPROVED]
+        return list(self.review_records)
 
-        names: List[str] = []
-        for index, record in enumerate(records):
+    def _data_columns(self) -> List[str]:
+        """The columns of the sheet that the table shows."""
+        columns: List[str] = []
+        for record in self.review_records:
             source = self.source_records_map.get(record.record_id)
-            names.append(ExportManager.build_filename(config, record, source, index))
-        self.file_list.set_entries(names)
+            if source is None:
+                continue
+            for key in source.data:
+                if key.lower() in ("pin number", "name"):
+                    continue
+                if key not in columns:
+                    columns.append(key)
+        return columns
+
+    def _file_name_of(self, record: ReviewRecord) -> str:
+        """The name of the file a card is written to."""
+        config = self._build_config()
+        source = self.source_records_map.get(record.record_id)
+        try:
+            index = self.review_records.index(record)
+        except ValueError:
+            index = 0
+        return ExportManager.build_filename(config, record, source, index)
+
+    def _show_card(self, record: ReviewRecord, name: str) -> None:
+        """Show a card in the preview."""
+        details = ""
+        if record.rendered_image_path:
+            details = f"{record.pin} · {record.name or 'Unnamed'}"
+        self.card_preview.set_card(record.rendered_image_path, name, details)
+
+    def _refresh_export_list(self) -> None:
+        """Update the table of the cards, the preview and the export button."""
+
+        # The table holds the cards the policy allows, the filters of the
+        # columns narrow them further.
+        self.card_model.set_records(
+            self._policy_records(),
+            self.source_records_map,
+            self._data_columns(),
+            keep_filters=True,
+        )
+
+        def _file_name(index: int) -> str:
+            """The name of the file a card of the table is written to."""
+            card = self.card_model.record_by_index(index)
+            if card is None:
+                return ""
+            return self._file_name_of(card)
+
+        self.card_model.set_file_name_builder(_file_name)
+
+        records = self._selected_records()
 
         # Preview the first card that is going to be written.
         if records:
-            first = records[0]
-            source = self.source_records_map.get(first.record_id)
-            name = ExportManager.build_filename(config, first, source, 0)
-            details = ""
-            if first.rendered_image_path:
-                details = f"{first.pin} · {first.name or 'Unnamed'}"
-            self.card_preview.set_card(first.rendered_image_path, name, details)
+            self._show_card(records[0], self._file_name_of(records[0]))
         else:
             self.card_preview.set_card(None, "No card selected", "")
 
         count = len(records)
+        filters = len(self.card_model.filtered_columns())
+        info = f"{count:,} of {len(self.review_records):,} cards"
+        if filters:
+            info += f"  ·  {filters} column filter{'s' if filters != 1 else ''}"
+        self.lbl_table_info.setText(info)
+        self.btn_clear_filters.setVisible(filters > 0)
+
         self.btn_execute_export.setText(
             f"⚡ Export {count} Card{'s' if count != 1 else ''}"
         )
@@ -699,19 +1037,23 @@ class ExportPage(QWidget):
         config = self._build_config()
 
         try:
+            # Only the cards that pass the filters of the table are written.
             result = ExportManager.export_batch(
                 config=config,
-                review_records=self.review_records,
+                review_records=selected,
                 source_records_map=self.source_records_map,
                 match_results_map=self.match_results_map,
             )
 
+            filtered_out = len(self.review_records) - len(selected)
             msg = (
                 f"<b>Export Complete!</b><br>"
                 f"• {result.exported_count} card file(s) written to {self.last_export_dir.name}<br>"
                 f"• {result.skipped_count} skipped (unapproved / policy)<br>"
                 f"• {result.failed_count} failed"
             )
+            if filtered_out > 0:
+                msg += f"<br>• {filtered_out} card(s) left out by the filter"
             if result.manifest_path:
                 msg += f"<br>• Audit Manifest: {Path(result.manifest_path).name}"
             if result.contact_sheet_path:
