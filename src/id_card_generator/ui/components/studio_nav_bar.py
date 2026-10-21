@@ -89,7 +89,7 @@ class StudioNavBar(QFrame):
         brand_layout = QHBoxLayout()
         brand_layout.setSpacing(8)
 
-        lbl_icon = QLabel("🪪")
+        lbl_icon = QLabel("◈")
         lbl_icon.setStyleSheet("font-size: 15px;")
         brand_layout.addWidget(lbl_icon)
 

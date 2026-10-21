@@ -224,7 +224,7 @@ class EditorPage(QWidget):
         self.btn_dup.clicked.connect(self.scene.duplicate_selected)
         self.opt_layout.addWidget(self.btn_dup, 0, Qt.AlignVCenter)
 
-        self.btn_del = QPushButton("🗑 Delete")
+        self.btn_del = QPushButton("✕ Delete")
         self.btn_del.setFixedHeight(CONTROL_HEIGHT)
         self.btn_del.setObjectName("btn_danger")
         self.btn_del.clicked.connect(self.scene.delete_selected)
@@ -478,7 +478,7 @@ class EditorPage(QWidget):
         layout.addWidget(self.btn_ctx_grid)
 
         self.btn_ctx_preview = QToolButton()
-        self.btn_ctx_preview.setText("👁 Preview")
+        self.btn_ctx_preview.setText("◉ Preview")
         self.btn_ctx_preview.setObjectName("btn_toggle")
         self.btn_ctx_preview.setCheckable(True)
         self.btn_ctx_preview.setChecked(self._live_preview)

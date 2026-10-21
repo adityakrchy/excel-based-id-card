@@ -69,11 +69,11 @@ class StudioHeaderBar(QFrame):
         self.btn_new.clicked.connect(self.new_requested.emit)
         left_layout.addWidget(self.btn_new)
 
-        self.btn_open = self._create_icon_btn("📂", "Open Project (Ctrl+O)")
+        self.btn_open = self._create_icon_btn("⇱", "Open Project (Ctrl+O)")
         self.btn_open.clicked.connect(self.open_requested.emit)
         left_layout.addWidget(self.btn_open)
 
-        self.btn_save = self._create_icon_btn("💾", "Save Project (Ctrl+S)")
+        self.btn_save = self._create_icon_btn("⇲", "Save Project (Ctrl+S)")
         self.btn_save.clicked.connect(self.save_requested.emit)
         left_layout.addWidget(self.btn_save)
 
@@ -130,7 +130,7 @@ class StudioHeaderBar(QFrame):
         btn = QToolButton()
         btn.setText(icon_char)
         btn.setToolTip(tooltip)
-        btn.setFixedSize(24, 24)
+        btn.setFixedSize(26, 26)
         btn.setCursor(Qt.PointingHandCursor)
         btn.setProperty("role", "iconButton")
         return btn
@@ -148,7 +148,7 @@ class StudioHeaderBar(QFrame):
                 f"  color: {c.ON_SURFACE_VARIANT};"
                 f"  border: 1px solid transparent;"
                 f"  border-radius: 3px;"
-                f"  font-size: 12px;"
+                f"  font-size: 15px;"
                 f"}}"
                 f"QToolButton:hover {{"
                 f"  background-color: {c.SURFACE_HIGH};"

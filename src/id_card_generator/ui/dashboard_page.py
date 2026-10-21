@@ -365,7 +365,7 @@ class DashboardPage(QWidget):
         action_btns.addWidget(self.btn_new_project)
 
         # Open Project... ⌘O (Secondary button)
-        self.btn_open_project = QPushButton("📁 Open Project...  ⌘O")
+        self.btn_open_project = QPushButton("↗ Open Project...  ⌘O")
         self.btn_open_project.setCursor(Qt.PointingHandCursor)
         self.btn_open_project.setFixedHeight(34)
         self.btn_open_project.clicked.connect(lambda: self.open_project_requested.emit())

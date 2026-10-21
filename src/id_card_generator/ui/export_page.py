@@ -482,7 +482,7 @@ class ExportPage(QWidget):
         )
         right_layout.addWidget(self.lbl_export_result)
 
-        self.btn_open_folder = QPushButton("📁 Open Destination in File Explorer")
+        self.btn_open_folder = QPushButton("↗ Open Destination in File Explorer")
         self.btn_open_folder.setFixedHeight(CONTROL_HEIGHT)
         self.btn_open_folder.setVisible(False)
         self.btn_open_folder.clicked.connect(self._open_in_explorer)

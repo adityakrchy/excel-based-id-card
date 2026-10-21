@@ -137,7 +137,7 @@ class TemplateCleanupDialog(QDialog):
         self.btn_deselect_all.clicked.connect(self._deselect_all)
         toolbar.addWidget(self.btn_deselect_all)
 
-        self.btn_del_selected = QPushButton("🗑 Delete Selected (0)")
+        self.btn_del_selected = QPushButton("✕ Delete Selected (0)")
         self.btn_del_selected.setObjectName("btn_danger")
         self.btn_del_selected.setFixedHeight(CONTROL_HEIGHT)
         self.btn_del_selected.setEnabled(False)
@@ -373,7 +373,7 @@ class TemplateCleanupDialog(QDialog):
             actions_layout.addWidget(btn_load)
 
             if not is_built:
-                btn_del = QPushButton("🗑 Delete")
+                btn_del = QPushButton("✕ Delete")
                 btn_del.setObjectName("btn_danger")
                 btn_del.setFixedHeight(CONTROL_HEIGHT)
                 btn_del.setFixedWidth(88)

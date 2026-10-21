@@ -421,6 +421,31 @@ def test_the_ribbon_keeps_its_spacing_in_every_workspace(qtbot):
         assert layout == first, f"the ribbon moved in the workspace {step}"
 
 
+def test_the_header_buttons_are_visible(qtbot):
+    """The buttons of the header bar can be seen.
+
+    They were drawn with an emoji, which the font of the buttons does not
+    have, so they were invisible and only their tooltip showed up.
+    """
+    from id_card_generator.ui.components.studio_header_bar import StudioHeaderBar
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    bar = StudioHeaderBar()
+    qtbot.addWidget(bar)
+    bar.show()
+    qtbot.wait(20)
+
+    for name in ("btn_new", "btn_open", "btn_save", "btn_undo", "btn_redo"):
+        button = getattr(bar, name)
+        assert button.text(), f"{name} has no glyph"
+        # An emoji is drawn by another font and does not show up in a button.
+        assert not button.text()[0].isprintable() or ord(button.text()[0]) < 0x1F000, (
+            f"{name} uses an emoji: {button.text()!r}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # The other tabs of the dock
 # ---------------------------------------------------------------------------
