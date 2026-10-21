@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from id_card_generator.core.constants import MissingPhotoPolicy, WorkflowStep
@@ -57,12 +59,14 @@ from id_card_generator.ui.components.record_table import RecordTableModel
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.studio_tokens import SIZES
 from id_card_generator.ui.studio_tokens import (
+    BORDER_DEFAULT,
     BORDER_SUBTLE,
     FONT_FAMILY_MONO,
     PRIMARY,
     SEMANTIC_ERROR,
     SEMANTIC_SUCCESS,
     SEMANTIC_WARNING,
+    SURFACE_CONTAINER,
     SURFACE_HIGH,
     SURFACE_LOW,
     SURFACE_LOWEST,
@@ -440,6 +444,7 @@ class DataSourcePage(QWidget):
         self.table.selectionModel().selectionChanged.connect(
             lambda selected, deselected: self._on_row_selected()
         )
+        self.table.horizontalHeader().sectionClicked.connect(self._on_column_clicked)
         self.table.setMinimumWidth(180)
         self.table.setStyleSheet(
             f"QTableView {{ background-color: {SURFACE_LOWEST}; alternate-background-color: {SURFACE_LOW};"
@@ -1077,12 +1082,18 @@ class DataSourcePage(QWidget):
     def _filter_table(self, query: str) -> None:
         """Only the matching rows stay visible."""
         self.record_model.set_filter(query)
+        self._refresh_stat_line()
+
+    def _refresh_stat_line(self) -> None:
+        """Show how many records are visible and how many filters are set."""
         visible = self.record_model.rowCount()
-        self.lbl_summary.setText(
-            f"{visible:,} of {len(self.records):,} records"
-            if visible != len(self.records)
-            else f"{len(self.records):,} records loaded"
-        )
+        total = len(self.records)
+        filters = len(self.record_model.filtered_columns())
+
+        text = f"{visible:,} of {total:,} records" if visible != total else f"{total:,} records"
+        if filters:
+            text += f"  ·  {filters} column filter{'s' if filters != 1 else ''}"
+        self.lbl_summary.setText(text)
 
     def _repaint_column(self) -> None:
         """Paint the centre column again.
@@ -1095,6 +1106,150 @@ class DataSourcePage(QWidget):
         self.txt_search.update()
         self.table.viewport().update()
         self.update()
+
+    # -----------------------------------------------------------------
+    # The filter of a column
+    # -----------------------------------------------------------------
+    def _on_column_clicked(self, section: int) -> None:
+        """Open the filter of a column of the table."""
+        model = self.record_model
+        if model is None or section >= model.columnCount():
+            return
+        self._open_filter_menu(section)
+
+    def _open_filter_menu(self, column: int) -> None:
+        """Show the values of a column, so they can be picked."""
+        model = self.record_model
+        values = model.distinct_values(column)
+        counts = model.value_counts(column)
+        current = model.column_filter(column)
+
+        title = self._column_title(column)
+
+        menu = QMenu(self)
+        menu.setObjectName("column_filter_menu")
+        menu.setStyleSheet(
+            "QMenu {"
+            f"  background-color: {SURFACE_CONTAINER};"
+            f"  border: 1px solid {BORDER_DEFAULT};"
+            "  border-radius: 6px;"
+            "  padding: 6px;"
+            "}"
+            "QMenu::item {"
+            f"  color: {TEXT_PRIMARY};"
+            "  padding: 5px 24px 5px 8px;"
+            "  border-radius: 4px;"
+            "}"
+            "QMenu::item:selected {"
+            f"  background-color: {SURFACE_HIGH};"
+            "}"
+            "QMenu::item:disabled {"
+            f"  color: {TEXT_MUTED};"
+            "}"
+            "QMenu::separator {"
+            f"  height: 1px; background: {BORDER_DEFAULT}; margin: 5px 8px;"
+            "}"
+            "QLabel#menu_title {"
+            f"  color: {PRIMARY};"
+            "  font-size: 11px;"
+            "  font-weight: 700;"
+            "  padding: 4px 8px 6px 8px;"
+            "}"
+            "QLineEdit {"
+            f"  background-color: {SURFACE_LOWEST};"
+            f"  border: 1px solid {BORDER_DEFAULT};"
+            "  border-radius: 4px;"
+            "  padding: 4px 8px;"
+            f"  color: {TEXT_PRIMARY};"
+            f"  font-size: 11px; margin: 2px 6px 6px 6px;"
+            "}"
+        )
+
+        # The name of the column.
+        title_label = QLabel(title)
+        title_label.setObjectName("menu_title")
+        title_action = QWidgetAction(menu)
+        title_action.setDefaultWidget(title_label)
+        menu.addAction(title_action)
+
+        # A search for the values of the column.
+        search = QLineEdit()
+        search.setPlaceholderText(f"Search {title.lower()}...")
+        search_action = QWidgetAction(menu)
+        search_action.setDefaultWidget(search)
+        menu.addAction(search_action)
+        menu.addSeparator()
+
+        act_all = menu.addAction(f"Select all ({len(values)})")
+        act_clear = menu.addAction("Clear the filter")
+        menu.addSeparator()
+
+        # One entry per value.
+        entries = []
+        for value in values:
+            label = value if value else "(empty)"
+            action = menu.addAction(f"{label}  ({counts.get(value, 0)})")
+            action.setCheckable(True)
+            action.setChecked(value in current or not current)
+            action.setData(value)
+            entries.append(action)
+
+        def _apply() -> None:
+            """Write the picked values into the model."""
+            allowed = {
+                action.data()
+                for action in entries
+                if action.isChecked() and action.isVisible()
+            }
+            if len(allowed) == len(values):
+                # Every value is picked - that is no filter at all.
+                model.clear_column_filter(column)
+            else:
+                model.set_column_filter(column, allowed)
+            self._refresh_stat_line()
+
+        def _on_toggled(checked: bool) -> None:
+            _apply()
+
+        def _on_all() -> None:
+            for action in entries:
+                action.setChecked(True)
+            _apply()
+
+        def _on_clear() -> None:
+            for action in entries:
+                action.setChecked(False)
+            model.clear_column_filter(column)
+            self._refresh_stat_line()
+            menu.close()
+        def _on_search(text: str) -> None:
+            needle = text.lower().strip()
+            for action in entries:
+                value = str(action.data()).lower()
+                action.setVisible(not needle or needle in value)
+
+        for action in entries:
+            action.toggled.connect(_on_toggled)
+        act_all.triggered.connect(_on_all)
+        act_clear.triggered.connect(_on_clear)
+        search.textChanged.connect(_on_search)
+
+        # The state of the filter is shown in the menu.
+        if current:
+            menu.setTitle(f"{title} - {len(current)} of {len(values)}")
+        else:
+            menu.setTitle(f"{title} - all values")
+
+        menu.popup(self.table.mapToGlobal(self.table.visualRect(
+            self.table.model().index(0, column)
+        ).topLeft()))
+
+    def _column_title(self, column: int) -> str:
+        """The name of a column of the table."""
+        model = self.record_model
+        if model is None:
+            return f"Column {column}"
+        return model.headerData(column, Qt.Horizontal) or f"Column {column}"
 
     def _on_row_selected(self) -> None:
         selected_rows = self.table.selectionModel().selectedRows()

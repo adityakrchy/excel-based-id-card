@@ -5,7 +5,7 @@ model instead of a :class:`QTableWidget`: the rows are painted on demand and
 only the visible ones cost anything.
 """
 
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Set
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor, QFont
@@ -32,6 +32,8 @@ class RecordTableModel(QAbstractTableModel):
         self._columns: List[str] = []
         self._data_columns: List[str] = []
         self._visible: List[int] = []
+        self._query: str = ""
+        self._column_filters: Dict[int, Set[str]] = {}
 
     # -- content ------------------------------------------------------
     def set_records(
@@ -44,22 +46,96 @@ class RecordTableModel(QAbstractTableModel):
         self._records = list(records)
         self._columns = list(columns)
         self._data_columns = [c for c in self._columns if c.lower() != "pin number"]
+        self._column_filters.clear()
+        self._query = ""
         self._visible = list(range(len(self._records)))
         self.endResetModel()
 
     def set_filter(self, query: str) -> None:
         """Only keep the records that match the query."""
-        query = (query or "").lower().strip()
         self.beginResetModel()
-        if not query:
-            self._visible = list(range(len(self._records)))
-        else:
-            self._visible = [
-                index
-                for index, record in enumerate(self._records)
-                if self._matches(record, query)
-            ]
+        self._query = (query or "").lower().strip()
+        self._rebuild_visible()
         self.endResetModel()
+
+    # -- the filter of a column -----------------------------------------
+    def set_column_filter(self, column: int, values) -> None:
+        """Only keep the records whose column has one of the given values.
+
+        ``None`` removes the filter of the column, an empty set keeps the
+        records that have no value in it - so every value can be unpicked.
+        """
+        if values is None:
+            self._column_filters.pop(column, None)
+        else:
+            self._column_filters[column] = {str(value) for value in values}
+
+        self.beginResetModel()
+        self._rebuild_visible()
+        self.endResetModel()
+
+    def clear_column_filter(self, column: int) -> None:
+        """Remove the filter of a column."""
+        self.set_column_filter(column, None)
+
+    def column_filter(self, column: int):
+        """The values a column is filtered by (an empty set when it is free)."""
+        return set(self._column_filters.get(column, set()))
+
+    def filtered_columns(self) -> List[int]:
+        """The columns that carry a filter."""
+        return sorted(self._column_filters)
+
+    def is_filtered(self, column: int) -> bool:
+        """True when the column carries a filter."""
+        return column in self._column_filters
+
+    def distinct_values(self, column: int) -> List[str]:
+        """The values a column has, with the empty value at the end."""
+        seen: Dict[str, int] = {}
+        for record in self._records:
+            value = self._value_for(record, column)
+            seen[value] = seen.get(value, 0) + 1
+        ordered = sorted(seen, key=lambda v: (v == "", v.lower()))
+        return ordered
+
+    def value_counts(self, column: int) -> Dict[str, int]:
+        """How often every value of a column occurs."""
+        counts: Dict[str, int] = {}
+        for record in self._records:
+            value = self._value_for(record, column)
+            counts[value] = counts.get(value, 0) + 1
+        return counts
+
+    def _value_for(self, record: SourceRecord, column: int) -> str:
+        """The value of a record in a column of the table."""
+        if column == COL_STATUS:
+            return self._pin_status(record)[0]
+        if column == COL_PIN:
+            return record.pin or record.raw_pin or ""
+        if column == COL_ROW:
+            return str(record.row_index + 1)
+        index = column - COL_FIRST_DATA
+        if 0 <= index < len(self._data_columns):
+            return record.get_value(self._data_columns[index])
+        return ""
+
+    def _rebuild_visible(self) -> None:
+        """Apply the search and the filters of the columns."""
+        self._visible = [
+            index
+            for index, record in enumerate(self._records)
+            if self._passes_filters(record)
+        ]
+
+    def _passes_filters(self, record: SourceRecord) -> bool:
+        """True when the record passes the search and every column filter."""
+        if self._query and not self._matches(record, self._query):
+            return False
+        for column, allowed in self._column_filters.items():
+            if self._value_for(record, column) not in allowed:
+                return False
+        return True
 
     def record_at(self, row: int) -> Optional[SourceRecord]:
         """Return the record of a table row."""
@@ -87,6 +163,21 @@ class RecordTableModel(QAbstractTableModel):
         return 0 if parent.isValid() else COL_FIRST_DATA + len(self._data_columns)
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):  # noqa: N802
+        if orientation == Qt.Horizontal and role == Qt.ForegroundRole:
+            palette = active_palette()
+            if section in self._column_filters:
+                return QColor(palette.PRIMARY_CONTAINER)
+            return QColor(palette.ON_SURFACE_VARIANT)
+
+        if orientation == Qt.Horizontal and role == Qt.ToolTipRole:
+            if section in self._column_filters:
+                allowed = self._column_filters[section]
+                return (
+                    f"Filtered: {len(allowed)} of "
+                    f"{len(self.distinct_values(section))} values"
+                )
+            return "Click to filter the records by this column"
+
         if role != Qt.DisplayRole:
             return None
 
@@ -99,7 +190,13 @@ class RecordTableModel(QAbstractTableModel):
                 return "PIN"
             index = section - COL_FIRST_DATA
             if 0 <= index < len(self._data_columns):
-                return self._data_columns[index]
+                name = self._data_columns[index]
+                if section in self._column_filters:
+                    # The header shows how many of the values are picked.
+                    allowed = self._column_filters[section]
+                    total = len(self.distinct_values(section))
+                    return f"{name} ({len(allowed)}/{total})"
+                return name
             return None
 
         return str(section + 1)

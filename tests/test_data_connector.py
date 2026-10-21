@@ -242,6 +242,98 @@ def test_the_control_row_takes_only_its_own_room(qtbot):
     assert connector.table.height() > connector.ctrl_scroll.height() * 4
 
 
+def _column_of(model, title: str) -> int:
+    """The number of the column with the given title."""
+    from PySide6.QtCore import Qt
+
+    for column in range(model.columnCount()):
+        if model.headerData(column, Qt.Horizontal) == title:
+            return column
+    raise AssertionError(f"the table has no column {title!r}")
+
+
+def test_a_column_can_be_filtered(page: DataSourcePage):
+    """A column of the table keeps the records with the picked values."""
+    model = page.record_model
+    name = _column_of(model, "Name")
+
+    values = model.distinct_values(name)
+    assert "Aditya Sharma" in values
+
+    model.set_column_filter(name, {"Aditya Sharma"})
+    assert model.rowCount() == 1
+
+    model.clear_column_filter(name)
+    assert model.rowCount() == 3
+
+
+def test_the_filters_of_two_columns_work_together(page: DataSourcePage):
+    """The filters of the columns are combined."""
+    model = page.record_model
+    name = _column_of(model, "Name")
+    pin = _column_of(model, "PIN")
+
+    model.set_column_filter(name, {"Aditya Sharma"})
+    model.set_column_filter(pin, {"100002"})
+
+    # The first record has the pin 100001, so it is gone.
+    assert model.rowCount() == 0
+
+    model.clear_column_filter(pin)
+    assert model.rowCount() == 1
+
+
+def test_the_search_and_the_filter_work_together(page: DataSourcePage):
+    """A record has to pass the search and every filter."""
+    model = page.record_model
+    name = _column_of(model, "Name")
+
+    model.set_filter("Priya")
+    model.set_column_filter(name, {"Aditya Sharma"})
+
+    assert model.rowCount() == 0
+
+    model.set_filter("")
+    assert model.rowCount() == 1
+
+
+def test_every_value_can_be_unpicked(page: DataSourcePage):
+    """A filter without a value shows no record at all."""
+    model = page.record_model
+    name = _column_of(model, "Name")
+
+    model.set_column_filter(name, set())
+    assert model.rowCount() == 0
+    assert model.is_filtered(name) is True
+
+    model.clear_column_filter(name)
+    assert model.rowCount() == 3
+
+
+def test_the_header_shows_the_filter(page: DataSourcePage):
+    """The header of a filtered column says how many values are picked."""
+    from PySide6.QtCore import Qt
+
+    model = page.record_model
+    name = _column_of(model, "Name")
+    assert model.headerData(name, Qt.Horizontal) == "Name"
+
+    model.set_column_filter(name, {"Aditya Sharma"})
+    assert model.headerData(name, Qt.Horizontal) == "Name (1/3)"
+
+
+def test_the_summary_counts_the_filters(page: DataSourcePage):
+    """The line of numbers tells how many filters are set."""
+    model = page.record_model
+    name = _column_of(model, "Name")
+
+    model.set_column_filter(name, {"Aditya Sharma"})
+    page._refresh_stat_line()
+
+    assert "1 of 3" in page.lbl_summary.text()
+    assert "1 column filter" in page.lbl_summary.text()
+
+
 def test_the_mapping_tools_are_visible(page: DataSourcePage):
     """Auto-map and validate are real buttons on the screen."""
     assert not page.btn_automap.isHidden()
