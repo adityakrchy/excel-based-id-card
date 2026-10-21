@@ -24,7 +24,7 @@ from id_card_generator.core.models import (
 from id_card_generator.core.constants import MatchStatus
 from id_card_generator.generation.batch_generator import BatchGenerator
 from id_card_generator.generation.generation_worker import GenerationWorker
-from id_card_generator.ui.generation_page import GenerationPage
+from id_card_generator.ui.production_page import ProductionPage
 
 
 def _template() -> TemplateDefinition:
@@ -81,7 +81,7 @@ def test_worker_exposes_every_signal_the_page_uses():
 
 def test_page_connects_only_to_existing_signals(qtbot):
     """Connecting the page to the worker must not raise."""
-    page = GenerationPage()
+    page = ProductionPage()
     qtbot.addWidget(page)
     page.show()
 
@@ -112,7 +112,7 @@ def test_page_connects_only_to_existing_signals(qtbot):
 
 def test_generation_runs_end_to_end(qtbot, tmp_path: Path):
     """A full batch run renders every card and reports the summary."""
-    page = GenerationPage()
+    page = ProductionPage()
     qtbot.addWidget(page)
     page.show()
 
@@ -146,13 +146,13 @@ def test_generation_runs_end_to_end(qtbot, tmp_path: Path):
     # The page is usable again and the navigation is unlocked.
     assert page.btn_generate.isEnabled()
     assert not page.btn_cancel.isEnabled()
-    assert page.btn_goto_review.isEnabled()
+    assert page.btn_goto_export.isEnabled()
     page.shutdown()
 
 
 def test_generation_reports_a_missing_template(qtbot):
     """Without a template the run is refused with a hint, not a crash."""
-    page = GenerationPage()
+    page = ProductionPage()
     qtbot.addWidget(page)
     page.show()
 
@@ -171,7 +171,7 @@ def test_generation_reports_a_missing_template(qtbot):
 
 def test_generation_reports_missing_records(qtbot):
     """Without records the run is refused with a hint."""
-    page = GenerationPage()
+    page = ProductionPage()
     qtbot.addWidget(page)
     page.show()
 
@@ -320,10 +320,10 @@ def test_resolve_workers_scales_with_the_batch():
 # Review step (re-render a single card)
 # ---------------------------------------------------------------------------
 def test_review_can_regenerate_a_single_card(qtbot, tmp_path: Path):
-    """The review page re-renders a card through the batch generator."""
+    """The production page re-renders a card through the batch generator."""
     from id_card_generator.core.models import ReviewStatus
     from id_card_generator.review.review_manager import ReviewManager
-    from id_card_generator.ui.review_page import ReviewPage
+    from id_card_generator.ui.production_page import ProductionPage
 
     template = _template()
     records = _records(2)
@@ -339,7 +339,7 @@ def test_review_can_regenerate_a_single_card(qtbot, tmp_path: Path):
     for rec in records:
         (tmp_path / f"{rec.pin}.jpg").write_bytes(b"photo")
 
-    page = ReviewPage()
+    page = ProductionPage()
     qtbot.addWidget(page)
     page.show()
 

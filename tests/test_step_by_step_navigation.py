@@ -67,19 +67,15 @@ def test_step_by_step_sequential_navigation(app_window: MainWindow):
     app_window.page_templates.nav_bar.btn_next.click()
     assert app_window.stack.currentIndex() == 4  # Canvas Editor
 
-    # 5. Advance to Generate
+    # 5. Advance to Generate & Review
     app_window.page_editor.nav_bar.btn_next.click()
-    assert app_window.stack.currentIndex() == 5  # Generate
+    assert app_window.stack.currentIndex() == 5  # Generate & Review
 
-    # 6. Advance to Review
-    app_window.page_generation.nav_bar.btn_next.click()
-    assert app_window.stack.currentIndex() == 6  # Review
+    # 6. Advance to Export
+    app_window.page_production.nav_bar.btn_next.click()
+    assert app_window.stack.currentIndex() == 6  # Export
 
-    # 7. Advance to Export
-    app_window.page_review.nav_bar.btn_next.click()
-    assert app_window.stack.currentIndex() == 7  # Export
-
-    # 8. Complete and return to Dashboard
+    # 7. Complete and return to Dashboard
     app_window.page_export.nav_bar.btn_next.click()
     assert app_window.stack.currentIndex() == 0  # Dashboard
 

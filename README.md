@@ -64,9 +64,9 @@ Built with **Python 3.12**, **PySide6 (Qt for Python)**, and **Pillow**, targeti
 - Shared worker framework (`QThreadPool` and `QRunnable`) ensuring zero GUI freezing or direct widget manipulation from worker threads.
 - Thread-safe Qt progress signals (`task_progress`, `task_completed`, `task_failed`, `task_cancelled`) feeding real-time status bar indicators.
 
-### 7. Authoritative Pillow Rendering, Sequential Review & Audit Export
+### 7. Authoritative Pillow Rendering, Live Review & Audit Export
 - **Authoritative Image Synthesis**: Canvas preview and final exported cards use the exact same Pillow rendering pipeline.
-- **Sequential Review Interface**: Dedicated QA stage with large preview, sequential navigation, per-record approval (`Approve`, `Reject`, `Mark for Correction`, `Regenerate`).
+- **Production Workspace**: One screen renders the batch and reviews the result - a progress bar with a spinner on the button, the CPU load and the memory of the process, a queue of the produced cards with quality filters, a card preview that can be flipped to the back face and a field editor that re-renders the card.
 - **Audit Export**:
   - Export approved cards only or all generated cards.
   - Lossless PNG or high-quality JPEG with quality compression slider.

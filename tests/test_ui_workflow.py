@@ -37,21 +37,17 @@ def test_main_window_navigation(app_window: MainWindow, qtbot):
     app_window.switch_page(WorkflowStep.CANVAS_EDITOR)
     assert app_window.stack.currentIndex() == 4
 
-    # Navigate to Generate
+    # Navigate to Generate & Review
     app_window.switch_page(WorkflowStep.GENERATE)
     assert app_window.stack.currentIndex() == 5
 
-    # Navigate to Review
-    app_window.switch_page(WorkflowStep.REVIEW)
-    assert app_window.stack.currentIndex() == 6
-
     # Navigate to Export
     app_window.switch_page(WorkflowStep.EXPORT)
-    assert app_window.stack.currentIndex() == 7
+    assert app_window.stack.currentIndex() == 6
 
     # Navigate to Settings
     app_window.switch_page(WorkflowStep.SETTINGS)
-    assert app_window.stack.currentIndex() == 8
+    assert app_window.stack.currentIndex() == 7
 
 
 def test_theme_switching(app_window: MainWindow):

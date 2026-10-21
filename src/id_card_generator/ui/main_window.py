@@ -53,9 +53,8 @@ from id_card_generator.ui.dialogs.project_dialog import ProjectDialog
 from id_card_generator.ui.dialogs.relink_dialog import RelinkDialog
 from id_card_generator.ui.editor_page import EditorPage
 from id_card_generator.ui.export_page import ExportPage
-from id_card_generator.ui.generation_page import GenerationPage
 from id_card_generator.ui.photo_library_page import PhotoLibraryPage
-from id_card_generator.ui.review_page import ReviewPage
+from id_card_generator.ui.production_page import ProductionPage
 from id_card_generator.ui.settings_page import SettingsPage
 from id_card_generator.ui.studio_tokens import COLORS
 from id_card_generator.ui.template_page import TemplatePage
@@ -170,8 +169,7 @@ class MainWindow(QMainWindow):
             (WorkflowStep.PHOTOS, "Photo Library"),
             (WorkflowStep.TEMPLATES, "Templates"),
             (WorkflowStep.CANVAS_EDITOR, "Canvas Editor"),
-            (WorkflowStep.GENERATE, "Generate Cards"),
-            (WorkflowStep.REVIEW, "Review Cards"),
+            (WorkflowStep.GENERATE, "Generate & Review"),
             (WorkflowStep.EXPORT, "Export Cards"),
             (WorkflowStep.SETTINGS, "Settings"),
         ]
@@ -194,8 +192,7 @@ class MainWindow(QMainWindow):
         self.page_photos = PhotoLibraryPage()
         self.page_templates = TemplatePage()
         self.page_editor = EditorPage()
-        self.page_generation = GenerationPage()
-        self.page_review = ReviewPage()
+        self.page_production = ProductionPage()
         self.page_export = ExportPage()
         self.page_settings = SettingsPage()
 
@@ -204,10 +201,9 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.page_photos)          # 2
         self.stack.addWidget(self.page_templates)       # 3
         self.stack.addWidget(self.page_editor)          # 4
-        self.stack.addWidget(self.page_generation)      # 5
-        self.stack.addWidget(self.page_review)          # 6
-        self.stack.addWidget(self.page_export)          # 7
-        self.stack.addWidget(self.page_settings)        # 8
+        self.stack.addWidget(self.page_production)      # 5
+        self.stack.addWidget(self.page_export)          # 6
+        self.stack.addWidget(self.page_settings)        # 7
 
         self.step_to_index = {
             WorkflowStep.DASHBOARD: 0,
@@ -216,9 +212,8 @@ class MainWindow(QMainWindow):
             WorkflowStep.TEMPLATES: 3,
             WorkflowStep.CANVAS_EDITOR: 4,
             WorkflowStep.GENERATE: 5,
-            WorkflowStep.REVIEW: 6,
-            WorkflowStep.EXPORT: 7,
-            WorkflowStep.SETTINGS: 8,
+            WorkflowStep.EXPORT: 6,
+            WorkflowStep.SETTINGS: 7,
         }
 
         # Every input control shares one height so the rows read evenly.
@@ -249,7 +244,7 @@ class MainWindow(QMainWindow):
         """
         for page in (
             getattr(self, "page_photos", None),
-            getattr(self, "page_generation", None),
+            getattr(self, "page_production", None),
         ):
             if page is not None and hasattr(page, "shutdown"):
                 try:
@@ -299,8 +294,7 @@ class MainWindow(QMainWindow):
             (WorkflowStep.PHOTOS, "Photo Library"),
             (WorkflowStep.TEMPLATES, "Templates"),
             (WorkflowStep.CANVAS_EDITOR, "Canvas Editor"),
-            (WorkflowStep.GENERATE, "Generate Cards"),
-            (WorkflowStep.REVIEW, "Review Cards"),
+            (WorkflowStep.GENERATE, "Generate & Review"),
             (WorkflowStep.EXPORT, "Export Cards"),
         ]:
             act = QAction(name, self)
@@ -322,8 +316,7 @@ class MainWindow(QMainWindow):
         self.page_photos.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
         self.page_templates.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
         self.page_editor.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
-        self.page_generation.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
-        self.page_review.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
+        self.page_production.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
         self.page_export.navigate_requested.connect(lambda s: self.switch_page(WorkflowStep(s)))
 
         # Data source signals
@@ -345,12 +338,11 @@ class MainWindow(QMainWindow):
         self.page_editor.template_updated.connect(self._on_editor_template_updated)
 
         # Generation page signals
-        self.page_generation.generation_completed.connect(self._on_generation_completed)
-        self.page_generation.goto_review_requested.connect(lambda: self.switch_page(WorkflowStep.REVIEW))
+        self.page_production.generation_completed.connect(self._on_generation_completed)
 
         # Review page signals
-        self.page_review.review_updated.connect(self._on_review_updated)
-        self.page_review.goto_export_requested.connect(lambda: self.switch_page(WorkflowStep.EXPORT))
+        self.page_production.review_updated.connect(self._on_review_updated)
+        self.page_production.goto_export_requested.connect(lambda: self.switch_page(WorkflowStep.EXPORT))
 
         # Settings page signals (kept for legacy support)
         self.page_settings.theme_changed.connect(self.apply_theme)
@@ -417,18 +409,16 @@ class MainWindow(QMainWindow):
 
         elif step == WorkflowStep.GENERATE:
             tmpl = self.active_template or self.page_templates.active_template
-            self.page_generation.set_generation_context(
+            self.page_production.set_generation_context(
                 template=tmpl,
                 records=self.records,
                 match_results=self.match_results,
                 column_mappings=self.column_mappings,
                 settings=self.settings,
             )
-
-        elif step == WorkflowStep.REVIEW:
+            # The cards of the last run are waiting in the queue.
             if self.last_generation_summary:
-                tmpl = self.active_template or self.page_templates.active_template
-                self.page_review.load_review_session(
+                self.page_production.load_review_session(
                     source_records=self.records,
                     generation_results=self.last_generation_summary.results,
                     template=tmpl,
@@ -438,8 +428,8 @@ class MainWindow(QMainWindow):
 
         elif step == WorkflowStep.EXPORT:
             self.page_export.set_export_context(
-                review_records=self.page_review.manager.records,
-                source_records_map=self.page_review.source_records_map,
+                review_records=self.page_production.manager.records,
+                source_records_map=self.page_production.source_records_map,
                 match_results_map=self.match_results,
             )
 
@@ -592,7 +582,7 @@ class MainWindow(QMainWindow):
 
     def _on_review_updated(self, review_manager) -> None:
         c = review_manager.counts
-        self._mark_step_completed(WorkflowStep.REVIEW, c["approved"] > 0)
+        self._mark_step_completed(WorkflowStep.GENERATE, c["approved"] > 0)
         self._refresh_dashboard_metrics()
 
     def _on_policy_changed(self, policy: MissingPhotoPolicy) -> None:
@@ -606,8 +596,8 @@ class MainWindow(QMainWindow):
         matched_photos = sum(1 for m in self.match_results.values() if m.status.value in ("matched", "overridden"))
         missing_photos = len(self.records) - matched_photos if self.records else 0
 
-        approved_count = self.page_review.manager.counts["approved"]
-        total_review = len(self.page_review.manager.records)
+        approved_count = self.page_production.manager.counts["approved"]
+        total_review = len(self.page_production.manager.records)
 
         warn_count = sum(len(r.validation_warnings) for r in self.records)
         err_count = sum(len(r.validation_errors) for r in self.records)
@@ -947,7 +937,7 @@ class MainWindow(QMainWindow):
             cfg.column_mappings = self.column_mappings
             cfg.photo_overrides = self.page_photos.matcher.overrides if hasattr(self.page_photos, "matcher") else {}
             cfg.missing_photo_policy = self.settings.missing_photo_policy
-            cfg.review_states = {r.record_id: r.status for r in self.page_review.manager.records}
+            cfg.review_states = {r.record_id: r.status for r in self.page_production.manager.records}
             if hasattr(self.page_export, "last_export_dir") and self.page_export.last_export_dir:
                 cfg.last_export_dir = str(self.page_export.last_export_dir)
 

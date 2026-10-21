@@ -89,15 +89,14 @@ def test_pipeline_order_is_linear():
         WorkflowStep.TEMPLATES,
         WorkflowStep.CANVAS_EDITOR,
         WorkflowStep.GENERATE,
-        WorkflowStep.REVIEW,
         WorkflowStep.EXPORT,
     )
 
 
 def test_step_badges_are_consistent():
     """Every stage reports a 1-based position inside the pipeline."""
-    assert workflow.step_badge(WorkflowStep.DATA_SOURCE) == "Step 1 of 7"
-    assert workflow.step_badge(WorkflowStep.EXPORT) == "Step 7 of 7"
+    assert workflow.step_badge(WorkflowStep.DATA_SOURCE) == "Step 1 of 6"
+    assert workflow.step_badge(WorkflowStep.EXPORT) == "Step 6 of 6"
     assert workflow.step_badge(WorkflowStep.DASHBOARD) == "Project Hub"
 
 
@@ -106,7 +105,7 @@ def test_footer_labels_follow_the_pipeline():
     back, next_, badge = workflow.footer_labels(WorkflowStep.PHOTOS)
     assert back == "Data Source"
     assert next_ == "Templates"
-    assert badge == "Step 2 of 7"
+    assert badge == "Step 2 of 6"
 
     # The first step still offers a way back to the hub.
     back, next_, _ = workflow.footer_labels(WorkflowStep.DATA_SOURCE)
@@ -115,7 +114,7 @@ def test_footer_labels_follow_the_pipeline():
 
     # The last step returns to the hub.
     back, next_, _ = workflow.footer_labels(WorkflowStep.EXPORT)
-    assert back == "Review"
+    assert back == "Generate & Review"
     assert next_ == "Back to Hub"
 
 
@@ -163,8 +162,7 @@ def test_every_workflow_page_has_a_matching_header_and_footer(app_window: MainWi
         WorkflowStep.PHOTOS: app_window.page_photos,
         WorkflowStep.TEMPLATES: app_window.page_templates,
         WorkflowStep.CANVAS_EDITOR: app_window.page_editor,
-        WorkflowStep.GENERATE: app_window.page_generation,
-        WorkflowStep.REVIEW: app_window.page_review,
+        WorkflowStep.GENERATE: app_window.page_production,
         WorkflowStep.EXPORT: app_window.page_export,
     }
 

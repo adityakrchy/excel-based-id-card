@@ -33,13 +33,10 @@ def test_pipeline_navigation_walks_forward(app_window: MainWindow):
     assert app_window.stack.currentIndex() == 4  # Designer
 
     app_window.page_editor.nav_bar.btn_next.click()
-    assert app_window.stack.currentIndex() == 5  # Generate
+    assert app_window.stack.currentIndex() == 5  # Generate & Review
 
-    app_window.page_generation.nav_bar.btn_next.click()
-    assert app_window.stack.currentIndex() == 6  # Review
-
-    app_window.page_review.nav_bar.btn_next.click()
-    assert app_window.stack.currentIndex() == 7  # Export
+    app_window.page_production.nav_bar.btn_next.click()
+    assert app_window.stack.currentIndex() == 6  # Export
 
     # The last step closes the loop back on the hub.
     app_window.page_export.nav_bar.btn_next.click()
@@ -48,9 +45,9 @@ def test_pipeline_navigation_walks_forward(app_window: MainWindow):
 
 def test_pipeline_navigation_walks_back(app_window: MainWindow):
     """Every step offers a way back to the previous one."""
-    app_window.switch_page(WorkflowStep.REVIEW)
-    app_window.page_review.nav_bar.btn_back.click()
-    assert app_window.stack.currentIndex() == 5  # Generate
+    app_window.switch_page(WorkflowStep.EXPORT)
+    app_window.page_export.nav_bar.btn_back.click()
+    assert app_window.stack.currentIndex() == 5  # Generate & Review
 
     app_window.switch_page(WorkflowStep.DATA_SOURCE)
     app_window.page_data_source.nav_bar.btn_back.click()
@@ -156,5 +153,5 @@ def test_page_headers_track_the_active_step(app_window: MainWindow):
     app_window.switch_page(WorkflowStep.CANVAS_EDITOR)
 
     assert app_window.studio_nav._buttons[StudioTab.DESIGNER].isChecked()
-    assert app_window.page_editor.page_header.lbl_badge.text() == "Step 4 of 7"
-    assert app_window.page_editor.nav_bar.lbl_badge.text() == "Step 4 of 7"
+    assert app_window.page_editor.page_header.lbl_badge.text() == "Step 4 of 6"
+    assert app_window.page_editor.nav_bar.lbl_badge.text() == "Step 4 of 6"

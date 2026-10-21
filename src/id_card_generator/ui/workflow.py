@@ -5,7 +5,7 @@ derives its labels and ordering from the stage table below, so the application
 always presents one coherent pipeline:
 
     Hub -> Data Source -> Photo Library -> Templates -> Template Designer
-         -> Generate -> Review -> Export
+         -> Generate & Review -> Export
 
 ``requires`` lists the stages that should be finished before a stage becomes
 meaningful; the shell uses it to enable or disable navigation entries and to
@@ -42,7 +42,6 @@ TAB_PHOTOS = "photos"
 TAB_TEMPLATES = "templates"
 TAB_DESIGNER = "designer"
 TAB_GENERATE = "generate"
-TAB_REVIEW = "review"
 TAB_EXPORT = "export"
 TAB_SETTINGS = "settings"
 
@@ -87,19 +86,11 @@ STAGES: Tuple[WorkflowStage, ...] = (
     ),
     WorkflowStage(
         step=WorkflowStep.GENERATE,
-        title="Generate Cards",
-        subtitle="Render one card per record into the staging area.",
+        title="Generate & Review",
+        subtitle="Render the batch and check every card before the export.",
         tab=TAB_GENERATE,
-        nav_label="Generate",
+        nav_label="Generate & Review",
         requires=(WorkflowStep.DATA_SOURCE, WorkflowStep.CANVAS_EDITOR),
-    ),
-    WorkflowStage(
-        step=WorkflowStep.REVIEW,
-        title="Review Cards",
-        subtitle="Approve or flag each generated card before export.",
-        tab=TAB_REVIEW,
-        nav_label="Review",
-        requires=(WorkflowStep.GENERATE,),
     ),
     WorkflowStage(
         step=WorkflowStep.EXPORT,
@@ -107,7 +98,7 @@ STAGES: Tuple[WorkflowStage, ...] = (
         subtitle="Write every approved card as an individual image file.",
         tab=TAB_EXPORT,
         nav_label="Export",
-        requires=(WorkflowStep.REVIEW,),
+        requires=(WorkflowStep.GENERATE,),
     ),
     WorkflowStage(
         step=WorkflowStep.SETTINGS,

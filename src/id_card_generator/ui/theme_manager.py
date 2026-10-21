@@ -15,7 +15,7 @@ from pathlib import Path
 from string import Template
 from typing import Optional
 from PySide6.QtCore import QObject, QSettings, Signal
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication
 
 from id_card_generator.ui.studio_tokens import (
@@ -112,10 +112,53 @@ class ThemeManager(QObject):
 
     def _apply_stylesheet(self, app: QApplication, effective_theme: str) -> None:
         """Generate and apply the token-driven stylesheet to the application."""
-        font = QFont("Segoe UI", 10)
+        # The application font uses the same stack as the stylesheet, so a
+        # widget that is painted by the style (a push button for example)
+        # shows the same glyphs as one that is painted by the stylesheet.
+        font = QFont(self._ui_font_family(), 10)
         font.setStyleHint(QFont.SansSerif)
         app.setFont(font)
         app.setStyleSheet(self.build_stylesheet(effective_theme))
+
+    @staticmethod
+    def _ui_font_family() -> str:
+        """Return the first installed family of the UI font stack.
+
+        A font stack is only understood by the stylesheet parser - a
+        :class:`QFont` takes a single family.  Picking the first family that
+        is really installed keeps the widgets and the stylesheet on the same
+        font, and every glyph (the "+" of the zoom buttons for example) is
+        drawn by the same face.
+        """
+        return ThemeManager._first_installed_family(TYPOGRAPHY.FONT_FAMILY_UI)
+
+    @staticmethod
+    def _mono_font_family() -> str:
+        """Return the first installed family of the mono font stack."""
+        return ThemeManager._first_installed_family(TYPOGRAPHY.FONT_FAMILY_MONO)
+
+    @staticmethod
+    def _first_installed_family(stack: str) -> str:
+        """Return the first family of a font stack that is really installed."""
+        fallback = stack.split(",")[0].strip().strip("\"'")
+
+        # The font database is only available once an application exists.
+        if QGuiApplication.instance() is None:
+            return fallback
+
+        try:
+            installed = set(QFontDatabase.families())
+        except Exception:  # pragma: no cover - no database available
+            return fallback
+
+        for candidate in stack.split(","):
+            name = candidate.strip().strip("\"'")
+            if name in installed:
+                return name
+
+        # Nothing of the stack is installed - keep the first entry so the
+        # browser of the system can still substitute a face.
+        return fallback
 
     @classmethod
     def retarget_stylesheet(cls, stylesheet: str, theme: str = "black") -> str:
@@ -453,6 +496,20 @@ QToolButton#btn_ghost {
 }
 
 QToolButton#btn_ghost:hover {
+    background-color: $surface_high;
+    color: $on_surface;
+}
+
+/* Square icon buttons (the zoom steppers of the card preview). */
+QPushButton#btn_icon, QToolButton#btn_icon {
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: $on_surface_variant;
+    font-size: 14px;
+    padding: 0px;
+}
+
+QPushButton#btn_icon:hover, QToolButton#btn_icon:hover {
     background-color: $surface_high;
     color: $on_surface;
 }
@@ -1037,8 +1094,8 @@ QToolTip {
 }
 """
         values = {
-            "ui_font": TYPOGRAPHY.FONT_FAMILY_UI,
-            "mono_font": TYPOGRAPHY.FONT_FAMILY_MONO,
+            "ui_font": cls._ui_font_family(),
+            "mono_font": cls._mono_font_family(),
             "surface": p.SURFACE,
             "surface_dim": p.SURFACE_DIM,
             "surface_lowest": p.SURFACE_LOWEST,

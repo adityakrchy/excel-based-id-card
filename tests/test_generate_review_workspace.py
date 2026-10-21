@@ -1,24 +1,17 @@
-"""Tests for the generate and review workstations.
+"""Tests for the production workspace (generate & review).
 
-The two screens were rebuilt as three column workstations:
+Generating and reviewing were merged into one screen, so this module covers
+the whole job of the page:
 
-* the generation engine reports the KPI telemetry of the plan (cards
-  generated, elapsed / remaining time, disk throughput, thread pool and CPU
-  load), runs a configurable batch scope and shows a multi-core progress ring
-  next to the throughput graph,
-* the review workstation pairs a virtual record list (with the data quality
-  filters), a card preview that can be flipped to the back face and a record
-  editor that can change a field and re-render the card.
+* the run is configured, started and reported with a progress bar, a spinner
+  on the button and the CPU / memory of the process,
+* the produced cards become a queue that is filtered by their quality,
+* the card can be previewed, flipped to the back face and edited.
 """
 
 import pytest
 
-from id_card_generator.core.constants import (
-    MatchStatus,
-    MissingPhotoPolicy,
-    OutputFormat,
-    ReviewStatus,
-)
+from id_card_generator.core.constants import MatchStatus, MissingPhotoPolicy, ReviewStatus
 from id_card_generator.core.models import (
     CanvasElement,
     PhotoMatchResult,
@@ -27,16 +20,15 @@ from id_card_generator.core.models import (
     SourceRecord,
     TemplateDefinition,
 )
-from id_card_generator.ui.components.progress_ring import ProgressRing
+from id_card_generator.core.process_metrics import ProcessMetrics
+from id_card_generator.ui.components.busy_button import BusyButton
 from id_card_generator.ui.components.record_list import (
     SEVERITY_ERROR,
     SEVERITY_WARN,
     RecordListEntry,
     RecordListModel,
 )
-from id_card_generator.ui.components.speed_graph import SpeedGraph
-from id_card_generator.ui.generation_page import GenerationPage
-from id_card_generator.ui.review_page import ReviewPage
+from id_card_generator.ui.production_page import ProductionPage
 
 
 # ---------------------------------------------------------------------------
@@ -105,56 +97,37 @@ def _matches(records: list) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# The reusable components
+# The helpers
 # ---------------------------------------------------------------------------
-def test_progress_ring_tracks_the_progress(qtbot):
-    """The ring clamps the progress and reports it back."""
-    ring = ProgressRing(diameter=120, cores=2)
-    qtbot.addWidget(ring)
+def test_the_button_shows_a_spinner_while_it_is_busy(qtbot):
+    """The batch button carries the loader."""
+    button = BusyButton("Launch")
+    qtbot.addWidget(button)
 
-    assert ring.value == 0.0
-    assert ring.cores == 2
+    assert button.is_busy is False
 
-    ring.set_progress(0.5)
-    assert ring.value == pytest.approx(0.5)
+    button.set_busy(True)
+    assert button.is_busy is True
+    assert button.isEnabled()
 
-    ring.set_progress(2.0)
-    assert ring.value == 1.0
-
-    ring.set_progress(-1.0)
-    assert ring.value == 0.0
+    button.set_busy(False)
+    assert button.is_busy is False
 
 
-def test_progress_ring_can_change_the_core_count(qtbot):
-    """The ring adapts to the size of the thread pool."""
-    ring = ProgressRing(cores=1)
-    qtbot.addWidget(ring)
+def test_the_process_metrics_report_cpu_and_memory():
+    """The telemetry of the process is sampled from the standard library."""
+    metrics = ProcessMetrics()
 
-    ring.set_cores(8)
-    assert ring.cores == 8
+    cpu, memory = metrics.sample()
+    assert cpu == 0.0  # the first sample has no interval to measure
+    assert memory >= 0.0
 
-    ring.set_core_values([0.1, 0.2])
-    assert ring.value == 0.0  # the overall progress is untouched
-
-
-def test_speed_graph_keeps_the_peak(qtbot):
-    """The graph remembers the highest rate that was recorded."""
-    graph = SpeedGraph(capacity=10)
-    qtbot.addWidget(graph)
-
-    assert graph.peak == 0.0
-    graph.push_sample(2.5)
-    graph.push_sample(4.0)
-    graph.push_sample(1.0)
-
-    assert graph.peak == pytest.approx(4.0)
-    assert graph.last_value == pytest.approx(1.0)
-
-    graph.clear_samples()
-    assert graph.peak == 0.0
+    cpu, memory = metrics.sample()
+    assert 0.0 <= cpu <= 100.0
+    assert memory > 0.0
 
 
-def test_record_list_model_tracks_the_entries(qtbot):
+def test_the_record_list_model_tracks_the_entries(qtbot):
     """The model exposes the rows and finds them by record id."""
     model = RecordListModel()
     entries = [
@@ -170,48 +143,38 @@ def test_record_list_model_tracks_the_entries(qtbot):
 
 
 # ---------------------------------------------------------------------------
-# The generation workstation
+# The run
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def generation_page(qtbot):
-    page = GenerationPage()
+def production_page(qtbot):
+    page = ProductionPage()
     qtbot.addWidget(page)
     page.show()
     return page
 
 
-def test_generation_reports_the_plan_telemetry(generation_page: GenerationPage):
-    """Every KPI tile of the plan is on the screen."""
-    tiles = {
-        generation_page.lbl_kpi_rendered.text(),
-        generation_page.lbl_kpi_time.text(),
-        generation_page.lbl_kpi_throughput.text(),
-        generation_page.lbl_kpi_workers.text(),
-        generation_page.lbl_kpi_cpu.text(),
-    }
-    assert len(tiles) == 5
+def test_the_page_reports_only_what_matters(production_page: ProductionPage):
+    """There is a progress bar, a loader and the process telemetry."""
+    # The progress bar shows the cards, not a percentage alone.
+    assert production_page.progress_bar.format() == "0 / 0"
 
-    # The captions name the metrics of the plan.
-    captions = [
-        generation_page.card_rendered.lbl_caption.text(),
-        generation_page.card_time.lbl_caption.text(),
-        generation_page.card_throughput.lbl_caption.text(),
-        generation_page.card_workers.lbl_caption.text(),
-        generation_page.card_cpu.lbl_caption.text(),
+    # The button carries the loader.
+    assert isinstance(production_page.btn_generate, BusyButton)
+
+    # The telemetry is the CPU load and the memory of the process.
+    production_page._on_tick()
+    stats = [
+        production_page.stat_line._labels[0].text(),
+        production_page.stat_line._labels[1].text(),
     ]
-    assert captions == [
-        "Cards Generated",
-        "Elapsed / Remaining",
-        "Disk Throughput",
-        "Thread Pool",
-        "CPU Load",
-    ]
+    assert stats[0].endswith("%")
+    assert stats[1].endswith("MB")
 
 
-def test_generation_context_fills_the_configuration(generation_page: GenerationPage):
+def test_the_context_fills_the_configuration(production_page: ProductionPage):
     """The run configuration mirrors the context of the project."""
     records = _records(6)
-    generation_page.set_generation_context(
+    production_page.set_generation_context(
         template=_template(),
         records=records,
         match_results=_matches(records),
@@ -219,16 +182,15 @@ def test_generation_context_fills_the_configuration(generation_page: GenerationP
         settings=RenderSettings(),
     )
 
-    assert generation_page.lbl_cfg_template.text() == "Workstation Card"
-    assert "6 records" in generation_page.lbl_cfg_dataset.text()
-    assert "mm" in generation_page.lbl_cfg_card.text()
-    assert generation_page.lbl_kpi_rendered.text() == "0 / 6"
+    assert "6 loaded" in production_page.lbl_chk_records.text()
+    assert production_page.lbl_chk_template.text() == "Workstation Card"
+    assert "PNG" in production_page.lbl_chk_output.text()
 
 
-def test_batch_scope_defaults_to_every_record(generation_page: GenerationPage):
+def test_the_batch_scope_defaults_to_every_record(production_page: ProductionPage):
     """Without a custom range the whole dataset is rendered."""
     records = _records(6)
-    generation_page.set_generation_context(
+    production_page.set_generation_context(
         template=_template(),
         records=records,
         match_results={},
@@ -236,14 +198,14 @@ def test_batch_scope_defaults_to_every_record(generation_page: GenerationPage):
         settings=RenderSettings(),
     )
 
-    assert generation_page.btn_scope_all.isChecked()
-    assert len(generation_page._selected_records()) == 6
+    assert production_page.btn_scope_all.isChecked()
+    assert len(production_page._selected_records()) == 6
 
 
-def test_batch_scope_limits_the_run_to_a_range(generation_page: GenerationPage):
+def test_the_batch_scope_limits_the_run_to_a_range(production_page: ProductionPage):
     """A custom range renders only the selected records."""
     records = _records(10)
-    generation_page.set_generation_context(
+    production_page.set_generation_context(
         template=_template(),
         records=records,
         match_results={},
@@ -251,19 +213,25 @@ def test_batch_scope_limits_the_run_to_a_range(generation_page: GenerationPage):
         settings=RenderSettings(),
     )
 
-    generation_page.btn_scope_range.setChecked(True)
-    generation_page.spin_range_start.setValue(3)
-    generation_page.spin_range_end.setValue(6)
+    production_page.btn_scope_range.setChecked(True)
+    production_page.spin_range_start.setValue(3)
+    production_page.spin_range_end.setValue(6)
 
-    selected = generation_page._selected_records()
-    assert [r.pin for r in selected] == ["000002", "000003", "000004", "000005"]
-    assert "4 cards" in generation_page.lbl_batch_scope.text()
+    selected = production_page._selected_records()
+    assert [record.pin for record in selected] == [
+        "000002",
+        "000003",
+        "000004",
+        "000005",
+    ]
 
 
-def test_output_widgets_drive_the_render_settings(generation_page: GenerationPage):
+def test_the_output_widgets_drive_the_render_settings(production_page: ProductionPage):
     """The raster output of the panel reaches the render settings."""
+    from id_card_generator.core.constants import OutputFormat
+
     settings = RenderSettings()
-    generation_page.set_generation_context(
+    production_page.set_generation_context(
         template=_template(),
         records=_records(3),
         match_results={},
@@ -271,66 +239,73 @@ def test_output_widgets_drive_the_render_settings(generation_page: GenerationPag
         settings=settings,
     )
 
-    generation_page.cmb_format.setCurrentIndex(
-        generation_page.cmb_format.findData(OutputFormat.JPEG)
+    production_page.cmb_format.setCurrentIndex(
+        production_page.cmb_format.findData(OutputFormat.JPEG.value)
     )
-    generation_page.cmb_dpi.setCurrentIndex(generation_page.cmb_dpi.findData(600))
+    production_page.cmb_dpi.setCurrentIndex(production_page.cmb_dpi.findData(600))
 
     assert settings.output_format.value == "JPEG"
     assert settings.dpi == 600
-    assert generation_page.lbl_naming.text().endswith(".jpg")
+    assert production_page.lbl_naming.text().endswith(".jpg")
 
 
-def test_progress_moves_the_ring_and_the_tiles(generation_page: GenerationPage):
-    """A progress report updates the ring, the bar and the counters."""
-    generation_page._on_progress(3, 10, "000001", "Generated")
+def test_the_progress_moves_the_bar(production_page: ProductionPage):
+    """A progress report updates the bar and its text."""
+    production_page._on_progress(3, 10, "000001", "Generated")
 
-    assert generation_page.progress_ring.value == pytest.approx(0.3)
-    assert generation_page.progress_bar.value() == 30
-    assert generation_page.lbl_kpi_rendered.text() == "3 / 10"
-    assert generation_page.lbl_status.text().startswith("Generating: 3 of 10")
+    assert production_page.progress_bar.value() == 30
+    assert production_page.progress_bar.format() == "3 / 10 cards"
 
 
-def test_the_event_log_collects_the_failures(generation_page: GenerationPage):
-    """Errors land in the inspector and the log can be filtered."""
-    generation_page._on_status("[OK] Rendered PIN: 000001")
-    generation_page._on_status("[ERROR] Failed PIN: 000002 - no photo")
+def test_the_event_log_collects_the_failures(production_page: ProductionPage):
+    """Errors are counted and the log can be filtered down to them."""
+    production_page._on_status("[OK] Rendered PIN: 000001")
+    production_page._on_status("[ERROR] Failed PIN: 000002 - no photo")
 
-    assert generation_page.error_list.count() == 1
-    assert "1 failure" in generation_page.lbl_error_count.text()
+    assert "1 failure" in production_page.lbl_error_count.text()
 
-    generation_page.cmb_log_filter.setCurrentIndex(1)
-    assert "Failed PIN" in generation_page.log_output.toPlainText()
-    assert "Rendered PIN" not in generation_page.log_output.toPlainText()
+    production_page.cmb_log_filter.setCurrentIndex(1)
+    assert "Failed PIN" in production_page.log_output.toPlainText()
+    assert "Rendered PIN" not in production_page.log_output.toPlainText()
 
-    generation_page.cmb_log_filter.setCurrentIndex(0)
-    assert "Rendered PIN" in generation_page.log_output.toPlainText()
+    production_page.cmb_log_filter.setCurrentIndex(0)
+    assert "Rendered PIN" in production_page.log_output.toPlainText()
+
+
+def test_a_run_without_a_template_is_refused(production_page: ProductionPage):
+    """Without a template the run is refused with a hint."""
+    production_page.set_generation_context(
+        template=None,
+        records=_records(2),
+        match_results={},
+        column_mappings={},
+        settings=RenderSettings(),
+    )
+
+    production_page._start_generation()
+    assert not production_page.notice.isHidden()
+    assert not production_page.btn_generate.is_busy
 
 
 # ---------------------------------------------------------------------------
-# The review workstation
+# The queue
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def review_page(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "id_card_generator.ui.review_page.get_staging_dir",
+        "id_card_generator.ui.production_page.get_staging_dir",
         lambda: tmp_path / "staging",
     )
-    page = ReviewPage()
+    page = ProductionPage()
     qtbot.addWidget(page)
     page.show()
     return page
 
 
-def _load_session(page: ReviewPage, records=None) -> list:
+def _load_session(page: ProductionPage, records=None) -> list:
     records = records if records is not None else _records(6)
     results = [
-        RenderResult(
-            record_id=record.record_id,
-            pin=record.pin,
-            success=True,
-            image_path="",
-        )
+        RenderResult(record_id=record.record_id, pin=record.pin, success=True)
         for record in records
     ]
     page.load_review_session(
@@ -343,7 +318,7 @@ def _load_session(page: ReviewPage, records=None) -> list:
     return records
 
 
-def test_the_record_list_shows_every_record(review_page: ReviewPage):
+def test_the_queue_shows_every_record(review_page: ProductionPage):
     """The list is filled from the review session."""
     records = _load_session(review_page)
 
@@ -351,7 +326,7 @@ def test_the_record_list_shows_every_record(review_page: ReviewPage):
     assert review_page.lbl_list_info.text().startswith(f"{len(records)} of {len(records)}")
 
 
-def test_the_quality_filters_split_the_records(review_page: ReviewPage):
+def test_the_quality_filters_split_the_records(review_page: ProductionPage):
     """A record with a warning is not counted as valid."""
     records = _records(4)
     records[1].validation_warnings.append("Department code is unknown")
@@ -377,7 +352,7 @@ def test_the_quality_filters_split_the_records(review_page: ReviewPage):
     assert review_page.record_model.rowCount() == 4
 
 
-def test_a_missing_photo_is_flagged(review_page: ReviewPage):
+def test_a_missing_photo_is_flagged(review_page: ProductionPage):
     """A record without a photo is reported as a warning."""
     records = _records(3)
     matches = _matches(records)
@@ -400,8 +375,8 @@ def test_a_missing_photo_is_flagged(review_page: ReviewPage):
     assert any("Missing photo" in flag for flag in entry.flags)
 
 
-def test_picking_a_record_jumps_to_it(review_page: ReviewPage):
-    """Clicking a row of the list selects that record."""
+def test_picking_a_record_jumps_to_it(review_page: ProductionPage):
+    """Clicking a row of the queue selects that record."""
     records = _load_session(review_page)
 
     review_page._on_record_selected(records[3].record_id)
@@ -409,7 +384,7 @@ def test_picking_a_record_jumps_to_it(review_page: ReviewPage):
     assert review_page.lbl_nav_index.text() == "Card 4 of 6"
 
 
-def test_the_preview_can_be_flipped_to_the_back_face(review_page: ReviewPage):
+def test_the_preview_can_be_flipped_to_the_back_face(review_page: ProductionPage):
     """The back side is rendered live from the template."""
     _load_session(review_page)
 
@@ -421,7 +396,7 @@ def test_the_preview_can_be_flipped_to_the_back_face(review_page: ReviewPage):
     assert review_page._side == "front"
 
 
-def test_editing_a_field_re_renders_the_card(review_page: ReviewPage):
+def test_editing_a_field_re_renders_the_card(review_page: ProductionPage):
     """A changed field is written back and the card is rendered again."""
     records = _load_session(review_page)
 
@@ -434,7 +409,7 @@ def test_editing_a_field_re_renders_the_card(review_page: ReviewPage):
     assert "Updated 1 field" in review_page.notice.text()
 
 
-def test_the_search_narrows_the_list(review_page: ReviewPage):
+def test_the_search_narrows_the_queue(review_page: ProductionPage):
     """The search field filters the records."""
     records = _load_session(review_page)
 
@@ -443,7 +418,7 @@ def test_the_search_narrows_the_list(review_page: ReviewPage):
     assert review_page.record_model.entry(0).pin == records[3].pin
 
 
-def test_approving_moves_to_the_next_record(review_page: ReviewPage):
+def test_approving_moves_to_the_next_record(review_page: ProductionPage):
     """A decision is stored and the inspector advances."""
     records = _load_session(review_page)
 
@@ -451,21 +426,3 @@ def test_approving_moves_to_the_next_record(review_page: ReviewPage):
 
     assert review_page.manager.records[0].status == ReviewStatus.APPROVED
     assert review_page.manager.current_index == 1
-
-
-# ---------------------------------------------------------------------------
-# The renderer
-# ---------------------------------------------------------------------------
-def test_the_renderer_only_paints_the_requested_face():
-    """Each face of the card only shows its own elements."""
-    from id_card_generator.rendering.pillow_renderer import PillowRenderer
-
-    template = _template()
-    record = _records(1)[0]
-
-    front, _ = PillowRenderer.render_card(template=template, record=record)
-    back, _ = PillowRenderer.render_card(template=template, record=record, side="back")
-
-    front_pixels = front.convert("RGB").tobytes()
-    back_pixels = back.convert("RGB").tobytes()
-    assert front_pixels != back_pixels

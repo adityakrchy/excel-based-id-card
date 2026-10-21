@@ -506,7 +506,7 @@ class ExportPage(QWidget):
             parent=self,
         )
         self.nav_bar.back_requested.connect(
-            lambda: self.navigate_requested.emit(WorkflowStep.REVIEW.value)
+            lambda: self.navigate_requested.emit(WorkflowStep.GENERATE.value)
         )
         self.nav_bar.next_requested.connect(
             lambda: self.navigate_requested.emit(WorkflowStep.DASHBOARD.value)

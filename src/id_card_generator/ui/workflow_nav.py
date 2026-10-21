@@ -22,9 +22,8 @@ class WorkflowNav(QFrame):
         (WorkflowStep.PHOTOS, "2. Photos"),
         (WorkflowStep.TEMPLATES, "3. Template"),
         (WorkflowStep.CANVAS_EDITOR, "4. Mapping && Editor"),
-        (WorkflowStep.GENERATE, "5. Generate"),
-        (WorkflowStep.REVIEW, "6. Review"),
-        (WorkflowStep.EXPORT, "7. Export"),
+        (WorkflowStep.GENERATE, "5. Generate && Review"),
+        (WorkflowStep.EXPORT, "6. Export"),
     ]
 
     def __init__(self, parent=None):

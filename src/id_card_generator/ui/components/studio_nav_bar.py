@@ -28,7 +28,6 @@ class StudioTab(str, Enum):
     TEMPLATES = "templates"
     DESIGNER = "designer"
     GENERATE = "generate"
-    REVIEW = "review"
     EXPORT = "export"
     SETTINGS = "settings"
 
@@ -57,8 +56,7 @@ class StudioNavBar(QFrame):
         (StudioTab.PHOTOS, "Photos"),
         (StudioTab.TEMPLATES, "Templates"),
         (StudioTab.DESIGNER, "Designer"),
-        (StudioTab.GENERATE, "Generate"),
-        (StudioTab.REVIEW, "Review"),
+        (StudioTab.GENERATE, "Generate & Review"),
         (StudioTab.EXPORT, "Export"),
         (StudioTab.SETTINGS, "Settings"),
     ]
