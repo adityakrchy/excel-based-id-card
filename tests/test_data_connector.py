@@ -224,6 +224,24 @@ def test_the_connection_is_described(page: DataSourcePage):
     assert "3" in page.lbl_connection.text()
 
 
+def test_the_control_row_takes_only_its_own_room(qtbot):
+    """The row of the controls must not grow over the table.
+
+    It is a scroll area, and a scroll area grows over the whole column.  It
+    pushed the table of the records to the bottom and floated the controls
+    in the middle of the column.
+    """
+    connector = DataSourcePage()
+    qtbot.addWidget(connector)
+    connector.resize(1400, 900)
+    connector.show()
+    qtbot.wait(50)
+
+    assert connector.ctrl_scroll.height() <= 60
+    # The table of the records gets the free space of the column.
+    assert connector.table.height() > connector.ctrl_scroll.height() * 4
+
+
 def test_the_mapping_tools_are_visible(page: DataSourcePage):
     """Auto-map and validate are real buttons on the screen."""
     assert not page.btn_automap.isHidden()

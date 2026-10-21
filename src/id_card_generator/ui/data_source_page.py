@@ -399,6 +399,10 @@ class DataSourcePage(QWidget):
         self.ctrl_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.ctrl_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.ctrl_scroll.setMinimumHeight(CONTROL_HEIGHT + 8)
+        # The row of the controls takes the room it needs - a scroll area
+        # would otherwise grow over the whole column and push the table of
+        # the records to the bottom.
+        self.ctrl_scroll.setFixedHeight(CONTROL_HEIGHT + 8)
         self.ctrl_scroll.setWidget(_wrap(ctrl_bar))
         self.ctrl_scroll.setStyleSheet(
             "QScrollArea { border: none; background: transparent; }"
