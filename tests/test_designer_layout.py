@@ -213,7 +213,8 @@ def test_the_context_bar_controls_share_one_height(qtbot):
         page.btn_del.height(),
         page.btn_guides_toggle.height(),
         page.btn_snap_toggle.height(),
-        page.btn_bleed_toggle.height(),
+        page.btn_ctx_grid.height(),
+        page.btn_ctx_preview.height(),
     }
     assert len(heights) == 1, f"the controls of the bar differ in height: {heights}"
 
@@ -245,7 +246,8 @@ def test_the_options_bar_sits_on_one_baseline(qtbot):
         centre(page.btn_del),
         centre(page.btn_guides_toggle),
         centre(page.btn_snap_toggle),
-        centre(page.btn_bleed_toggle),
+        centre(page.btn_ctx_grid),
+        centre(page.btn_ctx_preview),
     }
     assert len(centres) == 1, f"the controls do not share a baseline: {centres}"
 
@@ -381,6 +383,42 @@ def test_changing_the_binding_changes_the_element(qtbot):
     qtbot.wait(20)
 
     assert item.element.binding == "PIN Number"
+
+
+def test_the_ribbon_keeps_its_spacing_in_every_workspace(qtbot):
+    """The row of the tabs does not change when a workspace is opened.
+
+    The tools of the canvas used to show up in the ribbon on the designer
+    and they changed the width of the row, so the tabs sat on different
+    places in every workspace.
+    """
+    from id_card_generator.core.constants import WorkflowStep
+    from id_card_generator.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(1600, 900)
+    window.show()
+    qtbot.wait(50)
+
+    nav = window.studio_nav
+    layouts = {}
+    for step in (
+        WorkflowStep.DASHBOARD,
+        WorkflowStep.DATA_SOURCE,
+        WorkflowStep.CANVAS_EDITOR,
+        WorkflowStep.GENERATE,
+        WorkflowStep.EXPORT,
+    ):
+        window.switch_page(step)
+        qtbot.wait(20)
+        layouts[step] = [
+            (button.x(), button.width()) for button in nav._buttons.values()
+        ]
+
+    first = layouts[WorkflowStep.DASHBOARD]
+    for step, layout in layouts.items():
+        assert layout == first, f"the ribbon moved in the workspace {step}"
 
 
 # ---------------------------------------------------------------------------

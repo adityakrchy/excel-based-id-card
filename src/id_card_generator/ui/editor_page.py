@@ -92,6 +92,7 @@ class EditorPage(QWidget):
         self._available_columns: List[str] = []
         self._text_editor: Optional[QTextEdit] = None
         self._text_editor_item = None
+        self._live_preview: bool = True
         self.sample_index: int = 0
         self._updating_context_bar: bool = False
         self._user_adjusted_splitter: bool = False
@@ -465,19 +466,42 @@ class EditorPage(QWidget):
         layout.addWidget(self._separator())
         layout.addSpacing(4)
 
+        # The tools of the canvas: the grid and the live preview of the data.
+        self.btn_ctx_grid = QToolButton()
+        self.btn_ctx_grid.setText("⊞ Grid")
+        self.btn_ctx_grid.setObjectName("btn_toggle")
+        self.btn_ctx_grid.setCheckable(True)
+        self.btn_ctx_grid.setChecked(self.scene.show_grid)
+        self.btn_ctx_grid.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_ctx_grid.setToolTip("Toggle the grid of the canvas (G)")
+        self.btn_ctx_grid.toggled.connect(self._on_ctx_grid_toggled)
+        layout.addWidget(self.btn_ctx_grid)
+
+        self.btn_ctx_preview = QToolButton()
+        self.btn_ctx_preview.setText("👁 Preview")
+        self.btn_ctx_preview.setObjectName("btn_toggle")
+        self.btn_ctx_preview.setCheckable(True)
+        self.btn_ctx_preview.setChecked(self._live_preview)
+        self.btn_ctx_preview.setFixedHeight(CONTROL_HEIGHT)
+        self.btn_ctx_preview.setToolTip(
+            "Show the values of the record on the canvas, or the names of the fields"
+        )
+        self.btn_ctx_preview.toggled.connect(self._on_ctx_preview_toggled)
+        layout.addWidget(self.btn_ctx_preview)
+
         # Snapping controls
         self._setup_snapping_ui(layout)
 
         # Bleed guideline toggle
-        self.btn_bleed_toggle = QToolButton()
-        self.btn_bleed_toggle.setText("Bleed: 3.0mm")
-        self.btn_bleed_toggle.setObjectName("btn_toggle")
-        self.btn_bleed_toggle.setCheckable(True)
-        self.btn_bleed_toggle.setChecked(True)
-        self.btn_bleed_toggle.setFixedHeight(CONTROL_HEIGHT)
-        self.btn_bleed_toggle.setToolTip("Toggle 3.0mm standard print bleed margin guidelines")
-        self.btn_bleed_toggle.toggled.connect(self._on_bleed_toggled)
-        layout.addWidget(self.btn_bleed_toggle)
+        # self.btn_bleed_toggle = QToolButton()
+        # self.btn_bleed_toggle.setText("Bleed: 3.0mm")
+        # self.btn_bleed_toggle.setObjectName("btn_toggle")
+        # self.btn_bleed_toggle.setCheckable(True)
+        # self.btn_bleed_toggle.setChecked(True)
+        # self.btn_bleed_toggle.setFixedHeight(CONTROL_HEIGHT)
+        # self.btn_bleed_toggle.setToolTip("Toggle 3.0mm standard print bleed margin guidelines")
+        # self.btn_bleed_toggle.toggled.connect(self._on_bleed_toggled)
+        # layout.addWidget(self.btn_bleed_toggle)
 
         layout.addSpacing(4)
         layout.addWidget(self._separator())
@@ -516,12 +540,12 @@ class EditorPage(QWidget):
 
         layout.addWidget(record_cluster)
 
-        layout.addSpacing(6)
-        self.btn_test_export = QPushButton("\u26a1 Test Render")
-        self.btn_test_export.setFixedHeight(CONTROL_HEIGHT)
-        self.btn_test_export.setToolTip("Render a high-resolution test preview of the active card")
-        self.btn_test_export.clicked.connect(self._on_test_export_clicked)
-        layout.addWidget(self.btn_test_export)
+        # layout.addSpacing(6)
+        # self.btn_test_export = QPushButton("\u26a1 Test Render")
+        # self.btn_test_export.setFixedHeight(CONTROL_HEIGHT)
+        # self.btn_test_export.setToolTip("Render a high-resolution test preview of the active card")
+        # self.btn_test_export.clicked.connect(self._on_test_export_clicked)
+        # layout.addWidget(self.btn_test_export)
 
         layout.addStretch()
         return widget
@@ -1394,7 +1418,8 @@ class EditorPage(QWidget):
         self.lbl_ctx_doc_dims.setText(f"{tmpl.name} • {w_px} × {h_px} px @ {tmpl.dpi} DPI")
 
     def _update_sample_preview(self) -> None:
-        if not self.records:
+        if not self.records or not self._live_preview:
+            # Without the preview the canvas shows the names of the fields.
             self.scene.set_sample_data(None, None)
             return
 
@@ -1507,6 +1532,16 @@ class EditorPage(QWidget):
             lambda it: setattr(it.element, "static_content", text),
             "Change Static Text",
         )
+
+    def _on_ctx_grid_toggled(self, checked: bool) -> None:
+        """Show or hide the grid of the canvas."""
+        self.scene.show_grid = checked
+        self.scene.update()
+
+    def _on_ctx_preview_toggled(self, checked: bool) -> None:
+        """Show the values of the record on the canvas, or the field names."""
+        self._live_preview = checked
+        self._update_sample_preview()
 
     def _on_ctx_font_changed(self, font: QFont) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "font_family", font.family()), "Change Font Family")

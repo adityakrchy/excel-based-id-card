@@ -57,7 +57,7 @@ class CanvasScene(QGraphicsScene):
 
         self.show_grid = True
         self.show_safe_area = True
-        self.show_bleed = True
+        self.show_bleed = False
 
         self._sample_record: Optional[SourceRecord] = None
         self._sample_photo_path: Optional[str] = None

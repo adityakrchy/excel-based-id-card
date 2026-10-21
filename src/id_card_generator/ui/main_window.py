@@ -124,8 +124,6 @@ class MainWindow(QMainWindow):
         # 2. Studio Workspace Navigation Ribbon (Level 1.5 Sub-header)
         self.studio_nav = StudioNavBar(self)
         self.studio_nav.tab_selected.connect(self._on_studio_tab_selected)
-        self.studio_nav.grid_toggled.connect(self._on_studio_grid_toggled)
-        self.studio_nav.preview_toggled.connect(self._on_studio_preview_toggled)
         self.studio_nav.help_requested.connect(self._show_help)
         main_layout.addWidget(self.studio_nav)
 
@@ -388,9 +386,6 @@ class MainWindow(QMainWindow):
                 if tab.value == workflow.tab_for(step):
                     self.studio_nav.set_active_tab(tab)
                     break
-            self.studio_nav.set_designer_tools_visible(
-                step == WorkflowStep.CANVAS_EDITOR
-            )
             self._refresh_tab_states()
 
         # Keep the hub's flow anchor in sync with the current position.
@@ -763,20 +758,6 @@ class MainWindow(QMainWindow):
         step = workflow.step_for_tab(tab_str)
         if step is not None:
             self.switch_page(step)
-
-    def _on_studio_grid_toggled(self, checked: bool) -> None:
-        if hasattr(self.page_editor, "view"):
-            if hasattr(self.page_editor.view, "setShowGrid"):
-                self.page_editor.view.setShowGrid(checked)
-            elif hasattr(self.page_editor.view, "show_grid"):
-                self.page_editor.view.show_grid = checked
-                self.page_editor.view.viewport().update()
-
-    def _on_studio_preview_toggled(self, checked: bool) -> None:
-        if hasattr(self.page_editor, "toggle_live_preview"):
-            self.page_editor.toggle_live_preview(checked)
-        elif hasattr(self.page_editor, "act_preview"):
-            self.page_editor.act_preview.setChecked(checked)
 
     def _show_help(self) -> None:
         QMessageBox.information(

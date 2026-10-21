@@ -56,8 +56,6 @@ class StudioNavBar(QFrame):
     """Navigation ribbon with one entry per stage of the production pipeline."""
 
     tab_selected = Signal(str)  # StudioTab value
-    grid_toggled = Signal(bool)
-    preview_toggled = Signal(bool)
     help_requested = Signal()
 
     TABS = [
@@ -156,38 +154,10 @@ class StudioNavBar(QFrame):
         right_tools = QHBoxLayout()
         right_tools.setSpacing(10)
 
-        # Canvas Utility controls (hidden by default on Hub, shown on Designer)
-        self.btn_grid = QToolButton()
-        self.btn_grid.setText("⊞ Grid")
-        self.btn_grid.setCheckable(True)
-        self.btn_grid.setChecked(True)
-        self.btn_grid.setFixedHeight(26)
-        self.btn_grid.setToolTip("Toggle Canvas Grid (G)")
-        self.btn_grid.toggled.connect(self.grid_toggled.emit)
-        self._style_tool_btn(self.btn_grid)
-        self.btn_grid.setVisible(False)
-        right_tools.addWidget(self.btn_grid)
-
-        self.lbl_zoom = QLabel("100%")
-        self.lbl_zoom.setFixedHeight(26)
-        self.lbl_zoom.setAlignment(Qt.AlignCenter)
-        self.lbl_zoom.setStyleSheet(
-            f"background-color: {COLORS.SURFACE_CONTAINER}; color: {COLORS.ON_SURFACE}; "
-            f"border: 1px solid {COLORS.BORDER_HAIRLINE}; border-radius: 4px; "
-            f"font-family: {TYPOGRAPHY.FONT_FAMILY_MONO}; font-size: 11px; padding: 0 8px;"
-        )
-        self.lbl_zoom.setVisible(False)
-        right_tools.addWidget(self.lbl_zoom)
-
-        self.btn_preview = QToolButton()
-        self.btn_preview.setText("👁 Preview")
-        self.btn_preview.setCheckable(True)
-        self.btn_preview.setFixedHeight(26)
-        self.btn_preview.setToolTip("Toggle Live Record Data Binding Preview")
-        self.btn_preview.toggled.connect(self.preview_toggled.emit)
-        self._style_tool_btn(self.btn_preview)
-        self.btn_preview.setVisible(False)
-        right_tools.addWidget(self.btn_preview)
+        # The tools of the canvas live in the designer, not in the ribbon.
+        # They used to show up here and they changed the width of the row of
+        # the tabs, so the spacing of the ribbon was different in every
+        # workspace.
 
         # FIPS Security Pill
         self.pill_fips = StatusPill(text="FIPS 140-3 HW-SEC OK", dot_color=COLORS.TERTIARY)
@@ -217,8 +187,6 @@ class StudioNavBar(QFrame):
         """Re-apply the ribbon styling for the given theme."""
         self._theme = theme
         c = palette_for(theme)
-        for btn in (self.btn_grid, self.btn_preview):
-            self._style_tool_btn(btn, c)
 
         self.pill_fips.setStyleSheet(
             f"QFrame#status_pill {{ background-color: {c.SURFACE_LOW}; "
@@ -334,11 +302,3 @@ class StudioNavBar(QFrame):
         """Apply a complete set of tab states at once."""
         for tab, state in states.items():
             self.set_tab_state(tab, state)
-
-    def set_designer_tools_visible(self, visible: bool) -> None:
-        self.btn_grid.setVisible(visible)
-        self.lbl_zoom.setVisible(visible)
-        self.btn_preview.setVisible(visible)
-
-    def set_zoom_text(self, text: str) -> None:
-        self.lbl_zoom.setText(text)
