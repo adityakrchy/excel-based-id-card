@@ -162,3 +162,117 @@ def test_the_text_is_drawn_in_full(qtbot):
         if any(image.pixelColor(x, y).black() < 200 for y in range(120))
     ]
     assert ink, "the text was cut away by the frame"
+
+
+# ---------------------------------------------------------------------------
+# The inline editor
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def designer(qtbot):
+    """A designer with a static text on the canvas."""
+    from id_card_generator.ui.editor_page import EditorPage
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    page = EditorPage()
+    qtbot.addWidget(page)
+    page.resize(1400, 900)
+    page.show()
+    qtbot.wait(50)
+
+    page._add_static_text()
+    qtbot.wait(50)
+
+    return page
+
+
+def _static_item(page):
+    """The static text of the canvas."""
+    return next(
+        it
+        for it in page.scene.items()
+        if hasattr(it, "element") and it.element.type == "static_text"
+    )
+
+
+def test_a_double_click_opens_the_inline_editor(designer, qtbot):
+    """A double click on a text lets the user write it in place."""
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtTest import QTest
+
+    item = _static_item(designer)
+    item.setSelected(True)
+    qtbot.wait(20)
+
+    view = designer.view
+    scene_pos = item.mapToScene(QPointF(item._rect.center()))
+    view_pos = view.mapFromScene(scene_pos)
+
+    QTest.mouseDClick(view.viewport(), Qt.LeftButton, Qt.NoModifier, view_pos)
+    qtbot.wait(50)
+
+    assert designer._text_editor is not None
+    assert designer._text_editor.toPlainText() == "Sample Text"
+    # The whole text is selected, so typing replaces it.
+    assert designer._text_editor.textCursor().hasSelection()
+
+
+def test_the_inline_editor_writes_the_text_back(designer, qtbot):
+    """What is typed becomes the text of the element."""
+    item = _static_item(designer)
+
+    designer._begin_text_edit(item)
+    assert designer._text_editor is not None
+
+    designer._text_editor.setPlainText("Card Holder")
+    designer._close_text_editor(commit=True)
+    qtbot.wait(20)
+
+    assert item.element.static_content == "Card Holder"
+    assert designer._text_editor is None
+    # The frame grew with the text.
+    assert item.element.width > 0
+
+
+def test_escape_cancels_the_inline_editor(designer, qtbot):
+    """Escape leaves the text of the element alone."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+
+    item = _static_item(designer)
+    designer._begin_text_edit(item)
+    designer._text_editor.setPlainText("Something else")
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+    designer.eventFilter(designer._text_editor, event)
+
+    assert designer._text_editor is None
+    assert item.element.static_content == "Sample Text"
+
+
+def test_a_dynamic_field_is_not_edited(designer, qtbot):
+    """The text of a dynamic field comes from the spreadsheet."""
+    from id_card_generator.core.models import CanvasElement
+
+    element = CanvasElement(
+        name="Dynamic Name",
+        type="dynamic_text",
+        x=60.0,
+        y=110.0,
+        width=280.0,
+        height=40.0,
+        binding="Name",
+    )
+    designer.scene.add_element(element)
+    qtbot.wait(20)
+
+    item = next(
+        it
+        for it in designer.scene.items()
+        if getattr(it, "element", None) is element
+    )
+    designer._begin_text_edit(item)
+
+    assert designer._text_editor is None
+    assert "spreadsheet" in designer.notice.text()

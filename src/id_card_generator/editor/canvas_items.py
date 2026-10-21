@@ -91,6 +91,8 @@ class CanvasItem(QGraphicsObject):
     # Signals
     geometry_changed = Signal(object)
     selected_changed = Signal(object)
+    # The text of the element should be edited (double click).
+    text_edit_requested = Signal(object)
 
     HANDLE_SIZE = 8.0
     # Handles: 0:TL, 1:T, 2:TR, 3:R, 4:BR, 5:B, 6:BL, 7:L
@@ -436,6 +438,15 @@ class CanvasItem(QGraphicsObject):
 
         super().mouseMoveEvent(event)
         self.update_model_position()
+
+    def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
+        """Ask for an inline editor when a text is double clicked."""
+        elem = self.element
+        if elem.type in ("static_text", "dynamic_text", "pin_field") and not elem.locked:
+            self.text_edit_requested.emit(self)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
         scene = self.scene()

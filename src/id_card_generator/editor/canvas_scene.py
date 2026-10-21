@@ -33,6 +33,8 @@ class CanvasScene(QGraphicsScene):
 
     element_selected = Signal(object)  # CanvasItem or None
     template_modified = Signal()
+    # A text of the canvas should be edited in place.
+    text_edit_requested = Signal(object)  # CanvasItem
     # Emitted right before the canvas items are destroyed.  Panels that keep a
     # reference to an item (the layers tree) have to drop it first: a QObject
     # that is destroyed while a QVariant still references it makes PySide
@@ -205,6 +207,7 @@ class CanvasScene(QGraphicsScene):
         item.setZValue(elem.z_index)
         item.set_sample_data(self._sample_record, self._sample_photo_path)
         item.geometry_changed.connect(self._on_item_geometry_changed)
+        item.text_edit_requested.connect(self.text_edit_requested.emit)
         self.addItem(item)
         self._items_by_id[elem.id] = item
         return item

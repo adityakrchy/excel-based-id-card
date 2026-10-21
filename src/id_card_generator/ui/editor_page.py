@@ -4,10 +4,11 @@ import logging
 from typing import Dict, List, Optional
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QIcon, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QTextEdit,
     QButtonGroup,
     QCheckBox,
     QColorDialog,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -43,6 +45,7 @@ from id_card_generator.core.models import (
 )
 from id_card_generator.editor.alignment_tools import AlignmentTools
 from id_card_generator.core.constants import DEFAULT_DPI
+from id_card_generator.core.geometry import points_to_document_pixels
 from id_card_generator.editor.canvas_items import CanvasItem, measure_text_size
 from id_card_generator.editor.canvas_scene import CanvasScene
 from id_card_generator.editor.canvas_view import CanvasView
@@ -55,7 +58,7 @@ from id_card_generator.ui import workflow
 from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.layout_blocks import OverflowMenu
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
-from id_card_generator.ui.studio_tokens import SIZES, active_palette
+from id_card_generator.ui.studio_tokens import SIZES, active_palette, active_palette
 from id_card_generator.ui.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
@@ -83,6 +86,8 @@ class EditorPage(QWidget):
         self.match_results: Dict[str, PhotoMatchResult] = {}
         self.columns: List[str] = []
         self._available_columns: List[str] = []
+        self._text_editor: Optional[QTextEdit] = None
+        self._text_editor_item = None
         self.sample_index: int = 0
         self._updating_context_bar: bool = False
         self._user_adjusted_splitter: bool = False
@@ -896,6 +901,7 @@ class EditorPage(QWidget):
     def _connect_signals(self) -> None:
         self.scene.element_selected.connect(self._on_element_selected)
         self.scene.template_modified.connect(self._on_template_modified)
+        self.scene.text_edit_requested.connect(self._begin_text_edit)
         self.inspector.property_changed.connect(self._on_inspector_property_changed)
         self.layers_panel.item_selected.connect(self.inspector.set_selected_item)
         self.layers_panel.order_changed.connect(self._on_template_modified)
@@ -1049,6 +1055,7 @@ class EditorPage(QWidget):
 
     def load_template(self, template: TemplateDefinition) -> None:
         """Load template into canvas editor and update metadata readouts."""
+        self._close_text_editor(commit=False)
         self.scene.load_template(template)
         self.layers_panel.refresh_layers()
         # The previous selection belonged to the old scene.
@@ -1079,6 +1086,129 @@ class EditorPage(QWidget):
         if hasattr(self, "_update_stepper_ui"):
             self._update_stepper_ui()
 
+    # -----------------------------------------------------------------
+    # The inline editor of a text
+    # -----------------------------------------------------------------
+    def _begin_text_edit(self, item) -> None:
+        """Edit the text of an element in place on the canvas."""
+        if item is None:
+            return
+
+        elem = item.element
+        if elem.type == "static_text":
+            text = elem.static_content or ""
+        else:
+            # A dynamic field shows the value of the spreadsheet, so there
+            # is nothing to edit here.
+            self.notice.set_message(
+                "The text of a dynamic field comes from the spreadsheet - "
+                "change its binding in the bar above.",
+                severity="info",
+            )
+            return
+
+        self._close_text_editor(commit=False)
+
+        editor = QTextEdit(self.view.viewport())
+        editor.setPlainText(text)
+        editor.setFont(self._editor_font(elem))
+        editor.setFrameShape(QTextEdit.Box)
+
+        # The editor follows the frame of the element, not the size its
+        # content would ask for.
+        editor.setMinimumSize(60, 20)
+        editor.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+
+        palette = active_palette()
+        editor.setStyleSheet(
+            "QTextEdit {"
+            f"  background-color: {palette.SURFACE_HIGH};"
+            f"  border: 1px solid {palette.PRIMARY_CONTAINER};"
+            "  border-radius: 3px;"
+            "  padding: 2px 4px;"
+            f"  color: {palette.ON_SURFACE};"
+            f"  selection-background-color: {palette.PRIMARY_CONTAINER};"
+            f"  selection-color: {palette.ON_PRIMARY_CONTAINER};"
+            "}"
+        )
+
+        # The editor sits where the text of the element is.  The frame of the
+        # element is used, not its bounding box, which holds the handles.
+        frame = item.mapToScene(QRectF(0, 0, item._rect.width(), item._rect.height()))
+        rect = self.view.mapFromScene(frame).boundingRect()
+        editor.setGeometry(rect)
+        editor.selectAll()
+        editor.setFocus()
+        editor.show()
+        editor.installEventFilter(self)
+
+        self._text_editor = editor
+        self._text_editor_item = item
+
+    def _editor_font(self, elem):
+        """The font of the element, so the editor looks like the card."""
+        font = QFont(elem.style.font_family)
+        font.setBold(elem.style.font_bold)
+        font.setItalic(elem.style.font_italic)
+        doc_px = points_to_document_pixels(float(elem.style.font_size), self._document_dpi())
+        font.setPixelSize(max(1, int(round(doc_px))))
+        return font
+
+    def _close_text_editor(self, commit: bool = True) -> None:
+        """Close the inline editor and write the text back."""
+        editor = self._text_editor
+        item = self._text_editor_item
+        self._text_editor = None
+        self._text_editor_item = None
+
+        if editor is None:
+            return
+
+        editor.removeEventFilter(self)
+        editor.hide()
+        editor.deleteLater()
+
+        if not commit or item is None:
+            return
+
+        text = editor.toPlainText()
+        if text == (item.element.static_content or ""):
+            return
+
+        old_state = item.element.model_dump(mode="json")
+        item.element.static_content = text
+        new_state = item.element.model_dump(mode="json")
+
+        scene = self.scene
+        if hasattr(scene, "undo_stack"):
+            from id_card_generator.editor.undo_manager import ChangeElementStateCommand
+            scene.undo_stack.push(
+                ChangeElementStateCommand(
+                    scene, item.element.id, old_state, new_state, "Edit Text"
+                )
+            )
+
+        # The element grows with its text, the frame never gets smaller
+        # than the text it holds.
+        self._fit_text_frame(item.element, text)
+        item.set_rect(QRectF(0, 0, item.element.width, item.element.height))
+        item.update()
+        scene.update()
+        scene.template_modified.emit()
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt naming
+        """Escape cancels the inline editor, enter commits it."""
+        if watched is self._text_editor and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape:
+                self._close_text_editor(commit=False)
+                self.view.setFocus()
+                return True
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                self._close_text_editor(commit=True)
+                self.view.setFocus()
+                return True
+        return super().eventFilter(watched, event)
+
     def _on_tool_selected(self, tool_id: str) -> None:
         if tool_id == "select":
             return
@@ -1102,6 +1232,9 @@ class EditorPage(QWidget):
                 break
 
     def _on_element_selected(self, item: Optional[CanvasItem]) -> None:
+        # An open editor belongs to the element that was edited.
+        if self._text_editor_item is not None and self._text_editor_item is not item:
+            self._close_text_editor(commit=True)
         self.inspector.set_selected_item(item)
         self.mapping_panel.set_selected_item(item)
         self._update_context_options(item)
