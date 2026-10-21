@@ -522,6 +522,9 @@ QToolButton#btn_toggle {
     color: $on_surface_variant;
     font-size: 11px;
     padding: 2px 8px;
+    /* The content height plus the padding and the border brings the button
+       to the same 28 pixels as every other control of the bar. */
+    min-height: 22px;
 }
 
 QToolButton#btn_toggle:hover {

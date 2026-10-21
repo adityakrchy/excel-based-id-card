@@ -172,32 +172,34 @@ class EditorPage(QWidget):
         self.page_photo_context = self._create_photo_context_page()
         self.stack_context.addWidget(self.page_photo_context)
 
-        self.opt_layout.addWidget(self.stack_context, stretch=1)
+        # The context sits on the left, the actions on the right.  Both
+        # groups are centred on the same baseline, so they read as one line.
+        self.opt_layout.addWidget(self.stack_context, 1, Qt.AlignVCenter)
 
         # Separator before action buttons
-        self.opt_layout.addWidget(self._separator())
+        self.opt_layout.addWidget(self._separator(), 0, Qt.AlignVCenter)
 
         # Common action buttons on far right of options bar
         self.btn_undo = QPushButton("↶ Undo")
-        self.btn_undo.setFixedHeight(28)
+        self.btn_undo.setFixedHeight(CONTROL_HEIGHT)
         self.btn_undo.setToolTip("Undo last action (Ctrl+Z / Cmd+Z)")
-        self.opt_layout.addWidget(self.btn_undo)
+        self.opt_layout.addWidget(self.btn_undo, 0, Qt.AlignVCenter)
 
         self.btn_redo = QPushButton("↷ Redo")
-        self.btn_redo.setFixedHeight(28)
+        self.btn_redo.setFixedHeight(CONTROL_HEIGHT)
         self.btn_redo.setToolTip("Redo last action (Ctrl+Y / Cmd+Y)")
-        self.opt_layout.addWidget(self.btn_redo)
+        self.opt_layout.addWidget(self.btn_redo, 0, Qt.AlignVCenter)
 
         self.btn_dup = QPushButton("⧉ Duplicate")
-        self.btn_dup.setFixedHeight(28)
+        self.btn_dup.setFixedHeight(CONTROL_HEIGHT)
         self.btn_dup.clicked.connect(self.scene.duplicate_selected)
-        self.opt_layout.addWidget(self.btn_dup)
+        self.opt_layout.addWidget(self.btn_dup, 0, Qt.AlignVCenter)
 
         self.btn_del = QPushButton("🗑 Delete")
-        self.btn_del.setFixedHeight(28)
+        self.btn_del.setFixedHeight(CONTROL_HEIGHT)
         self.btn_del.setObjectName("btn_danger")
         self.btn_del.clicked.connect(self.scene.delete_selected)
-        self.opt_layout.addWidget(self.btn_del)
+        self.opt_layout.addWidget(self.btn_del, 0, Qt.AlignVCenter)
 
         main_layout.addWidget(self.options_bar)
 
@@ -285,8 +287,10 @@ class EditorPage(QWidget):
         line.setFrameShape(QFrame.NoFrame)
         if vertical:
             line.setFixedWidth(1)
+            line.setFixedHeight(20)
         else:
             line.setFixedHeight(1)
+            line.setFixedWidth(38)
         return line
 
     def _create_vertical_tool_strip(self) -> QFrame:
@@ -362,7 +366,7 @@ class EditorPage(QWidget):
     def _create_doc_context_page(self) -> QWidget:
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
@@ -379,13 +383,14 @@ class EditorPage(QWidget):
         # Zoom Cluster (segmented control): [-] [ 100% ] [+] [Fit]
         zoom_cluster = QFrame()
         zoom_cluster.setObjectName("segmented")
+        zoom_cluster.setFixedHeight(CONTROL_HEIGHT)
         zoom_layout = QHBoxLayout(zoom_cluster)
         zoom_layout.setContentsMargins(2, 2, 2, 2)
         zoom_layout.setSpacing(2)
 
         btn_zoom_out = QPushButton("\u2212")
         btn_zoom_out.setToolTip("Zoom Out")
-        btn_zoom_out.setFixedSize(26, 24)
+        btn_zoom_out.setFixedSize(26, 26)
         btn_zoom_out.clicked.connect(self.view.zoom_out)
         zoom_layout.addWidget(btn_zoom_out)
 
@@ -396,7 +401,7 @@ class EditorPage(QWidget):
 
         btn_zoom_in = QPushButton("+")
         btn_zoom_in.setToolTip("Zoom In")
-        btn_zoom_in.setFixedSize(26, 24)
+        btn_zoom_in.setFixedSize(26, 26)
         btn_zoom_in.clicked.connect(self.view.zoom_in)
         zoom_layout.addWidget(btn_zoom_in)
 
@@ -408,7 +413,9 @@ class EditorPage(QWidget):
 
         layout.addWidget(zoom_cluster)
 
-        layout.addSpacing(6)
+        layout.addSpacing(4)
+        layout.addWidget(self._separator())
+        layout.addSpacing(4)
 
         # Snapping controls
         self._setup_snapping_ui(layout)
@@ -424,7 +431,9 @@ class EditorPage(QWidget):
         self.btn_bleed_toggle.toggled.connect(self._on_bleed_toggled)
         layout.addWidget(self.btn_bleed_toggle)
 
-        layout.addSpacing(6)
+        layout.addSpacing(4)
+        layout.addWidget(self._separator())
+        layout.addSpacing(4)
 
         # Live Data Preview Stepper (segmented control)
         lbl_data_tag = QLabel("Live Data:")
@@ -433,13 +442,14 @@ class EditorPage(QWidget):
 
         record_cluster = QFrame()
         record_cluster.setObjectName("segmented")
+        record_cluster.setFixedHeight(CONTROL_HEIGHT)
         record_layout = QHBoxLayout(record_cluster)
         record_layout.setContentsMargins(2, 2, 2, 2)
         record_layout.setSpacing(2)
 
         self.btn_rec_prev = QToolButton()
         self.btn_rec_prev.setText("\u25c0")
-        self.btn_rec_prev.setFixedSize(24, 24)
+        self.btn_rec_prev.setFixedSize(24, 26)
         self.btn_rec_prev.setToolTip("Previous Record")
         self.btn_rec_prev.clicked.connect(self._prev_record)
         record_layout.addWidget(self.btn_rec_prev)
@@ -451,7 +461,7 @@ class EditorPage(QWidget):
 
         self.btn_rec_next = QToolButton()
         self.btn_rec_next.setText("\u25b6")
-        self.btn_rec_next.setFixedSize(24, 24)
+        self.btn_rec_next.setFixedSize(24, 26)
         self.btn_rec_next.setToolTip("Next Record")
         self.btn_rec_next.clicked.connect(self._next_record)
         record_layout.addWidget(self.btn_rec_next)
@@ -602,7 +612,7 @@ class EditorPage(QWidget):
 
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
@@ -734,7 +744,7 @@ class EditorPage(QWidget):
     def _create_shape_context_page(self) -> QWidget:
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
@@ -788,7 +798,7 @@ class EditorPage(QWidget):
     def _create_photo_context_page(self) -> QWidget:
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 

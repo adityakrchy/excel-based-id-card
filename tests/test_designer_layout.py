@@ -193,6 +193,63 @@ def test_the_context_bar_controls_share_one_height(qtbot):
     assert page.btn_dup.height() == page.btn_del.height()
 
 
+def test_the_context_bar_controls_share_one_height(qtbot):
+    """The controls of the options bar sit on one line."""
+    from id_card_generator.ui.editor_page import EditorPage
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    page = EditorPage()
+    qtbot.addWidget(page)
+    page.resize(1400, 900)
+    page.show()
+    qtbot.wait(50)
+
+    heights = {
+        page.btn_undo.height(),
+        page.btn_redo.height(),
+        page.btn_dup.height(),
+        page.btn_del.height(),
+        page.btn_guides_toggle.height(),
+        page.btn_snap_toggle.height(),
+        page.btn_bleed_toggle.height(),
+    }
+    assert len(heights) == 1, f"the controls of the bar differ in height: {heights}"
+
+
+def test_the_options_bar_sits_on_one_baseline(qtbot):
+    """The context and the actions share the same line of the bar.
+
+    The context lives in a stack that was stretched over the whole bar, so
+    its controls sat a few pixels below the buttons of the actions.
+    """
+    from id_card_generator.ui.editor_page import EditorPage
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    page = EditorPage()
+    qtbot.addWidget(page)
+    page.resize(1400, 900)
+    page.show()
+    qtbot.wait(50)
+
+    def centre(widget):
+        return widget.mapTo(page.options_bar, widget.rect().center()).y()
+
+    centres = {
+        centre(page.btn_undo),
+        centre(page.btn_redo),
+        centre(page.btn_dup),
+        centre(page.btn_del),
+        centre(page.btn_guides_toggle),
+        centre(page.btn_snap_toggle),
+        centre(page.btn_bleed_toggle),
+    }
+    assert len(centres) == 1, f"the controls do not share a baseline: {centres}"
+
+
 # ---------------------------------------------------------------------------
 # The other tabs of the dock
 # ---------------------------------------------------------------------------
