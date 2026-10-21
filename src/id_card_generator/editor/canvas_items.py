@@ -184,20 +184,23 @@ class CanvasItem(QGraphicsObject):
         self.update()
 
     def _get_handle_rects(self) -> Dict[int, QRectF]:
-        """Compute the 8 resize handle bounding rectangles in local coordinates."""
+        """Compute the 8 resize handle bounding rectangles in local coordinates.
+
+        The handles sit outside of the frame, so they never cover the text
+        of the element.
+        """
         r = self._rect
         s = self.HANDLE_SIZE
-        hs = s / 2.0
 
         return {
-            0: QRectF(r.left() - hs, r.top() - hs, s, s),
-            1: QRectF(r.center().x() - hs, r.top() - hs, s, s),
-            2: QRectF(r.right() - hs, r.top() - hs, s, s),
-            3: QRectF(r.right() - hs, r.center().y() - hs, s, s),
-            4: QRectF(r.right() - hs, r.bottom() - hs, s, s),
-            5: QRectF(r.center().x() - hs, r.bottom() - hs, s, s),
-            6: QRectF(r.left() - hs, r.bottom() - hs, s, s),
-            7: QRectF(r.left() - hs, r.center().y() - hs, s, s),
+            0: QRectF(r.left() - s, r.top() - s, s, s),
+            1: QRectF(r.center().x() - s / 2.0, r.top() - s, s, s),
+            2: QRectF(r.right(), r.top() - s, s, s),
+            3: QRectF(r.right(), r.center().y() - s / 2.0, s, s),
+            4: QRectF(r.right(), r.bottom(), s, s),
+            5: QRectF(r.center().x() - s / 2.0, r.bottom(), s, s),
+            6: QRectF(r.left() - s, r.bottom(), s, s),
+            7: QRectF(r.left() - s, r.center().y() - s / 2.0, s, s),
         }
 
     def _get_handle_at(self, pos: QPointF) -> Optional[int]:
@@ -447,7 +450,12 @@ class CanvasItem(QGraphicsObject):
 
         # 4. Text elements rendering
         elif elem.type in ("static_text", "dynamic_text", "pin_field"):
+            # The frame of a text is drawn first, so the text is never
+            # hidden by the border or by a handle.
+            if self.isSelected():
+                self._paint_selection(painter)
             self._paint_text(painter, rect, elem)
+            return
 
         # 5. Selection overlay and handles
         if self.isSelected():
@@ -576,24 +584,24 @@ class CanvasItem(QGraphicsObject):
         if elem.style.wrap:
             flags |= Qt.TextWordWrap
 
+        # The text is never cut: when it is bigger than its frame, it is
+        # drawn in full and overflows the frame.  drawText clips into the
+        # rectangle it is given, so the rectangle has to be big enough.
+        natural_w, natural_h = measure_text_size(elem, text, dpi)
+
         draw_rect = QRectF(rect)
-        fm = QFontMetrics(font)
-        line_h = fm.height()
-        if draw_rect.height() < line_h and ("\n" not in text):
+        if natural_w > rect.width() + 1.0:
+            # A text that is wider than its frame is not broken up.
+            draw_rect.setWidth(natural_w)
+            flags &= ~Qt.TextWordWrap
+        if natural_h > rect.height() + 1.0:
+            draw_rect.setHeight(natural_h)
             if elem.style.vertical_align == "middle":
-                cy = rect.center().y()
-                draw_rect.setTop(cy - line_h / 2.0)
-                draw_rect.setHeight(line_h)
+                draw_rect.setTop(rect.center().y() - natural_h / 2.0)
             elif elem.style.vertical_align == "bottom":
-                draw_rect.setTop(rect.bottom() - line_h)
-                draw_rect.setHeight(line_h)
-            else:
-                draw_rect.setHeight(line_h)
+                draw_rect.setTop(rect.bottom() - natural_h)
 
         painter.save()
-        # The text never leaves its frame, so it can not overlap the
-        # boundary of the element.
-        painter.setClipRect(rect)
         painter.setFont(font)
         painter.setPen(QColor(elem.style.font_color or "#000000"))
         painter.drawText(draw_rect, flags, text)

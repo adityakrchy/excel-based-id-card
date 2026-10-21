@@ -106,3 +106,31 @@ def test_a_text_that_does_not_fit_is_marked(qtbot):
 
     item.set_rect(QRectF(0, 0, 60, 20))
     assert item.text_overflows() is True
+
+
+def test_the_text_is_drawn_in_full(qtbot):
+    """A text that is bigger than its frame is not cut away.
+
+    drawText clips into the rectangle it is given, so the rectangle has to
+    grow with the text - otherwise the text would disappear behind the
+    frame of the element.
+    """
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    item = CanvasItem(_text_element(width=80.0, height=24.0))
+
+    image = QImage(400, 120, QImage.Format_ARGB32)
+    image.fill(QColor("#ffffff"))
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.TextAntialiasing)
+    item.paint(painter, None, None)
+    painter.end()
+
+    # The text reaches beyond the right edge of the frame.
+    ink = [
+        x
+        for x in range(81, 380)
+        if any(image.pixelColor(x, y).black() < 200 for y in range(120))
+    ]
+    assert ink, "the text was cut away by the frame"
