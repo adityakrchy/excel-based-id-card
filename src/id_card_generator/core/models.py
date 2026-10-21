@@ -87,6 +87,8 @@ class CanvasElement(BaseModel):
     z_index: int = 0
     visible: bool = True
     locked: bool = False
+    # Which face of the card the element belongs to ("front" or "back").
+    side: str = "front"
     binding: Optional[str] = None  # Excel column name, or special: 'photo', 'pin'
     static_content: Optional[str] = None  # Text or asset path for static elements
     style: CanvasElementStyle = Field(default_factory=CanvasElementStyle)

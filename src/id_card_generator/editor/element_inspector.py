@@ -210,6 +210,12 @@ class ElementInspector(QWidget):
         self.chk_locked.toggled.connect(self._on_lock_toggled)
         geom_layout.addRow("", self.chk_locked)
 
+        self.cmb_side = QComboBox()
+        self.cmb_side.addItem("Front", "front")
+        self.cmb_side.addItem("Back", "back")
+        self.cmb_side.currentIndexChanged.connect(self._on_side_changed)
+        geom_layout.addRow("Card side:", self.cmb_side)
+
         self.form_layout.addWidget(geom_group)
 
         # Layer Arrangement Group (Bring to top, send to bottom, step forward/backward)
@@ -478,6 +484,12 @@ class ElementInspector(QWidget):
             self.spin_h.setValue(elem.height)
         self.chk_locked.setChecked(elem.locked)
 
+        # Card face
+        side = getattr(elem, "side", "front") or "front"
+        idx = self.cmb_side.findData(side)
+        if idx >= 0 and self.cmb_side.currentIndex() != idx:
+            self.cmb_side.setCurrentIndex(idx)
+
         # Binding
         self._refresh_binding_combo()
         if elem.binding:
@@ -623,6 +635,13 @@ class ElementInspector(QWidget):
             def _update():
                 self._current_item.element.binding = val if val else None
             self._apply_change(_update, "Change Binding")
+
+    def _on_side_changed(self):
+        if not self._updating and self._current_item:
+            val = self.cmb_side.currentData() or "front"
+            def _update():
+                self._current_item.element.side = val
+            self._apply_change(_update, "Change Card Side")
 
     def _on_static_changed(self, text: str):
         if not self._updating and self._current_item:

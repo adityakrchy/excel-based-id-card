@@ -209,3 +209,19 @@ FONT_FAMILY_MONO = TYPOGRAPHY.FONT_FAMILY_MONO
 def palette_for(theme: str) -> StudioColors:
     """Return the color palette for a theme name (``"black"``/``"white"``)."""
     return LIGHT_COLORS if str(theme).lower().strip() == "white" else COLORS
+
+
+def active_palette() -> StudioColors:
+    """Return the palette of the theme that is currently applied.
+
+    The hand painted widgets (progress ring, speed graph, list delegates)
+    cannot be styled with a stylesheet, so they resolve the palette at
+    paint time instead of baking the colours in.
+    """
+    try:
+        # Imported lazily: the theme manager builds on these tokens.
+        from id_card_generator.ui.theme_manager import ThemeManager
+
+        return palette_for(ThemeManager.instance().active_effective_theme)
+    except Exception:  # pragma: no cover - the fallback is defensive
+        return COLORS

@@ -35,11 +35,18 @@ class PillowRenderer:
         photo_path: Optional[str] = None,
         column_mappings: Optional[Dict[str, str]] = None,
         settings: Optional[RenderSettings] = None,
+        side: str = "front",
     ) -> Tuple[Image.Image, List[str]]:
-        """Render a single card and return (PIL Image, List of warnings)."""
+        """Render a single card and return (PIL Image, List of warnings).
+
+        ``side`` selects the face of the card: the elements that belong to the
+        other face are skipped.  Existing templates only use the front, so
+        the default renders exactly what it always did.
+        """
         settings = settings or RenderSettings()
         column_mappings = column_mappings or {}
         warnings: List[str] = []
+        side = (side or "front").lower()
 
         card_w = template.width_px
         card_h = template.height_px
@@ -67,6 +74,10 @@ class PillowRenderer:
         # 4. Render elements
         for elem in sorted_elements:
             if not elem.visible:
+                continue
+
+            # Only the elements of the requested face are painted.
+            if (getattr(elem, "side", "front") or "front").lower() != side:
                 continue
 
             try:

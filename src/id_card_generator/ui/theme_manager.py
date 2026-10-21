@@ -280,6 +280,17 @@ QMainWindow, QDialog {
     background-color: $surface;
 }
 
+/* Plain layout containers never paint a surface of their own, so they can
+   be dropped into any panel without showing a darker rectangle. */
+QWidget[role="flat"] {
+    background-color: transparent;
+}
+
+/* Choice controls are drawn by the style, not by a surface. */
+QRadioButton, QCheckBox {
+    background-color: transparent;
+}
+
 /* --- Surfaces --------------------------------------------------- */
 QFrame#card_panel, QFrame#sidebar_panel, QFrame#canvas_container,
 QFrame#studio_surface, QFrame#surface_card, QFrame#studio_header_bar,
@@ -462,6 +473,13 @@ QPushButton#btn_stepper:hover, QToolButton#btn_stepper:hover {
     background-color: $surface_high;
     border-color: $primary_container;
     color: $on_surface;
+}
+
+/* The active segment of a segmented control. */
+QPushButton#btn_stepper:checked, QToolButton#btn_stepper:checked {
+    background-color: $surface_high;
+    border-color: $primary_container;
+    color: $primary;
 }
 
 /* --- Tool buttons ------------------------------------------------ */

@@ -15,7 +15,15 @@ from id_card_generator.ui.components.page_scaffold import (
     PageFooter,
     PageHeader,
 )
+from id_card_generator.ui.components.progress_ring import ProgressRing
+from id_card_generator.ui.components.record_list import (
+    RecordListDelegate,
+    RecordListEntry,
+    RecordListModel,
+    RecordListView,
+)
 from id_card_generator.ui.components.spec_list import SpecList
+from id_card_generator.ui.components.speed_graph import SpeedGraph
 from id_card_generator.ui.components.status_pill import StatusPill
 from id_card_generator.ui.components.studio_header_bar import StudioHeaderBar
 from id_card_generator.ui.components.studio_nav_bar import StudioNavBar, StudioTab
@@ -32,6 +40,12 @@ __all__ = [
     "NumericWell",
     "PageFooter",
     "PageHeader",
+    "ProgressRing",
+    "RecordListDelegate",
+    "RecordListEntry",
+    "RecordListModel",
+    "RecordListView",
+    "SpeedGraph",
     "StatTile",
     "Section",
     "SpecList",
