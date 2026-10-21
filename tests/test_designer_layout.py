@@ -283,6 +283,106 @@ def test_the_window_fits_into_a_small_screen(qtbot):
     assert window.minimumSizeHint().width() <= 900
 
 
+def test_the_binding_lives_in_the_contextual_bar(qtbot):
+    """The data binding moved from the panel into the contextual bar.
+
+    The binding only applies to a text, so it belongs next to the other
+    text controls of the bar and not in the panel of the properties.
+    """
+    from id_card_generator.ui.editor_page import EditorPage
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    page = EditorPage()
+    qtbot.addWidget(page)
+    page.resize(1400, 900)
+    page.show()
+    qtbot.wait(50)
+
+    assert hasattr(page, "ctx_cmb_binding")
+    assert hasattr(page, "ctx_txt_static")
+    assert not hasattr(page.inspector, "cmb_binding")
+    assert not hasattr(page.inspector, "txt_static")
+
+
+def test_the_bar_shows_the_binding_of_the_element(qtbot):
+    """The selected element shows its column and its static text."""
+    from id_card_generator.ui.editor_page import EditorPage
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    page = EditorPage()
+    qtbot.addWidget(page)
+    page.resize(1400, 900)
+    page.show()
+    qtbot.wait(50)
+
+    page.set_dataset([], {}, ["Name", "PIN Number"])
+    page._add_dynamic_text()
+    qtbot.wait(50)
+
+    item = next(
+        it
+        for it in page.scene.items()
+        if hasattr(it, "element") and it.element.type == "dynamic_text"
+    )
+    item.setSelected(True)
+    page._update_context_options(item)
+    qtbot.wait(20)
+
+    assert page.ctx_cmb_binding.currentData() == "Name"
+
+    # The static text only belongs to a static label.
+    assert page.ctx_txt_static.isVisible() is False
+
+    page._add_static_text()
+    qtbot.wait(50)
+    static_item = next(
+        it
+        for it in page.scene.items()
+        if hasattr(it, "element") and it.element.type == "static_text"
+    )
+    static_item.setSelected(True)
+    page._update_context_options(static_item)
+    qtbot.wait(20)
+
+    assert page.ctx_txt_static.text() == "Sample Text"
+
+
+def test_changing_the_binding_changes_the_element(qtbot):
+    """The combo of the bar writes the binding into the element."""
+    from id_card_generator.ui.editor_page import EditorPage
+    from id_card_generator.ui.theme_manager import ThemeManager
+
+    ThemeManager.instance().set_theme("black")
+
+    page = EditorPage()
+    qtbot.addWidget(page)
+    page.resize(1400, 900)
+    page.show()
+    qtbot.wait(50)
+
+    page.set_dataset([], {}, ["Name", "PIN Number"])
+    page._add_dynamic_text()
+    qtbot.wait(50)
+
+    item = next(
+        it
+        for it in page.scene.items()
+        if hasattr(it, "element") and it.element.type == "dynamic_text"
+    )
+    item.setSelected(True)
+    page._update_context_options(item)
+
+    index = page.ctx_cmb_binding.findData("PIN Number")
+    page.ctx_cmb_binding.setCurrentIndex(index)
+    qtbot.wait(20)
+
+    assert item.element.binding == "PIN Number"
+
+
 # ---------------------------------------------------------------------------
 # The other tabs of the dock
 # ---------------------------------------------------------------------------

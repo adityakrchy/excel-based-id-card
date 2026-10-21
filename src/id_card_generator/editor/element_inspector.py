@@ -43,14 +43,8 @@ class ElementInspector(QWidget):
         super().__init__(parent)
         self._current_item: Optional[CanvasItem] = None
         self._updating = False
-        self._available_columns: List[str] = []
 
         self._setup_ui()
-
-    def set_available_columns(self, columns: List[str]) -> None:
-        """Update available spreadsheet column bindings."""
-        self._available_columns = columns
-        self._refresh_binding_combo()
 
     @staticmethod
     def _create_color_swatch_icon(color_hex: Optional[str], size: int = 16) -> QIcon:
@@ -199,21 +193,7 @@ class ElementInspector(QWidget):
 
         self.form_layout.addWidget(arrange_group)
 
-        # 2. Data Binding Group
-        binding_group = QGroupBox("Data Binding")
-        binding_layout = self._make_form(binding_group)
-
-        self.cmb_binding = QComboBox()
-        self.cmb_binding.currentIndexChanged.connect(self._on_binding_changed)
-        self._add_row(binding_layout, "Bind Column:", self.cmb_binding)
-
-        self.txt_static = QLineEdit()
-        self.txt_static.textChanged.connect(self._on_static_changed)
-        self._add_row(binding_layout, "Static Text:", self.txt_static)
-
-        self.form_layout.addWidget(binding_group)
-
-        # 3. Typography Group
+        # 2. Typography Group
         self.type_group = QGroupBox("Typography")
         type_layout = self._make_form(self.type_group)
 
@@ -444,19 +424,6 @@ class ElementInspector(QWidget):
         if idx >= 0 and self.cmb_side.currentIndex() != idx:
             self.cmb_side.setCurrentIndex(idx)
 
-        # Binding
-        self._refresh_binding_combo()
-        if elem.binding:
-            idx = self.cmb_binding.findText(elem.binding)
-            if idx >= 0 and self.cmb_binding.currentIndex() != idx:
-                self.cmb_binding.setCurrentIndex(idx)
-        else:
-            if self.cmb_binding.currentIndex() != 0:
-                self.cmb_binding.setCurrentIndex(0)
-
-        if not self.txt_static.hasFocus() and self.txt_static.text() != (elem.static_content or ""):
-            self.txt_static.setText(elem.static_content or "")
-
         # Typography
         if not self.cmb_font.hasFocus() and self.cmb_font.currentFont().family() != elem.style.font_family:
             self.cmb_font.setCurrentFont(QFont(elem.style.font_family))
@@ -497,16 +464,6 @@ class ElementInspector(QWidget):
             self.setEnabled(False)
         except RuntimeError:
             pass
-
-    def _refresh_binding_combo(self) -> None:
-        self.cmb_binding.blockSignals(True)
-        self.cmb_binding.clear()
-        self.cmb_binding.addItem("(None)", "")
-        self.cmb_binding.addItem("Profile Photo [photo]", "photo")
-        self.cmb_binding.addItem("PIN Number [pin]", "PIN Number")
-        for col in self._available_columns:
-            self.cmb_binding.addItem(col, col)
-        self.cmb_binding.blockSignals(False)
 
     def _apply_change(self, update_fn, description: str = "Change Property") -> None:
         if self._updating or not self._current_item:
@@ -583,25 +540,12 @@ class ElementInspector(QWidget):
                 self._current_item.element.locked = checked
             self._apply_change(_update, "Toggle Lock")
 
-    def _on_binding_changed(self):
-        if not self._updating and self._current_item:
-            val = self.cmb_binding.currentData()
-            def _update():
-                self._current_item.element.binding = val if val else None
-            self._apply_change(_update, "Change Binding")
-
     def _on_side_changed(self):
         if not self._updating and self._current_item:
             val = self.cmb_side.currentData() or "front"
             def _update():
                 self._current_item.element.side = val
             self._apply_change(_update, "Change Card Side")
-
-    def _on_static_changed(self, text: str):
-        if not self._updating and self._current_item:
-            def _update():
-                self._current_item.element.static_content = text
-            self._apply_change(_update, "Change Static Text")
 
     def _on_font_changed(self, font):
         if not self._updating and self._current_item:

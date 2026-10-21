@@ -82,6 +82,7 @@ class EditorPage(QWidget):
         self.records: List[SourceRecord] = []
         self.match_results: Dict[str, PhotoMatchResult] = {}
         self.columns: List[str] = []
+        self._available_columns: List[str] = []
         self.sample_index: int = 0
         self._updating_context_bar: bool = False
         self._user_adjusted_splitter: bool = False
@@ -773,6 +774,33 @@ class EditorPage(QWidget):
         self.ctx_cmb_align.currentTextChanged.connect(self._sync_align_buttons_from_combo)
         layout.addWidget(self.ctx_cmb_align)
 
+        # Separator
+        layout.addSpacing(4)
+        layout.addWidget(self._separator())
+        layout.addSpacing(4)
+
+        # The data binding: the column of the sheet and the static text
+        self.lbl_ctx_bind = QLabel("Bind Column:")
+        self.lbl_ctx_bind.setProperty("role", "controlLabel")
+        layout.addWidget(self.lbl_ctx_bind)
+
+        self.ctx_cmb_binding = QComboBox()
+        self.ctx_cmb_binding.setFixedHeight(CONTROL_HEIGHT)
+        self.ctx_cmb_binding.setMinimumWidth(150)
+        self.ctx_cmb_binding.currentIndexChanged.connect(self._on_ctx_binding_changed)
+        layout.addWidget(self.ctx_cmb_binding)
+
+        self.lbl_ctx_static = QLabel("Static Text:")
+        self.lbl_ctx_static.setProperty("role", "controlLabel")
+        layout.addWidget(self.lbl_ctx_static)
+
+        self.ctx_txt_static = QLineEdit()
+        self.ctx_txt_static.setFixedHeight(CONTROL_HEIGHT)
+        self.ctx_txt_static.setMinimumWidth(140)
+        self.ctx_txt_static.setPlaceholderText("Static text")
+        self.ctx_txt_static.editingFinished.connect(self._on_ctx_static_changed)
+        layout.addWidget(self.ctx_txt_static)
+
         # Default to Left
         self.ctx_btn_align_left.setChecked(True)
 
@@ -1043,7 +1071,8 @@ class EditorPage(QWidget):
         self.records = records
         self.match_results = match_results
         self.columns = columns
-        self.inspector.set_available_columns(columns)
+        self._available_columns = list(columns)
+        self._refresh_binding_combo()
         self.mapping_panel.set_dataset(columns, records, match_results)
         self.sample_index = 0
         self._update_sample_preview()
@@ -1102,6 +1131,7 @@ class EditorPage(QWidget):
             self._set_ctx_align_ui(elem.style.text_align)
             self._current_font_color = elem.style.font_color
             self.ctx_btn_color.setIcon(self._create_color_icon(elem.style.font_color))
+            self._sync_binding_widgets(elem)
         elif elem.type in ("rect", "round_rect", "line"):
             self.stack_context.setCurrentIndex(2)
             self._current_fill_color = elem.style.background_color
@@ -1238,6 +1268,50 @@ class EditorPage(QWidget):
         self.scene.template_modified.emit()
 
     # Contextual Options Handlers
+    def _refresh_binding_combo(self) -> None:
+        """Fill the combo of the binding with the columns of the sheet."""
+        self.ctx_cmb_binding.blockSignals(True)
+        self.ctx_cmb_binding.clear()
+        self.ctx_cmb_binding.addItem("(None)", "")
+        self.ctx_cmb_binding.addItem("Profile Photo [photo]", "photo")
+        self.ctx_cmb_binding.addItem("PIN Number [pin]", "PIN Number")
+        for column in self._available_columns:
+            self.ctx_cmb_binding.addItem(column, column)
+        self.ctx_cmb_binding.blockSignals(False)
+
+    def _sync_binding_widgets(self, elem) -> None:
+        """Show the binding of the element in the contextual bar."""
+        self.ctx_cmb_binding.blockSignals(True)
+        index = self.ctx_cmb_binding.findData(elem.binding or "")
+        if index < 0:
+            index = 0
+        self.ctx_cmb_binding.setCurrentIndex(index)
+        self.ctx_cmb_binding.blockSignals(False)
+
+        if not self.ctx_txt_static.hasFocus():
+            self.ctx_txt_static.setText(elem.static_content or "")
+
+        # The static text only belongs to a static label.
+        is_static = elem.type == "static_text"
+        self.ctx_txt_static.setVisible(is_static)
+        self.lbl_ctx_static.setVisible(is_static)
+
+    def _on_ctx_binding_changed(self) -> None:
+        """Bind the selected elements to a column of the sheet."""
+        value = self.ctx_cmb_binding.currentData()
+        self._apply_context_change(
+            lambda it: setattr(it.element, "binding", value if value else None),
+            "Change Binding",
+        )
+
+    def _on_ctx_static_changed(self) -> None:
+        """Change the text of the selected static labels."""
+        text = self.ctx_txt_static.text()
+        self._apply_context_change(
+            lambda it: setattr(it.element, "static_content", text),
+            "Change Static Text",
+        )
+
     def _on_ctx_font_changed(self, font: QFont) -> None:
         self._apply_context_change(lambda it: setattr(it.element.style, "font_family", font.family()), "Change Font Family")
 
