@@ -58,7 +58,11 @@ from id_card_generator.ui import workflow
 from id_card_generator.ui.components.elided_label import ElidedLabel
 from id_card_generator.ui.components.layout_blocks import OverflowMenu
 from id_card_generator.ui.components.page_scaffold import InlineNotice, PageFooter, PageHeader
-from id_card_generator.ui.studio_tokens import SIZES, active_palette, active_palette
+from id_card_generator.ui.studio_tokens import (
+    PRIMARY,
+    SIZES,
+    active_palette,
+)
 from id_card_generator.ui.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
@@ -902,6 +906,11 @@ class EditorPage(QWidget):
         self.scene.element_selected.connect(self._on_element_selected)
         self.scene.template_modified.connect(self._on_template_modified)
         self.scene.text_edit_requested.connect(self._begin_text_edit)
+
+        # The editor sits on the text, so it has to follow the canvas.
+        self.view.zoom_changed.connect(self._on_canvas_moved)
+        self.view.horizontalScrollBar().valueChanged.connect(self._on_canvas_moved)
+        self.view.verticalScrollBar().valueChanged.connect(self._on_canvas_moved)
         self.inspector.property_changed.connect(self._on_inspector_property_changed)
         self.layers_panel.item_selected.connect(self.inspector.set_selected_item)
         self.layers_panel.order_changed.connect(self._on_template_modified)
@@ -1110,48 +1119,102 @@ class EditorPage(QWidget):
         self._close_text_editor(commit=False)
 
         editor = QTextEdit(self.view.viewport())
+        # The font has to be set before the text is inserted, otherwise the
+        # text keeps the small default font of the editor.
+        font = self._editor_font(elem)
+        editor.setFont(font)
         editor.setPlainText(text)
-        editor.setFont(self._editor_font(elem))
         editor.setFrameShape(QTextEdit.Box)
 
         # The editor follows the frame of the element, not the size its
         # content would ask for.
         editor.setMinimumSize(60, 20)
         editor.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        # A short editor, the scroll bars would only cover the text.
+        editor.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        editor.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        palette = active_palette()
-        editor.setStyleSheet(
-            "QTextEdit {"
-            f"  background-color: {palette.SURFACE_HIGH};"
-            f"  border: 1px solid {palette.PRIMARY_CONTAINER};"
-            "  border-radius: 3px;"
-            "  padding: 2px 4px;"
-            f"  color: {palette.ON_SURFACE};"
-            f"  selection-background-color: {palette.PRIMARY_CONTAINER};"
-            f"  selection-color: {palette.ON_PRIMARY_CONTAINER};"
-            "}"
-        )
+        # A light editor, so it can be read on the card and does not look
+        # like a hole in the design.  The size of the font belongs into the
+        # style, a style sheet wins over the font of the widget.
+        self._style_text_editor(editor, elem)
 
         # The editor sits where the text of the element is.  The frame of the
         # element is used, not its bounding box, which holds the handles.
         frame = item.mapToScene(QRectF(0, 0, item._rect.width(), item._rect.height()))
         rect = self.view.mapFromScene(frame).boundingRect()
+        # A little more room, so the text of the element fits into the
+        # editor without being scrolled.
+        rect.setWidth(rect.width() + 8)
         editor.setGeometry(rect)
         editor.selectAll()
         editor.setFocus()
         editor.show()
         editor.installEventFilter(self)
+        # The text is selected from its start, so the editor does not scroll
+        # to the end of it.
+        editor.horizontalScrollBar().setValue(0)
+        editor.verticalScrollBar().setValue(0)
 
         self._text_editor = editor
         self._text_editor_item = item
 
+    def _style_text_editor(self, editor, elem) -> None:
+        """Give the editor the look and the size of the element."""
+        font = self._editor_font(elem)
+        editor.setFont(font)
+        editor.setStyleSheet(
+            "QTextEdit {"
+            "  background-color: #ffffff;"
+            f"  border: 1px solid {PRIMARY};"
+            "  border-radius: 3px;"
+            "  padding: 2px 4px;"
+            "  color: #1a1a1a;"
+            f"  font-family: '{elem.style.font_family}';"
+            f"  font-size: {font.pixelSize()}px;"
+            f"  font-weight: {'bold' if elem.style.font_bold else 'normal'};"
+            f"  font-style: {'italic' if elem.style.font_italic else 'normal'};"
+            f"  selection-background-color: {PRIMARY};"
+            "  selection-color: #ffffff;"
+            "}"
+        )
+
+    def _reposition_text_editor(self) -> None:
+        """Keep the editor on the text while the canvas moves."""
+        editor = self._text_editor
+        item = self._text_editor_item
+        if editor is None or item is None:
+            return
+
+        try:
+            frame = item.mapToScene(
+                QRectF(0, 0, item._rect.width(), item._rect.height())
+            )
+            rect = self.view.mapFromScene(frame).boundingRect()
+            rect.setWidth(rect.width() + 8)
+        except RuntimeError:  # pragma: no cover - the item may be gone
+            return
+
+        editor.setGeometry(rect)
+        # The size of the font follows the zoom of the canvas.
+        self._style_text_editor(editor, item.element)
+
+    def _on_canvas_moved(self) -> None:
+        """The canvas was scrolled or zoomed."""
+        self._reposition_text_editor()
+
     def _editor_font(self, elem):
-        """The font of the element, so the editor looks like the card."""
+        """The font of the element, so the editor looks like the card.
+
+        The size of the font is the size of the element on the screen, so
+        the editor shows the text exactly as large as the card does.
+        """
         font = QFont(elem.style.font_family)
         font.setBold(elem.style.font_bold)
         font.setItalic(elem.style.font_italic)
         doc_px = points_to_document_pixels(float(elem.style.font_size), self._document_dpi())
-        font.setPixelSize(max(1, int(round(doc_px))))
+        zoom = self.view.transform().m11() if hasattr(self.view, "transform") else 1.0
+        font.setPixelSize(max(1, int(round(doc_px * zoom))))
         return font
 
     def _close_text_editor(self, commit: bool = True) -> None:

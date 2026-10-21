@@ -251,6 +251,36 @@ def test_escape_cancels_the_inline_editor(designer, qtbot):
     assert item.element.static_content == "Sample Text"
 
 
+def test_the_inline_editor_keeps_the_size_of_the_font(designer, qtbot):
+    """The text is edited in the size of the element, not in a small font."""
+    from id_card_generator.core.geometry import points_to_document_pixels
+
+    item = _static_item(designer)
+    designer._begin_text_edit(item)
+
+    editor = designer._text_editor
+    zoom = designer.view.transform().m11()
+    expected = round(
+        points_to_document_pixels(
+            float(item.element.style.font_size), designer._document_dpi()
+        )
+        * zoom
+    )
+
+    assert editor.font().pixelSize() == expected
+    # The size of the font belongs into the style, a style sheet wins over
+    # the font of the widget.
+    assert f"font-size: {expected}px" in editor.styleSheet()
+
+
+def test_the_inline_editor_is_not_black(designer, qtbot):
+    """The editor is a light box, so it can be read on the card."""
+    item = _static_item(designer)
+    designer._begin_text_edit(item)
+
+    assert "background-color: #ffffff" in designer._text_editor.styleSheet()
+
+
 def test_a_dynamic_field_is_not_edited(designer, qtbot):
     """The text of a dynamic field comes from the spreadsheet."""
     from id_card_generator.core.models import CanvasElement
