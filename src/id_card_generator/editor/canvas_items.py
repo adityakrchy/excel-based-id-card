@@ -22,9 +22,67 @@ from PySide6.QtWidgets import (
     QMenu,
 )
 
-from id_card_generator.core.constants import DEFAULT_DPI, ImageFitMode, TextOverflowPolicy
+from id_card_generator.core.constants import DEFAULT_DPI, ImageFitMode
 from id_card_generator.core.geometry import points_to_document_pixels
 from id_card_generator.core.models import CanvasElement, SourceRecord
+
+
+def resolve_text_font(elem: CanvasElement, text: str, dpi: float) -> QFont:
+    """Build the font of a text element.
+
+    The size of the font is the size the element asks for - it never
+    changes while the element is edited.
+    """
+    font_size_pt = float(elem.style.font_size)
+
+    has_devanagari = any(0x0900 <= ord(c) <= 0x097F for c in text)
+    is_latin_default = elem.style.font_family.lower() in (
+        "arial",
+        "segoe ui",
+        "helvetica",
+        "helvetica neue",
+        "sans-serif",
+        "times new roman",
+        "roboto",
+        "inter",
+    )
+    if has_devanagari and is_latin_default:
+        families = [
+            "Devanagari Sangam MN",
+            "Mangal",
+            "Nirmala UI",
+            "Kohinoor Devanagari",
+            "Noto Sans Devanagari",
+            elem.style.font_family,
+        ]
+    else:
+        families = [
+            elem.style.font_family,
+            "Devanagari Sangam MN",
+            "Mangal",
+            "Nirmala UI",
+            "Kohinoor Devanagari",
+            "Noto Sans Devanagari",
+            "Arial",
+        ]
+
+    font = QFont(families[0])
+    font.setFamilies(families)
+    font.setBold(elem.style.font_bold)
+    font.setItalic(elem.style.font_italic)
+    font.setStyleStrategy(QFont.PreferAntialias)
+
+    doc_px = points_to_document_pixels(font_size_pt, dpi)
+    font.setPixelSize(max(1, int(round(doc_px))))
+    return font
+
+
+def measure_text_size(elem: CanvasElement, text: str, dpi: float):
+    """The natural size of a text in the document pixels."""
+    if not text:
+        return (0.0, 0.0)
+    metrics = QFontMetrics(resolve_text_font(elem, text, dpi))
+    return (float(metrics.horizontalAdvance(text)), float(metrics.height()))
 
 
 class CanvasItem(QGraphicsObject):
@@ -486,18 +544,7 @@ class CanvasItem(QGraphicsObject):
             painter.drawText(rect, Qt.AlignCenter, "[Image]")
 
     def _paint_text(self, painter: QPainter, rect: QRectF, elem: CanvasElement):
-        # Resolve text to display
-        if elem.type == "static_text":
-            text = elem.static_content or elem.name
-        elif elem.type == "pin_field":
-            text = self._sample_record.pin if self._sample_record else (elem.binding or "PIN-100001")
-        else:
-            # Dynamic text
-            col = elem.binding or elem.name
-            if self._sample_record:
-                text = self._sample_record.get_value(col, f"[{col}]")
-            else:
-                text = f"[{col}]"
+        text = self.preview_text(elem)
 
         # Determine document DPI from scene template
         scene = self.scene()
@@ -505,35 +552,11 @@ class CanvasItem(QGraphicsObject):
         if scene and hasattr(scene, "template") and scene.template and getattr(scene.template, "dpi", None):
             dpi = scene.template.dpi
 
-        font_size_pt = float(elem.style.font_size)
-        has_devanagari = any(0x0900 <= ord(c) <= 0x097F for c in text)
-        is_latin_default = elem.style.font_family.lower() in (
-            "arial", "segoe ui", "helvetica", "helvetica neue", "sans-serif", "times new roman", "roboto", "inter"
-        )
-        if has_devanagari and is_latin_default:
-            families = [
-                "Devanagari Sangam MN",
-                "Mangal",
-                "Nirmala UI",
-                "Kohinoor Devanagari",
-                "Noto Sans Devanagari",
-                elem.style.font_family,
-            ]
-        else:
-            families = [
-                elem.style.font_family,
-                "Devanagari Sangam MN",
-                "Mangal",
-                "Nirmala UI",
-                "Kohinoor Devanagari",
-                "Noto Sans Devanagari",
-                "Arial",
-            ]
-        font = QFont(families[0])
-        font.setFamilies(families)
-        font.setBold(elem.style.font_bold)
-        font.setItalic(elem.style.font_italic)
-        font.setStyleStrategy(QFont.PreferAntialias)
+        # The font keeps the size of the element.  It used to shrink while
+        # the frame was resized, which changed the design behind the back
+        # of the user.  The overflow policy is applied when the card is
+        # rendered, not while it is drawn on the canvas.
+        font = resolve_text_font(elem, text, dpi)
 
         flags = Qt.TextIncludeTrailingSpaces
         if elem.style.text_align == "center":
@@ -553,26 +576,6 @@ class CanvasItem(QGraphicsObject):
         if elem.style.wrap:
             flags |= Qt.TextWordWrap
 
-        # Auto-shrink in point units to match TextLayout / Photoshop
-        if elem.style.overflow_policy == TextOverflowPolicy.AUTO_SHRINK and text:
-            cur_pt = font_size_pt
-            min_pt = 4.0
-            while cur_pt >= min_pt:
-                doc_px = points_to_document_pixels(cur_pt, dpi)
-                font.setPixelSize(max(1, int(round(doc_px))))
-                fm = QFontMetrics(font)
-                bounding = fm.boundingRect(rect.toRect(), flags, text)
-                single_w = fm.horizontalAdvance(text)
-                fits_single_line = (single_w <= rect.width()) and ("\n" not in text)
-                if fits_single_line:
-                    break
-                if bounding.width() <= rect.width() and bounding.height() <= rect.height():
-                    break
-                cur_pt -= 0.5
-        else:
-            doc_px = points_to_document_pixels(font_size_pt, dpi)
-            font.setPixelSize(max(1, int(round(doc_px))))
-
         draw_rect = QRectF(rect)
         fm = QFontMetrics(font)
         line_h = fm.height()
@@ -587,14 +590,57 @@ class CanvasItem(QGraphicsObject):
             else:
                 draw_rect.setHeight(line_h)
 
+        painter.save()
+        # The text never leaves its frame, so it can not overlap the
+        # boundary of the element.
+        painter.setClipRect(rect)
         painter.setFont(font)
         painter.setPen(QColor(elem.style.font_color or "#000000"))
         painter.drawText(draw_rect, flags, text)
+        painter.restore()
+
+    def preview_text(self, elem: CanvasElement) -> str:
+        """The text the canvas shows for an element."""
+        if elem.type == "static_text":
+            return elem.static_content or elem.name
+        if elem.type == "pin_field":
+            if self._sample_record:
+                return self._sample_record.pin
+            return elem.binding or "PIN-100001"
+
+        col = elem.binding or elem.name
+        if self._sample_record:
+            return self._sample_record.get_value(col, f"[{col}]")
+        return f"[{col}]"
+
+    def text_overflows(self) -> bool:
+        """True when the text of the element does not fit into its frame.
+
+        The font is never scaled to fit while the card is edited, so a frame
+        that is too small cuts the text.  The frame is marked in that case.
+        """
+        elem = self.element
+        if elem.type not in ("static_text", "dynamic_text", "pin_field"):
+            return False
+
+        scene = self.scene()
+        dpi = DEFAULT_DPI
+        if scene and hasattr(scene, "template") and scene.template:
+            dpi = getattr(scene.template, "dpi", None) or DEFAULT_DPI
+
+        text = self.preview_text(elem)
+        width, height = measure_text_size(elem, text, dpi)
+        return width > self._rect.width() + 1.0 or height > self._rect.height() + 1.0
 
     def _paint_selection(self, painter: QPainter):
         """Draw professional Transform Box (TBox) with outer contrast halo, crisp accent border, 8 resize handles, and element tag."""
         painter.save()
         rect = self._rect
+
+        # A text that does not fit into its frame is marked in amber.
+        overflow = self.text_overflows()
+        accent = QColor("#E8B65B") if overflow else QColor("#0078D4")
+        handle_border = QColor("#9A6B12") if overflow else QColor("#005A9E")
 
         # 1. Outer dark halo for high contrast on light backgrounds
         outer_pen = QPen(QColor(0, 0, 0, 70), 2.5, Qt.SolidLine)
@@ -603,12 +649,12 @@ class CanvasItem(QGraphicsObject):
         painter.drawRect(rect)
 
         # 2. Crisp bright primary selection border (Photoshop/Figma blue)
-        inner_pen = QPen(QColor("#0078D4"), 1.8, Qt.SolidLine)
+        inner_pen = QPen(accent, 1.8, Qt.SolidLine)
         painter.setPen(inner_pen)
         painter.drawRect(rect)
 
         # 3. 8 Transform Handles (pure white with blue border)
-        handle_pen = QPen(QColor("#005A9E"), 1.5)
+        handle_pen = QPen(handle_border, 1.5)
         handle_brush = QBrush(QColor("#FFFFFF"))
         painter.setPen(handle_pen)
         painter.setBrush(handle_brush)
@@ -627,7 +673,7 @@ class CanvasItem(QGraphicsObject):
 
         # Background pill
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor("#0078D4")))
+        painter.setBrush(QBrush(accent))
         painter.drawRoundedRect(badge_rect, 3, 3)
 
         # Text

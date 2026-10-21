@@ -42,7 +42,8 @@ from id_card_generator.core.models import (
     TemplateDefinition,
 )
 from id_card_generator.editor.alignment_tools import AlignmentTools
-from id_card_generator.editor.canvas_items import CanvasItem
+from id_card_generator.core.constants import DEFAULT_DPI
+from id_card_generator.editor.canvas_items import CanvasItem, measure_text_size
 from id_card_generator.editor.canvas_scene import CanvasScene
 from id_card_generator.editor.canvas_view import CanvasView
 from id_card_generator.editor.element_inspector import ElementInspector
@@ -1375,6 +1376,23 @@ class EditorPage(QWidget):
         self._apply_context_change(lambda it: setattr(it.element.style, "mask_shape", mask_str), "Change Mask Shape")
 
     # Element Creation Methods
+    def _document_dpi(self) -> float:
+        """The DPI of the card the elements belong to."""
+        template = self.scene.template if hasattr(self.scene, "template") else None
+        return float(getattr(template, "dpi", None) or DEFAULT_DPI)
+
+    def _fit_text_frame(self, element: CanvasElement, text: str) -> None:
+        """Size the frame of a text element so that the text fits into it.
+
+        The text of an element is never scaled to fit its frame while it is
+        edited, so the frame has to be big enough from the start.
+        """
+        width, height = measure_text_size(element, text, self._document_dpi())
+        if width <= 0 and height <= 0:
+            return
+        element.width = max(40.0, width + 8.0)
+        element.height = max(24.0, height + 4.0)
+
     def _add_static_text(self) -> None:
         el = CanvasElement(
             name="Static Label",
@@ -1385,6 +1403,7 @@ class EditorPage(QWidget):
             height=48.0,
             static_content="Sample Text",
         )
+        self._fit_text_frame(el, el.static_content or "")
         self.scene.add_element(el)
         self.layers_panel.refresh_layers()
 
@@ -1399,6 +1418,9 @@ class EditorPage(QWidget):
             height=40.0,
             binding=col,
         )
+        sample = getattr(self.scene, "_sample_record", None)
+        text = sample.get_value(col, f"[{col}]") if sample else f"[{col}]"
+        self._fit_text_frame(el, text)
         self.scene.add_element(el)
         self.layers_panel.refresh_layers()
         self._update_sample_preview()

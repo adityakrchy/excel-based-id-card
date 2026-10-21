@@ -539,6 +539,10 @@ class DataSourcePage(QWidget):
         self.cmb_overflow.addItem("Truncate with ellipsis")
         self.cmb_overflow.addItem("Multi-line wrap")
         self.cmb_overflow.setFixedHeight(CONTROL_HEIGHT)
+        self.cmb_overflow.setToolTip(
+            "How the text is fitted into its frame when the card is rendered.\n"
+            "The canvas always shows the size of the font."
+        )
         rules_layout.addWidget(self.cmb_overflow)
 
         self.chk_required = QCheckBox("Required field")
